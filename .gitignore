@@ -1,0 +1,3 @@
+ide/msvc/*.db
+ide/msvc/*.opendb
+out/
