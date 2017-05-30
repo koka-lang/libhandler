@@ -1,0 +1,391 @@
+#!/bin/sh
+# Copyright 2017, Microsoft Research, Daan Leijen
+echo "--- Configuring build ---"
+
+configure_options=$*
+host_type=unknown
+host_abi=""
+prefix=/usr/local
+bindir=''
+cc=gcc
+ccoption=''
+ccflags=''
+
+verbose=no
+
+
+# Parse command-line arguments
+
+while : ; do
+  ac_option="$1"
+  case $ac_option in
+  *=*)  ac_optarg=`expr "X$ac_option" : '[^=]*=\(.*\)'` ;;
+  *)    ac_optarg=yes ;;
+  esac
+  case "$ac_option" in
+    "") break;;
+    -prefix*|--prefix*)
+        prefix=$ac_optarg ;;
+    -bindir*|--bindir*)
+        bindir=$ac_optarg ;;
+    -host*|--host*)
+        host_type=$ac_optarg ;;
+    -cc-opts*|--cc-opts*)
+        ccflags=$ac_optarg;;
+    -cc*|--cc*)
+        ccoption=$ac_optarg;;
+    -verbose|--verbose)
+        verbose="yes";;
+    -m*|--m*|-abi*|--abi*)
+        host_abi=$ac_optarg;;
+    -h|--help|-\?|help|\?)
+        echo "./configure [options]"
+        echo "  --host=<arch>-<vendor>-<os>   set the host (for example 'x86_64-pc-windows')"
+        echo "  --cc=<ccomp>                  set the c-compiler (for example 'clang')"
+        echo "  --abi=<abi>                   set ABI (for example: 'x32' or 'amd64')"
+        echo "  --verbose                     be verbose"
+        exit 0;;
+    *) echo "warning: unknown option \"$1\"." 1>&2
+  esac
+  shift
+done
+echo "use '--help' for help on configuation options."
+export verbose
+
+# Sanity checks
+
+case "$prefix" in
+  /*) ;;
+  ?\:*) ;;
+   *) echo "The -prefix directory must be absolute." 1>&2; exit 2;;
+esac
+case "$bindir" in
+  /*) ;;
+  "") ;;
+  ?\:*) ;;
+   *) echo "The -bindir directory must be absolute." 1>&2; exit 2;;
+esac
+
+
+# Generate the files
+
+cd config
+
+echo
+echo "--- Check system ---"
+
+
+# Do we have a c compiler?
+
+if test -z "$ccoption"; then
+  if sh ./searchpath gcc; then
+    cc="gcc"
+  elif sh ./searchpath clang; then
+    cc="clang"
+  elif sh ./searchpath cl; then
+    cc="cl"
+  else
+    cc="cc"
+  fi
+else
+  cc="$ccoption"
+fi
+
+ccname="$(basename $cc)"
+
+# Determine the system type
+if test "$host_type" = "unknown"; then	
+	# check for 32bit compilation on x86_64 platform.
+	cctarget=`$cc $ccflags -v 2>&1 | grep -o '^[Tt]arget: *[^ ]*'`
+  cctarget=`expr "X$cctarget" : '[^ ]* *\(.*\)'`
+  cctrest=`expr "X$cctarget" : '[^-]*-\([^-]*-[^-]*\)'`
+	if test "$cctarget" = ""; then
+	  host_os=`uname -o`
+	  if host_os="Msys"; then 
+	    host_arch=`uname -m`
+	    host_type="$host_arch-pc-windows";
+	  elif host_type=`./config.guess`; then 
+	    :; 
+	  else
+	    echo "Cannot guess host type"
+	    echo "You must specify one with the -host option"
+	    echo "For example: -host x64-pc-windows"
+	    exit 2
+	  fi   
+	else
+    echo "Compiler target: $cctarget"
+    case "$cctarget" in
+      mingw32)
+        echo "Target is 32-bit x86"
+        host_type="x86-pc-windows";;
+      i[3456]86-*)
+        echo "Target is 32-bit x86"
+        host_type="x86-$cctrest";;
+      x86_64-*)  
+        host_type="x86_64-$cctrest";;
+      *)  
+        echo "The compiler targets $cctarget"
+        host_type="$cctarget";;
+    esac
+	fi
+fi
+if host=`./config.sub $host_type`; then :; else
+  echo "Please specify the correct host type with the -host option"
+  exit 2
+fi
+echo "Configuring for: $ccname, $host ..."
+
+
+# Configure the c compiler for the runtime system
+
+link=$cc
+linkflags=""
+linkflagout="-o "
+ar="ar"
+arflags="rcs"
+arflagout=""
+ccflagout="-o "
+asmflags=""
+asmflagout="-o "
+ostype="unix"
+exe=""
+dll=".dll"
+lib=".a"
+obj=".o"
+asm=".s"
+config="$ccname-$host"
+ccflagopt="-O2 -DNDEBUG"
+ccflagdebug="-g"
+ccdepend="$cc -MM "
+
+# note: expr regex has "^" implied as starting character
+host_arch=`expr "$host-" : '\([^-]*\)-'`
+host_os=`expr "$host" : '.*-.*-\([^-]*\)$'`
+
+case "$ccname" in
+  clang-cl)
+    ccflags="-W3 $ccflags"
+    ccflagopt="-O2 -GS-"  # fiber-safe optimize
+    ccflagdebug="-Z7"
+    ccdepend="clang -MM "
+    ar="llvm-lib"
+    arflags=""
+    arflagout="-OUT:"
+    ccflagout="-Fo"
+    asmflagout="-Fo"
+    linkflagout="-Fe"
+    lib=".lib"
+    obj=".obj"
+    asm=".s";;
+  cl)
+    cclinkflags="-nologo"
+    ccflags="-nologo -W3 -Za $ccflags"
+    ccflagopt="-O2 -GS- -GT"  # fiber-safe optimize
+    ccflagdebug="-Zi"
+    ar="lib"
+    arflags=""
+    arflagout="-OUT:"
+    ccflagout="-Fo"
+    asmflagout="-Fo"
+    linkflagout="-Fe"
+    lib=".lib"
+    obj=".obj"
+    asm=".asm";;
+  gcc*)   
+    ccflags="-Wall -std=c99 -pedantic $ccflags"
+    asmflags="-Wall";;
+  clang*)
+    ccflags="-Wall $ccflags"
+    asmflags="-Wall";;
+  *)
+    echo "warning: unknown c-compiler '$ccname' -- command options might be wrong";;        
+esac
+
+case "$host" in
+  *-*-mingw*|*-*-win*|*-*-msys*)
+    exe=".exe"
+    dll=".dll"
+    ostype="windows";;
+esac
+
+if test "$host_abi" = ""; then
+  case "$host_arch,$ostype" in
+    x86_64,windows)
+      host_abi="x86_64";;
+    x86_64,*)
+      echo "Modify host ABI from x86_64 to amd64 (as used on Linux etc)"
+      host_abi="amd64";;
+    i[3456]86,*)
+      host_abi="x86";;  
+    *,*)
+      host_abi="$host_arch";;
+  esac  
+fi
+
+case $host_abi in
+  x32) ccflags="$ccflags -mx32";;
+esac
+
+
+# Configure compiler to use in further tests
+
+ccomp=$cc
+cclibs=""
+ccout="$linkflagout"
+export cc ccflags ccout cclibs verbose exe
+
+# Check C c-compiler
+sh ./runtest c99.c
+case $? in
+  0) echo "The C compiler is C99-compliant.";;
+  1) echo "The C compiler '$cc' is not C99 compliant."
+     echo "A C99 compliant compiler might be required to build (due to line-comments etc).";;
+  *) echo "Unable to compile the test program."
+     echo "Make sure the C compiler '$cc' is properly installed."
+     sh ./runtest c99.c
+     exit 2;;
+esac
+
+
+# Set up cenv.h
+echo "// Generated by 'configure': C environment constants" > cenv.h
+
+asmsetjmp="asm/setjmp_$host_abi$asm"
+asmfiles=""
+
+if test -f "../src/$asmsetjmp"; then
+  echo "Assembly setjmp found for this ABI: '$asmsetjmp'"
+  asmfiles="$asmsetjmp"
+  echo "#define HAS_ASMSETJMP" >> cenv.h;
+elif sh ./runtest has_sigsetjmp.c; then
+  echo "POSIX sigsetjmp found."
+  echo "#define HAS_SIGSETJMP" >> cenv.h;
+elif sh ./runtest has__setjmp.c; then
+  echo "BSD-style _setjmp found."
+  echo "#define HAS__SETJMP" >> cenv.h;
+elif sh ./runtest has_setjmp.c; then
+  echo "Regular setjmp found; this may be not most efficient."
+  echo "Consider adding an assembly definition as: src/$asmsetjmp."
+  echo "#define HAS_SETJMP" >> cenv.h;
+else
+  echo "Cannot find 'setjmp'! Cannot support this platform."
+  echo "Consider adding an assembly definition as: src/$asmsetjmp."  
+  exit 2;
+fi
+echo "#define PRI_ZU \"$prizu\"" >> cenv.h
+echo "#define PRI_TD \"$pritd\"" >> cenv.h
+
+function has_function {
+  def="$1"
+  name="$2"
+  shift
+  shift
+  if sh ./hasgot $* $name; then
+    echo "Function $name: found"
+    echo "#define $def" >> cenv.h;
+  else
+    echo "Function $name: not found"
+    echo "// #define $def" >> cenv.h;
+  fi
+};
+
+has_function HAS_STRNCAT_S strncat_s -i string.h
+
+if sh ./hasgot -i alloca.h "alloca(10)"; then
+  echo "Function alloca: found"
+  echo "#define HAS_ALLOCA_H" >> cenv.h;
+elif sh ./hasgot -i malloc.h "_alloca(10)"; then
+  echo "Function _alloca: found"
+  echo "#define HAS__ALLOCA" >> cenv.h;
+else
+  echo "Cannot find stack allocation function 'alloca'!"
+  echo "// #define HAS_ALLOCA_H" >> cenv.h;
+fi
+
+function has_header {
+  def="$1"
+  header="$2"
+  shift
+  shift
+  if sh ./hasgot $* -i $header; then
+    echo "Header $header: found"
+    echo "#define $def" >> cenv.h;
+  else
+    echo "Header $header: not found"
+    echo "// #define $def" >> cenv.h;
+  fi
+};
+
+has_header HAS_STDBOOL_H stdbool.h
+
+
+
+# Generate makefile
+
+echo "# Generated by 'configure': Makefile variables" > makefile.inc
+
+echo "CONFIG=$config" >> makefile.inc
+echo "ABI=$host_abi"  >> makefile.inc
+echo "OSTYPE=$ostype" >> makefile.inc
+echo >> makefile.inc
+
+echo "CC=$cc" >> makefile.inc
+echo "CCNAME=$ccname" >> makefile.inc
+echo "CCFLAGSOPT=$ccflags $ccflagopt" >> makefile.inc
+echo "CCFLAGSDEBUG=$ccflags $ccflagdebug" >> makefile.inc
+echo "CCFLAGOUT=$ccflagout" >> makefile.inc
+echo "CCDEPEND=$ccdepend" >> makefile.inc
+echo "ASMFILES=$asmfiles" >> makefile.inc
+echo "ASMFLAGS=$asmflags" >> makefile.inc
+echo "ASMFLAGOUT=$asmflagout" >> makefile.inc
+echo "AR=$ar" >> makefile.inc
+echo "ARFLAGS=$arflags" >> makefile.inc
+echo "ARFLAGOUT=$arflagout" >> makefile.inc
+echo "LINK=$link" >> makefile.inc
+echo "LINKFLAGS=$linkflags" >> makefile.inc
+echo "LINKFLAGOUT=$linkflagout" >> makefile.inc
+
+echo >> makefile.inc
+
+echo "EXE=$exe" >> makefile.inc
+echo "DLL=$dll" >> makefile.inc
+echo "OBJ=$obj" >> makefile.inc
+echo "LIB=$lib" >> makefile.inc
+echo "ASM=$asm" >> makefile.inc
+echo "CP=cp" >> makefile.inc
+echo "CD=cd" >> makefile.inc
+echo "RM=rm -f" >> makefile.inc
+echo "MKDIR=mkdir -p" >> makefile.inc
+
+# clean up and go to root dir again
+
+# rm -f tst$exe hasgot.c *$obj
+cd ..
+
+# initialize out directory
+rm -rf "out/$config"
+mkdir -p "out/$config"
+echo "# run 'make depend' to generate dependencies" > out/$config/makefile.depend
+mv config/cenv.h out/$config/cenv.h
+mv config/makefile.inc out/$config/makefile.inc
+echo "include out/$config/makefile.inc" > out/makefile.config
+
+
+# Print a summary
+
+echo
+echo "--- Configuration summary ---"
+echo "System:"
+echo "  host        : $host"
+echo "  abi         : $host_abi"
+echo "Build:"
+echo "  C compiler  : $cc $ccflags"
+echo "  linker      : $link $cclinkflags"
+echo
+echo "Use the following commands to build:"
+echo "> make depend"
+echo "> make"
+echo 
+echo "To run tests:"
+echo "> make tests"
+echo
