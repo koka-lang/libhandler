@@ -1,3 +1,6 @@
 ide/msvc/*.db
 ide/msvc/*.opendb
+config/hasgot.?
+config/tst.exe
+config/tst
 out/
