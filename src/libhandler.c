@@ -90,6 +90,7 @@
 # endif
 #endif 
 
+
 // ENOTSUP is not always defined
 #ifndef ENOTSUP
 # define ENOTSUP ENOSYS
@@ -1015,9 +1016,14 @@ static __noinline resumecont* capture_continuation(hstack* hs, scopedcont* sc)
 -----------------------------------------------------------------*/
 
 // Start a handler 
-static __noinline lh_value handle_with(hstack* hs, handler* h, lh_value(*action)(lh_value), lh_value arg, 
-                                        out resumecont** rcont)
+static __noinline
+#if defined(__GNUC__) && defined(LH_ABI_x86)
+__noopt
+#endif
+lh_value handle_with(hstack* hs, handler* h, lh_value(*action)(lh_value), lh_value arg )
 {
+  resumecont* rcont;
+  lh_value res;
   // set the handler entry point 
   #ifndef NDEBUG
   const lh_handlerdef* hdef = h->hdef;
@@ -1036,13 +1042,12 @@ static __noinline lh_value handle_with(hstack* hs, handler* h, lh_value(*action)
     assert(hdef == h->hdef);
     assert(base == h->stackbase);
     #endif
-    lh_value res = h->arg;
-    *rcont = hstack_pop_cont(hs);
-    return res;
+    res = h->arg;
+    rcont = hstack_pop_cont(hs);
   }
   else {
     // we set up the handler, now call the action 
-    lh_value res = action(arg);
+    res = action(arg);
     assert(hs==&__hstack);
     assert(hs->count > 0);
     h = hstack_top(hs);  // re-load our handler since the handler stack could have been reallocated
@@ -1053,37 +1058,17 @@ static __noinline lh_value handle_with(hstack* hs, handler* h, lh_value(*action)
     // pop our handler
     lh_resultfun* resfun = h->hdef->resultfun;
     lh_value local = h->local;
-    *rcont = hstack_pop_cont(hs);
+    rcont = hstack_pop_cont(hs);
     // and invoke the return wrapper
     if (resfun != NULL) {
       // and return with the result wrapper
-      return resfun(local, res);
+      res = resfun(local, res);
     }
-    else return res;
   }
-}
-
-// `handle_upto` installs a handler on the stack with a given stack `base`. 
-// __noopt is necessary just for gcc 5.4.0 on win32 which generates wrong code before jumpto_cont
-static __noinline __noopt lh_value handle_upto(
-  hstack* hs, void* base, const lh_handlerdef* def,
-  lh_value local, lh_value(*action)(lh_value), lh_value arg)
-{
-  // allocate handler frame on the stack so it will be part of a captured continuation
-  handler* h = hstack_push(hs);
-  h->stackbase  = base;
-  h->effect     = def->effect; // cache in handler for faster find
-  h->hdef       = def;
-  h->rcont      = NULL;
-  h->local      = local;
-  h->arg        = lh_value_null;
-  h->toskip     = 0;
-  resumecont* rcont = NULL;
-  lh_value res = handle_with(hs, h, action, arg, &rcont );
   // and finally continue with our return continuation if it is set
   if (rcont != NULL) {
     #ifndef NDEBUG
-    //hs = &__hstack;
+    hs = &__hstack;
     assert(hs==&__hstack);
     assert(rcont->rkind == ResumeScoped || rcont->rkind == ResumeFragment);
     if (rcont->rkind==ResumeScoped) {
@@ -1098,13 +1083,30 @@ static __noinline __noopt lh_value handle_upto(
       assert(fh->rcont == rcont);
     }
     #endif
-    jumpto_cont(rcont, res); 
+    jumpto_cont(rcont, res);
     assert(false); // jump should never return
   }
   else {
     // and otherwise return normally
     return res;
   }
+}
+
+// `handle_upto` installs a handler on the stack with a given stack `base`. 
+static __noinline lh_value handle_upto(
+  hstack* hs, void* base, const lh_handlerdef* def,
+  lh_value local, lh_value(*action)(lh_value), lh_value arg)
+{
+  // allocate handler frame on the stack so it will be part of a captured continuation
+  handler* h = hstack_push(hs);
+  h->stackbase  = base;
+  h->effect     = def->effect; // cache in handler for faster find
+  h->hdef       = def;
+  h->rcont      = NULL;
+  h->local      = local;
+  h->arg        = lh_value_null;
+  h->toskip     = 0;
+  return handle_with(hs, h, action, arg );
 }
 
 
@@ -1135,7 +1137,11 @@ static void __noreturn yield_to_handler(hstack* hs, handler* h, lh_value res) {
 
 // clang v3.8 on x86_64 needs __noopt here: when using -O3 or -Ofast it will generate wrong code (-O2 is fine)
 // (probably due to -argpromotion pushing the value of sc instead of the pointer in the function body)
-static __noinline __returnstwice __noopt lh_value yieldop_scoped(scopedcont* sc, lh_opfun* opfun, lh_value local, lh_value arg)
+static __noinline __returnstwice 
+#if defined(__clang__) && defined(LH_ABI_x86_64)  // clang v3.8 with -O3 or -Ofast
+__noopt
+#endif
+lh_value yieldop_scoped(scopedcont* sc, lh_opfun* opfun, lh_value local, lh_value arg)
 {
   if (_lh_setjmp(sc->entry) != 0) {
     // operation resume'd, sc->arg & sc->resumed is filled in
