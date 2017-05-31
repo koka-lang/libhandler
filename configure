@@ -242,7 +242,7 @@ case $? in
      echo "A C99 compliant compiler might be required to build (due to line-comments etc).";;
   *) echo "Unable to compile the test program."
      echo "Make sure the C compiler '$cc' is properly installed."
-     sh ./runtest c99.c
+     env verbose="yes" sh ./runtest c99.c
      exit 2;;
 esac
 
