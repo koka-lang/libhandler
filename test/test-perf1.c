@@ -63,7 +63,7 @@ static int counter_eff(int n) {
 
 
 void test_perf1() {
-  int n = 100000;
+  int n = 10000000;
   clock_t start = clock();
   int sum1 = counter_native(n);
   clock_t end = clock();
