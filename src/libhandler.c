@@ -523,7 +523,7 @@ static void handler_release(ref handler* h) {
 -----------------------------------------------------------------*/
 
 // Handler stacks increase exponentially in size up to a limit, then increase linearly
-#define HMINSIZE     1
+#define HMINSIZE     32
 #define HMAXEXPAND 2048
 
 static count_t hstack_goodsize(count_t needed) {
@@ -825,7 +825,7 @@ static __noinline __noreturn void jumpto(
 }
 
 // jump to a continuation a result 
-static __noreturn void jumpto_cont( resumecont* c,  lh_value res )
+static __noinline __noreturn void jumpto_cont( resumecont* c,  lh_value res )
 {
   c->arg = res; // set the argument in the cont slot  
   jumpto(&c->context.cstack, &c->context.hstack, &c->context.entry, false);
@@ -1015,10 +1015,9 @@ static __noinline resumecont* capture_continuation(hstack* hs, scopedcont* sc)
 -----------------------------------------------------------------*/
 
 // Start a handler 
-static __noinline lh_value handle_with(hstack* hs, handler* h, lh_value(*action)(lh_value), lh_value arg)
+static __noinline lh_value handle_with(hstack* hs, handler* h, lh_value(*action)(lh_value), lh_value arg, 
+                                        out resumecont** rcont)
 {
-  lh_value res = lh_value_null;
-  resumecont* rcont = NULL;
   // set the handler entry point 
   #ifndef NDEBUG
   const lh_handlerdef* hdef = h->hdef;
@@ -1027,6 +1026,7 @@ static __noinline lh_value handle_with(hstack* hs, handler* h, lh_value(*action)
   if (_lh_setjmp(h->entry) != 0) {
     // needed as some compilers optimize wrongly (e.g. gcc v5.4.0 x86_64 with -O2 on msys2)
     hs = &__hstack;      
+    assert(hs->count > 0);
     // we yielded back to the handler; the `handler->arg` is filled in.
     // note: if we return trough non-scoped resumes the handler stack may be
     // different and our handler will point to a random handler in that stack!
@@ -1036,12 +1036,14 @@ static __noinline lh_value handle_with(hstack* hs, handler* h, lh_value(*action)
     assert(hdef == h->hdef);
     assert(base == h->stackbase);
     #endif
-    res = h->arg;
-    rcont = hstack_pop_cont(hs);
+    lh_value res = h->arg;
+    *rcont = hstack_pop_cont(hs);
+    return res;
   }
   else {
     // we set up the handler, now call the action 
-    res = action(arg);
+    lh_value res = action(arg);
+    assert(hs==&__hstack);
     assert(hs->count > 0);
     h = hstack_top(hs);  // re-load our handler since the handler stack could have been reallocated
     #ifndef NDEBUG
@@ -1051,36 +1053,19 @@ static __noinline lh_value handle_with(hstack* hs, handler* h, lh_value(*action)
     // pop our handler
     lh_resultfun* resfun = h->hdef->resultfun;
     lh_value local = h->local;
-    rcont = hstack_pop_cont(hs);
+    *rcont = hstack_pop_cont(hs);
     // and invoke the return wrapper
     if (resfun != NULL) {
       // and return with the result wrapper
-      res = resfun(local, res);
+      return resfun(local, res);
     }
+    else return res;
   }
-  // and finally continue with our return continuation if it is set
-  if (rcont != NULL) {
-    #ifndef NDEBUG
-    assert(rcont->rkind == ResumeScoped || rcont->rkind == ResumeFragment);
-    assert(base == rcont->context.cstack.base);
-    void* top = _get_stacktop();
-    assert(!cstack_isbelow(&rcont->context.cstack, top));
-    if (rcont->rkind == ResumeFragment) {
-      assert(hs->count > 0);
-      handler* fh = hstack_top(hs);
-      assert(fh->effect == LH_EFFECT(__fragment));
-      assert(fh->rcont == rcont);
-    }
-    #endif
-    jumpto_cont(rcont, res); 
-    assert(false); // jump should never return
-  }
-  // and otherwise return normally
-  return res;
 }
 
 // `handle_upto` installs a handler on the stack with a given stack `base`. 
-static __noinline lh_value handle_upto(
+// __noopt is necessary just for gcc 5.4.0 on win32 which generates wrong code before jumpto_cont
+static __noinline __noopt lh_value handle_upto(
   hstack* hs, void* base, const lh_handlerdef* def,
   lh_value local, lh_value(*action)(lh_value), lh_value arg)
 {
@@ -1093,7 +1078,33 @@ static __noinline lh_value handle_upto(
   h->local      = local;
   h->arg        = lh_value_null;
   h->toskip     = 0;
-  return handle_with(hs, h, action, arg);
+  resumecont* rcont = NULL;
+  lh_value res = handle_with(hs, h, action, arg, &rcont );
+  // and finally continue with our return continuation if it is set
+  if (rcont != NULL) {
+    #ifndef NDEBUG
+    //hs = &__hstack;
+    assert(hs==&__hstack);
+    assert(rcont->rkind == ResumeScoped || rcont->rkind == ResumeFragment);
+    if (rcont->rkind==ResumeScoped) {
+      assert(base == rcont->context.cstack.base);
+      void* top = _get_stacktop();
+      assert(!cstack_isbelow(&rcont->context.cstack, top));
+    }
+    else if (rcont->rkind == ResumeFragment) {
+      assert(hs->count > 0);
+      handler* fh = hstack_top(hs);
+      assert(fh->effect == LH_EFFECT(__fragment));
+      assert(fh->rcont == rcont);
+    }
+    #endif
+    jumpto_cont(rcont, res); 
+    assert(false); // jump should never return
+  }
+  else {
+    // and otherwise return normally
+    return res;
+  }
 }
 
 
