@@ -74,7 +74,7 @@ typedef const char* const * lh_effect;
 
 typedef const struct lh_optag_ {
   lh_effect effect;
-  size_t    opidx;
+  ptrdiff_t opidx;
 } * lh_optag;
 
 
