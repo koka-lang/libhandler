@@ -58,15 +58,11 @@ typedef const char* lh_string;
 -----------------------------------------------------------------*/
 
 // Continuations are abstract and can only be `resume`d.
-struct _lh_resumecont;
-struct _lh_scopedcont;
-
-// A "scoped" continuation can only resume within the scope of an operation (`lh_scoped_resume` and `lh_tail_resume`)
-typedef struct _lh_scopedcont* lh_scopedcont;
+struct _lh_resume;
 
 // A "resume" continuation is first-class, stored in data structures etc, and can survive
 // the scope of an operation function. It can be resumed through `lh_resume` or `lh_release_resume`.
-typedef struct _lh_resumecont* lh_resumecont;
+typedef struct _lh_resume* lh_resume;
 
 // Operations are identified by a constant string pointer.
 // They are compared by address though so they must be declared as static constants (using `LH_NEWOPTAG`)
@@ -101,7 +97,7 @@ typedef void* lh_reallocfun(void* p, size_t size);
 // The `optag` of the yielded operation is also passed which is needed
 // when the operation was registered using `lh_op_any` which matches any
 // yielded operation.
-typedef lh_value(lh_opfun)(lh_scopedcont sc, lh_value local, lh_value arg);
+typedef lh_value(lh_opfun)(lh_resume r, lh_value local, lh_value arg);
 
 
 // Operation kinds. When defining the operations that a handler can handle, 
@@ -156,30 +152,26 @@ lh_value lh_yield(lh_optag optag, lh_value arg);
 -----------------------------------------------------------------*/
 
 // Resume a continuation. Use this when not resuming in a tail position.
-lh_value lh_scoped_resume(lh_scopedcont sc, lh_value local, lh_value res);
+lh_value lh_scoped_resume(lh_resume r, lh_value local, lh_value res);
 
 // Final resumption of a scoped continuation. 
 // Only call `lh_tail_resume` as the last action of an operation function, 
 // i.e. it must occur in tail position of an operation function.
-lh_value lh_tail_resume(lh_scopedcont rc, lh_value local, lh_value res);
+lh_value lh_tail_resume(lh_resume r, lh_value local, lh_value res);
 
 
 /*-----------------------------------------------------------------
   Resuming first-class continuations
 -----------------------------------------------------------------*/
-
-// Capture a first-class continuation.
-lh_resumecont lh_capture(lh_scopedcont sc);
-
 // Explicitly release a first-class continuation without resuming.
-void          lh_release(lh_resumecont rc);
+void          lh_release(lh_resume r);
 
 // Resume a first-class contiunation with a specified result.
-lh_value      lh_resume(lh_resumecont rc, lh_value res);
+lh_value      lh_do_resume(lh_resume r, lh_value local, lh_value res);
 
 // Resume a first-class contiunation with a specified result. 
 // Also releases the continuation and it cannot be resumed again!
-lh_value      lh_release_resume(lh_resumecont rc, lh_value res);
+lh_value      lh_release_resume(lh_resume r, lh_value local, lh_value res);
 
 
 /*-----------------------------------------------------------------
@@ -244,8 +236,6 @@ const char* lh_optag_name(lh_optag optag);
 // Get the name of an effect tag. 
 const char* lh_effect_name(lh_effect effect);
 
-// Get the optag of the current operation; used when registering with `lh_op_any`.
-lh_optag lh_optag_current(lh_scopedcont sc);
 
 /*-----------------------------------------------------------------
   Operation definition helpers

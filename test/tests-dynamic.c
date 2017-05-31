@@ -24,7 +24,7 @@ static lh_value _showA_result(lh_value local, lh_value arg) {
   return arg;
 }
 
-static lh_value _showA_showA(lh_scopedcont sc, lh_value local, lh_value arg) {
+static lh_value _showA_showA(lh_resume sc, lh_value local, lh_value arg) {
   unreferenced(local);
   bool retcont = lh_value_bool(arg);
   static int count = 0;
@@ -33,10 +33,11 @@ static lh_value _showA_showA(lh_scopedcont sc, lh_value local, lh_value arg) {
   trace_printf("exit A: %s\n", (retcont ? "true" : "false") );
   // just return rc immediately (if asked for) and exit the handler
   if (retcont) {
-    return lh_value_ptr(lh_capture(sc));
+    return lh_value_ptr(sc); // capture: lh_capture(sc));
   }
   else {
     //lh_never_resume(rc);
+    lh_release(sc);
     return lh_value_int(42);
   }  
 }
@@ -60,7 +61,7 @@ static lh_value _showB_result(lh_value local, lh_value arg) {
   return arg;
 }
 
-static lh_value _showB_showB(lh_scopedcont sc, lh_value local, lh_value arg) {
+static lh_value _showB_showB(lh_resume sc, lh_value local, lh_value arg) {
   unreferenced(local);
   unreferenced(arg);
   static int count = 0;
@@ -88,7 +89,7 @@ static lh_value _showBX_result(lh_value local, lh_value arg) {
   return arg;
 }
 
-static lh_value _showBX_showB(lh_scopedcont sc, lh_value local, lh_value arg) {
+static lh_value _showBX_showB(lh_resume sc, lh_value local, lh_value arg) {
   unreferenced(local);
   unreferenced(arg);
   static int count = 0;
@@ -108,7 +109,7 @@ static lh_value showBX_handle(lh_value(*action)(lh_value), lh_value arg) {
 
 
 
-static lh_value _showBY_showB(lh_scopedcont sc, lh_value local, lh_value arg) {
+static lh_value _showBY_showB(lh_resume sc, lh_value local, lh_value arg) {
   unreferenced(local);
   unreferenced(arg);
   unreferenced(sc);
@@ -120,7 +121,7 @@ static lh_value _showBY_showB(lh_scopedcont sc, lh_value local, lh_value arg) {
 }
 
 static const lh_operation _showBY_ops[] = {
-  { LH_OP_TAIL, LH_OPTAG(B, showB), &_showBY_showB },
+  { LH_OP_NORESUME, LH_OPTAG(B, showB), &_showBY_showB },
   { LH_OP_NULL, lh_op_null, NULL }
 };
 static const lh_handlerdef showBY_def = { LH_EFFECT(B), NULL, NULL, NULL, _showBY_ops };
@@ -154,7 +155,7 @@ static lh_value showA_handle_test2(lh_value arg) {
 
 static lh_value test_resume(lh_value rc) {
   trace_printf("resuming..\n");
-  return lh_release_resume(lh_ptr_value(rc), lh_value_null);
+  return lh_release_resume(lh_ptr_value(rc), lh_value_null, lh_value_null);
 }
 
 // test dynamic capture & handling
@@ -178,7 +179,7 @@ static lh_value test_dyn2() {
 static lh_value test_resume1(lh_value rc) {
   char* p = alloca(0x1000);
   p[0] = 0;
-  return lh_release_resume(lh_ptr_value(rc), lh_value_null);  
+  return lh_release_resume(lh_ptr_value(rc), lh_value_null, lh_value_null);  
 }
 
 static lh_value test_dyn3() {

@@ -16,7 +16,7 @@ int __cdecl main(void) {
   tests_state();
   tests_amb();
   tests_dynamic();
-  tests_raise();
+  //tests_raise();
   tests_general();
 
   tests_done();

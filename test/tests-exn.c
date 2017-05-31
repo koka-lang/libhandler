@@ -33,7 +33,7 @@ lh_value id_raise(lh_value arg) {
   Catch handler
 -----------------------------------------------------------------*/
 
-static lh_value _exn_raise(lh_scopedcont sc, lh_value local, lh_value arg) {
+static lh_value _exn_raise(lh_resume sc, lh_value local, lh_value arg) {
   unreferenced(sc);
   unreferenced(local);
   unreferenced(arg);

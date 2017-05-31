@@ -42,13 +42,13 @@ static lh_value _state_result(lh_value local, lh_value arg) {
   return arg;
 }
 
-static lh_value _state_get(lh_scopedcont rc, lh_value local, lh_value arg) {
+static lh_value _state_get(lh_resume rc, lh_value local, lh_value arg) {
   unreferenced(arg);
   //trace_printf("state get: %i\n", *((int*)local));
   return lh_tail_resume(rc, local, local);
 }
 
-static lh_value _state_put(lh_scopedcont rc, lh_value local, lh_value arg) {
+static lh_value _state_put(lh_resume rc, lh_value local, lh_value arg) {
   //trace_printf("state put: %i, %li\n", *((int*)local), (long)(arg));
   return lh_tail_resume(rc, arg, local);
 }

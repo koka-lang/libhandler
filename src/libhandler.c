@@ -169,41 +169,42 @@ typedef struct _cstack {
   byte*              frames;      // The captured stack data (allocated in the heap)
 } cstack;
 
-// A _context_ consists of a delimited execution context: a part of the stack and the current registers.
-typedef struct _context {
+
+typedef struct _fragment {
+  lh_jmp_buf         entry;
+  cstack             cstack;
+  count_t            refcount;
+  volatile lh_value  arg;
+} fragment;
+
+typedef struct _lh_resume {
   lh_jmp_buf         entry;        // jump point for resumption
   cstack             cstack;       // captured cstack
   hstack             hstack;       // captured hstack  always `size == count`
-} context;
+  count_t            refcount;
+  volatile lh_value  arg;
+} resume;
 
 
-// A "scoped" continuation can only be resume'd inside the scope of an operation function (through
-// `lh_scoped_resume` or `lh_tail_resume`. 
-typedef struct _lh_scopedcont {
-  lh_jmp_buf         entry;        // jump point back to the yield (only if `opkind >= LH_OP_SCOPED`)
-  volatile lh_value  arg;          // if jumped back, this is the result value
-  volatile bool      resumed;      // if jumped back with a resume, this will be set to `true`
-  hstack*            hs;           // cached pointer to __hstack (optimization)
-  count_t            hidx;         // the current handler index for this operation (cannot use `handler*` as the handler stack may reallocate)
-  lh_optag           optag;        // the operation tag of the current operation (used when registered as `lh_op_any`)
-  lh_opkind          opkind;       // the kind of the operation
-} scopedcont;
+typedef struct _skiphandler {
+  count_t   toskip;       // when looking for an operation handler, skip the next `toskip` frames.
+} skiphandler;
 
-enum resume_kind {
-  ResumeGeneral,
-  ResumeScoped,
-  ResumeFragment
-};
+typedef struct _fragmenthandler {
+  fragment*            fragment;
+  lh_jmp_buf           entry;
+  volatile lh_value    arg;
+} fragmenthandler;
 
-// A resumable continuation 
-// used for both first-class `resume` functions but also for fragment continuations
-// for a fragment, the `context.hstack.count` is always 0.
-typedef struct _lh_resumecont {
-  context            context;      // execution context
-  volatile lh_value  arg;          // when jumped to, the argument is passed here
-  volatile count_t   refcount;
-  enum resume_kind   rkind;
-} resumecont;
+typedef struct _ophandler {
+  const lh_handlerdef* hdef;         // operation definitions
+  lh_jmp_buf           entry;        // used to jump back to a handler if an operation function returns without a tail-resume
+  volatile lh_value    arg;          // if jumped back to, the result argument is passed here
+  resume*              arg_resume;
+  lh_opfun*            arg_opfun;
+  void*                stackbase;
+  lh_value             local;
+} ophandler;
 
 
 // A handler; there are three kinds used:
@@ -216,15 +217,16 @@ typedef struct _lh_resumecont {
 //    current stack which is saved in its own "fragment" continuation. In this case, `hdef==NULL`
 //    and `rcont != NULL` where `rcont` is set to the fragment continuation.
 typedef struct _handler {
-  lh_jmp_buf           entry;        // used to jump back to a handler if an operation function returns without a tail-resume
-  volatile lh_value    arg;          // if jumped back to, the result argument is passed here
-  resumecont* volatile rcont;        // when returning into a handler, either return normally or jump to its resume-continuation
-  lh_value             local;        // local state
   lh_effect            effect;       // effect handled: cached from hdef
-  const lh_handlerdef* hdef;         // operation definitions
-  void*                stackbase;    // the absolute address of the lowest frame (just below the handler call) on the stack
-  count_t              toskip;       // when looking for an operation handler, skip the next `toskip` frames.
+  union {
+    skiphandler        skip;
+    fragmenthandler    frag;
+    ophandler          op;
+  };
 } handler;
+
+LH_DEFINE_EFFECT0(__skip)
+LH_DEFINE_EFFECT0(__fragment)
 
 
 // thread local `__hstack` is the 'shadow' handler stack
@@ -336,8 +338,6 @@ static __noinline __noopt void _infer_stackdir() {
 /*-----------------------------------------------------------------
   Predefined operators
 -----------------------------------------------------------------*/
-LH_DEFINE_EFFECT0(__skip)
-LH_DEFINE_EFFECT0(__fragment)
 
 const char* lh_effect_name(lh_effect effect) {
   return (effect== NULL ? "<null>" : effect[0]);
@@ -467,37 +467,36 @@ static bool cstack_isbelow(const ref cstack* cs, void* top) {
 static void hstack_free(ref hstack* hs);
 
 // release a continuation; returns `true` if it was released
-static __noinline void rcont_free_(resumecont* c) {
+static __noinline void fragment_free_(fragment* c) {
   #ifdef _STATS
   stats.rcont_released++;
-  stats.rcont_released_size += (long)c->context.cstack.size + (c->context.hstack.count * sizeof(handler));
+  stats.rcont_released_size += (long)c->cstack.size;
   #endif
-  hstack_free(&c->context.hstack);
-  cstack_free(&c->context.cstack);
+  cstack_free(&c->cstack);
   c->refcount = -1; // for debugging
   checked_free(c);
 }
 
-static void rcont_release_(resumecont* c) {
+static void fragment_release_(fragment* c) {
   assert(c->refcount > 0);
   c->refcount--;
-  if (c->refcount == 0) rcont_free_(c);
+  if (c->refcount == 0) fragment_free_(c);
 }
 
-static void rcont_release(resumecont* c)
+static void fragment_release(fragment* c)
 {
-  if (c!=NULL) rcont_release_(c);
+  if (c!=NULL) fragment_release_(c);
 }
 
 
 // Release a resume continuation and set to `NULL`
-static void rcont_releaseat(resumecont* volatile * pc) {
-  rcont_release(*pc);
+static void fragment_releaseat(fragment* volatile * pc) {
+  fragment_release(*pc);
   *pc = NULL;
 }
 
 // Copy a reference to a resume continuation, increasing its reference count.
-static resumecont* rcont_copyref(resumecont* c) {
+static fragment* fragment_acquire(fragment* c) {
   if (c != NULL) {
     assert(c->refcount > 0);
     c->refcount++;
@@ -505,18 +504,64 @@ static resumecont* rcont_copyref(resumecont* c) {
   return c;
 }
 
+
+// release a continuation; returns `true` if it was released
+static __noinline void resume_free_(resume* r) {
+  #ifdef _STATS
+  stats.rcont_released++;
+  stats.rcont_released_size += (long)r->cstack.size + (long)r->hstack.size * sizeof(handler);
+  #endif
+  cstack_free(&r->cstack);
+  hstack_free(&r->hstack);
+  r->refcount = -1; // for debugging
+  checked_free(r);
+}
+
+static void resume_release_(resume* r) {
+  assert(r->refcount > 0);
+  r->refcount--;
+  if (r->refcount == 0) resume_free_(r);
+}
+
+static void resume_release(resume* r)
+{
+  if (r != NULL) resume_release_(r);
+}
+
+static resume* resume_acquire(resume* r) {
+  if (r != NULL) {
+    assert(r->refcount > 0);
+    r->refcount++;
+  }
+  return r;
+}
+
+
 /*-----------------------------------------------------------------
   Handler
 -----------------------------------------------------------------*/
 
+static bool is_skiphandler(const handler* h) {
+  return (h->effect == LH_EFFECT(__skip));
+}
+
+static bool is_fragmenthandler(const handler* h) {
+  return (h->effect == LH_EFFECT(__fragment));
+}
+
 // Increase the reference count of a handler's `rcont`.
-static void handler_acquire(ref handler* h) {
-  h->rcont = rcont_copyref(h->rcont);
+static handler* handler_acquire(handler* h) {
+  if (is_fragmenthandler(h)) {
+    fragment_acquire(h->frag.fragment);
+  }
+  return h;
 }
 
 // Decrease the reference count of a handler's `rcont`.
 static void handler_release(ref handler* h) {
-  rcont_release(h->rcont);
+  if (is_fragmenthandler(h)) {
+    fragment_releaseat(&h->frag.fragment);
+  }
 }
 
 /*-----------------------------------------------------------------
@@ -577,17 +622,9 @@ static void hstack_pop(ref hstack* hs) {
   hs->count--;
 }
 
-// Pop a handler without releasing its resume continuation and return it.
-static resumecont* hstack_pop_cont(ref hstack* hs) {
-  assert(hs->count > 0);
-  // handler_release(&hs->hframes[hs->count - 1]);
-  hs->count--;
-  return hs->hframes[hs->count].rcont;
-}
-
 // Pop a skip frame
 static void hstack_pop_skip(ref hstack* hs) {
-  assert(hs->count > 0 && hs->hframes[hs->count-1].effect == LH_EFFECT(__skip) && hs->hframes[hs->count - 1].rcont == NULL );
+  assert(hs->count > 0 && is_skiphandler(&hs->hframes[hs->count-1]));
   hs->count--;
 }
 
@@ -622,7 +659,7 @@ static void hstack_append_copyfrom(ref hstack* hs, ref hstack* tocopy, count_t i
 }
 
 // Find an operation that handles `optag` in the handler stack.
-static count_t hstack_find(ref hstack* hs, lh_optag optag, out lh_opkind* opkind, out lh_opfun** opfun, out lh_value* local, out count_t* skipped) {
+static handler* hstack_find(ref hstack* hs, lh_optag optag, out lh_opkind* opkind, out lh_opfun** opfun, out lh_value* local, out count_t* skipped) {
   handler* hframes = hs->hframes;
   count_t i = hs->count;
   while (i > 0) {
@@ -630,20 +667,22 @@ static count_t hstack_find(ref hstack* hs, lh_optag optag, out lh_opkind* opkind
     handler* h = &hframes[i];
     if (h->effect == optag->effect) {
       *skipped = hs->count - i - 1;
-      assert(h->hdef != NULL);
-      const lh_operation* op = &h->hdef->operations[optag->opidx];
+      assert(h->op.hdef != NULL);
+      const lh_operation* op = &h->op.hdef->operations[optag->opidx];
       assert(op->optag == optag); // can fail if operations are defined in a different order than declared
       if (op->opfun != NULL) {
         *opfun = op->opfun;
         *opkind = op->opkind;
-        *local = h->local;
-        return i;
+        *local = h->op.local;
+        return h;
       }
     }
-    i -= h->toskip; // skip `topskip` handler frames if needed
+    else if (is_skiphandler(h)) {
+      i -= h->skip.toskip; // skip `topskip` handler frames if needed
+    }
   }
   fatal(ENOSYS,"no handler for operation found: '%s'", lh_optag_name(optag));
-  return (-1);
+  return NULL;
 }
 
 // Return difference in bytes between two `void` pointers.
@@ -723,12 +762,10 @@ static void hstack_pop_upto(ref hstack* hs, ref handler* h, out cstack* cs)
   count_t cnt = hs->count - hidx - 1;
   for (count_t i = 0; i < cnt; i++) {
     handler* hf = &hs->hframes[hs->count - 1];
-    if (hf->effect == LH_EFFECT(__fragment)) { // (hf->hdef == NULL && hf->rcont != NULL && cs != NULL) {
+    if (is_fragmenthandler(hf)) { // (hf->hdef == NULL && hf->rcont != NULL && cs != NULL) {
       // special "fragment" handler; remember to restore the stack
-      assert(hf->rcont != NULL);
-      assert(hf->rcont->context.hstack.count == 0);
-      assert(hf->rcont->rkind == ResumeFragment);
-      cstack* hcs = &hf->rcont->context.cstack;
+      assert(hf->frag.fragment != NULL);
+      cstack* hcs = &hf->frag.fragment->cstack;
       if (hcs != NULL) {
         cstack_extendfrom(cs, hcs);
       }
@@ -826,22 +863,29 @@ static __noinline __noreturn void jumpto(
 }
 
 // jump to a continuation a result 
-static __noinline __noreturn void jumpto_cont( resumecont* c,  lh_value res )
+static __noinline __noreturn void jumpto_resume( resume* r, lh_value local, lh_value res )
 {
-  c->arg = res; // set the argument in the cont slot  
-  jumpto(&c->context.cstack, &c->context.hstack, &c->context.entry, false);
+  r->hstack.hframes[0].op.local = local; // write directly so it gets restored with the new local
+  r->arg = res; // set the argument in the cont slot  
+  jumpto(&r->cstack, &r->hstack, &r->entry, false);
+}
+
+// jump to a continuation a result 
+static __noinline __noreturn void jumpto_fragment(fragment* f, lh_value res)
+{
+  f->arg = res; // set the argument in the cont slot  
+  jumpto(&f->cstack, NULL, &f->entry, false);
 }
 
 
 
 /*-----------------------------------------------------------------
-  Internal: capture_stack, capture_yield_jump, capture_resume_jump
+  Capture stack
 -----------------------------------------------------------------*/
 
-// Copy part of the stack into a context.
-static void capture_stack(context* c, void* base, void* top)
+// Copy part of the C stack into a context.
+static void capture_cstack(cstack* cs, void* base, void* top)
 {
-  cstack* cs = &c->cstack;
   cs->base = base;
   if (stackdown ? top >= base : top <= base) {
     // delimiter below or no delimiter; don't capture the stack
@@ -852,94 +896,65 @@ static void capture_stack(context* c, void* base, void* top)
     // delimiter above us: copy the stack 
     ptrdiff_t size = (stackdown ? ptrdiff(base,top) : ptrdiff(top,base));
     assert(size > 0);
-    c->cstack.size = size;
-    c->cstack.frames = checked_malloc(size);
+    cs->size = size;
+    cs->frames = checked_malloc(size);
     memcpy(cs->frames, cstack_sp(cs), size);
   }
 }
 
 // Capture part of a handler stack.
-static void capture_handler_stack(hstack* hs, context* c, handler* h ) {
+static void capture_hstack(hstack* hs, hstack* to, handler* h ) {
   count_t hidx = (h - hs->hframes);
   assert(hidx < hs->count);
   assert(&hs->hframes[hidx] == h);
-  hstack_init(&c->hstack);
-  hstack_append_copyfrom(&c->hstack, hs, hidx);  
+  hstack_init(to);
+  hstack_append_copyfrom(to, hs, hidx);  
 }
 
-/* Used to resume a scoped continuation; 
-   First capture our own continuation (right after the resume) and then jump to the
-   scoped continuation (to resume with `resumearg` as the result)
-*/
-static __noinline lh_value capture_scoped_resume_jump(
-  hstack* hs, scopedcont* sc, lh_value local, lh_value resumearg)
+/*-----------------------------------------------------------------
+    yield
+-----------------------------------------------------------------*/
+
+// Return to a handler with result `res` by unwinding the handler stack
+static void __noreturn yield_to_handler(hstack* hs, handler* h,
+  resume* resume, lh_opfun* opfun, lh_value oparg)
 {
-  // initialize continuation
-  resumecont* c = checked_malloc(sizeof(resumecont));
-  c->rkind = ResumeScoped;
-  c->refcount = 1;
-  c->arg = lh_value_null;
-  #ifdef _STATS
-  stats.rcont_captured_scoped++;
-  #endif    
-  // and set our jump point
-  if (_lh_setjmp(c->context.entry) != 0) {
-    // longjmp back to the capture
-    lh_value arg = c->arg; // get result
-    #ifdef _STATS
-    stats.rcont_resumed_scoped++;
-    #endif
-    // release our context
-	  rcont_release(c);
-    // return the result of the resume call 
-    sc->resumed = false;
-    return arg;
-  }
-  else {
-    // set the new local value
-    handler* h = hstack_at(hs, sc->hidx);
-    h->local = local;
-    // we set our jump point; now capture the stack upto the handler
-    void* top = _get_stacktop();
-    capture_stack(&c->context, h->stackbase, top);
-    #ifdef _STATS
-    if (c->context.cstack.frames == NULL) stats.rcont_captured_empty++;
-    stats.rcont_captured_size += (long)c->context.cstack.size;
-    #endif
-    // capture hstack
-    capture_handler_stack(hs, &c->context, h);
-    // now set the captured continuation as the continuation of our handler
-    rcont_release(h->rcont);  // release is ok since we just copied it in our captured hstack
-    h->rcont = c;
-    // and jump up to the scoped entry with resume arg
-    sc->arg = resumearg;
-    _lh_longjmp(sc->entry, 1);
-  }
+  assert(!(is_fragmenthandler(h) || is_skiphandler(h)));
+  cstack cs;
+  hstack_pop_upto(hs, h, &cs);
+  h->op.arg = oparg;
+  h->op.arg_opfun = opfun;
+  h->op.arg_resume = resume;
+  jumpto(&cs, NULL, &h->op.entry, true);
 }
+
+/*-----------------------------------------------------------------
+  Captured resume & yield  
+-----------------------------------------------------------------*/
 
 // Used to resume a first-class continuation;
 // Capture our context and push a "fragment" handler to save back our stack after
 // returning.
-static __noinline lh_value capture_resume_jump(hstack* hs, resumecont* rc, lh_value resumearg) {
+static __noinline lh_value capture_resume_call(hstack* hs, resume* r, lh_value resumelocal, lh_value resumearg) {
   // initialize continuation
-  resumecont* c = checked_malloc(sizeof(resumecont));
-  c->rkind = ResumeFragment;
-  c->refcount = 1;
-  c->arg = lh_value_null;
-  hstack_init(&c->context.hstack); // no need to capture handlers
+  fragment* f = checked_malloc(sizeof(fragment));
+  f->refcount = 1;
+  f->arg = lh_value_null; 
   #ifdef _STATS
   stats.rcont_captured_fragment++;
   #endif    
   // and set our jump point
-  if (_lh_setjmp(c->context.entry) != 0) {
+  if (_lh_setjmp(f->entry) != 0) {
     // longjmp back to our resume
-    lh_value arg = c->arg; // get result
+    lh_value arg = f->arg; // get result
     #ifdef _STATS
     stats.rcont_resumed_fragment++;
     #endif
-    // release our context
-    rcont_release(c);
     // pop our special "fragment" frame
+    assert(hs == &__hstack);
+    assert(hs->count > 0);
+    assert(is_fragmenthandler(hstack_top(hs)));
+    assert(hstack_top(hs)->frag.fragment == f);
     hstack_pop(hs);
     // return the result of the resume call     
     return arg;
@@ -947,69 +962,61 @@ static __noinline lh_value capture_resume_jump(hstack* hs, resumecont* rc, lh_va
   else {
     // we set our jump point; now capture the stack upto the stack base of the continuation 
     void* top = _get_stacktop();
-    capture_stack(&c->context, rc->context.cstack.base, top);
+    capture_cstack(&f->cstack, r->cstack.base, top);
     #ifdef _STATS
-    if (c->context.cstack.frames == NULL) stats.rcont_captured_empty++;
-    stats.rcont_captured_size += (long)c->context.cstack.size;
+    if (f->cstack.frames == NULL) stats.rcont_captured_empty++;
+    stats.rcont_captured_size += (long)f->cstack.size;
     #endif
-    // now set the captured continuation as the continuation of the top handler of the continuation
-    handler* h = &rc->context.hstack.hframes[0];
-    // rcont_releaseat(&h->rcont);  
-    assert(h->rcont == NULL); // resumecont should not have a continuation
-    h->rcont = c;
     // push a special "fragment" frame to remember to restore the stack when yielding to a handler across non-scoped resumes
-    h = hstack_push(hs);
+    handler* h = hstack_push(hs);
     h->effect = LH_EFFECT(__fragment);
-    h->hdef = NULL;
-    h->toskip = 0;
-    h->rcont = rcont_copyref(c);
+    h->frag.fragment = f;
     // and now jump to the scoped entry with resume arg
-    jumpto_cont(rc, resumearg);
+    jumpto_resume(r, resumelocal, resumearg);
   }
 }
 
 // Capture a first-class continuation from a scoped continuation.
-static __noinline resumecont* capture_continuation(hstack* hs, scopedcont* sc)
+static __noinline lh_value capture_resume_yield(hstack* hs, handler* h, lh_opfun* opfun, lh_value oparg )
 {
-  assert(sc->opkind==LH_OP_GENERAL);  
   // initialize continuation
-  resumecont* c = checked_malloc(sizeof(resumecont));
-  c->rkind = ResumeGeneral;
-  c->refcount = 1;
-  c->arg = lh_value_null;
+  resume* r = checked_malloc(sizeof(resume));
+  r->refcount = 1;
+  r->arg = lh_value_null;
   #ifdef _STATS
   stats.rcont_captured_resume++;
   #endif    
   // and set our jump point
-  if (_lh_setjmp(c->context.entry) != 0) {
+  if (_lh_setjmp(r->entry) != 0) {
     // longjmp back to the yielded op with the resume result
-    sc->arg = c->arg; 
-    sc->resumed = true;
+    assert(hs == &__hstack);
+    lh_value res = r->arg;
     #ifdef _STATS
     stats.rcont_resumed_resume++;
     #endif
     // release our context
-    rcont_release(c);
+    resume_release(r);
     // return the result of the resume call; this jumps back down to the scopedcont entry.
-    _lh_longjmp(sc->entry,1);
+    return res;
   }
   else {
     // we set our jump point; now capture the stack upto the handler
     void* top = _get_stacktop();
-    handler* h = hstack_at(hs, sc->hidx);
-    capture_stack(&c->context, h->stackbase, top);
-    #ifdef _STATS
-    if (c->context.cstack.frames == NULL) stats.rcont_captured_empty++;
-    stats.rcont_captured_size += (long)c->context.cstack.size;
-    #endif
+    assert(!(is_fragmenthandler(h) || is_skiphandler(h)));
+    capture_cstack(&r->cstack, h->op.stackbase, top);
     // capture hstack
-    capture_handler_stack(hs, &c->context, h);
-    assert(h->hdef == c->context.hstack.hframes[0].hdef); // same handler?
-    rcont_releaseat(&c->context.hstack.hframes[0].rcont); // clear potential continuation in the resumecont
-    // and return our continuation
-    return c;
+    capture_hstack(hs, &r->hstack, h);
+    #ifdef _STATS
+    if (r->cstack.frames == NULL) stats.rcont_captured_empty++;
+    stats.rcont_captured_size += (long)r->cstack.size + (long)r->hstack.size * sizeof(handler);
+    #endif
+    assert(h->op.hdef == r->hstack.hframes[0].op.hdef); // same handler?
+    // and yield to the handler
+    yield_to_handler(hs, h, r, opfun, oparg);
   }
 }
+
+
 
 /*-----------------------------------------------------------------
   handle
@@ -1022,14 +1029,12 @@ __noopt
 #endif
 lh_value handle_with(hstack* hs, handler* h, lh_value(*action)(lh_value), lh_value arg )
 {
-  resumecont* rcont;
-  lh_value res;
   // set the handler entry point 
   #ifndef NDEBUG
-  const lh_handlerdef* hdef = h->hdef;
-  void* base = h->stackbase;  
+  const lh_handlerdef* hdef = h->op.hdef;
+  void* base = h->op.stackbase;  
   #endif
-  if (_lh_setjmp(h->entry) != 0) {
+  if (_lh_setjmp(h->op.entry) != 0) {
     // needed as some compilers optimize wrongly (e.g. gcc v5.4.0 x86_64 with -O2 on msys2)
     hs = &__hstack;      
     assert(hs->count > 0);
@@ -1037,34 +1042,41 @@ lh_value handle_with(hstack* hs, handler* h, lh_value(*action)(lh_value), lh_val
     // note: if we return trough non-scoped resumes the handler stack may be
     // different and our handler will point to a random handler in that stack!
     // ie. we need to load from the top of the current handler stack instead.
-    h  = hstack_top(hs);  // re-load our handler
+    h = hstack_top(hs);  // re-load our handler
     #ifndef NDEBUG
-    assert(hdef == h->hdef);
-    assert(base == h->stackbase);
+    assert(hdef == h->op.hdef);
+    assert(base == h->op.stackbase);
     #endif
-    res = h->arg;
-    rcont = hstack_pop_cont(hs);
+    lh_value  res    = h->op.arg;
+    lh_value  local  = h->op.local;
+    lh_opfun* opfun  = h->op.arg_opfun;
+    resume*   resume = h->op.arg_resume;
+    hstack_pop(hs);
+    if (opfun != NULL) {
+      res = opfun(resume, local, res);
+    }
+    return res;
   }
   else {
     // we set up the handler, now call the action 
-    res = action(arg);
+    lh_value res = action(arg);
     assert(hs==&__hstack);
     assert(hs->count > 0);
     h = hstack_top(hs);  // re-load our handler since the handler stack could have been reallocated
     #ifndef NDEBUG
-    assert(hdef == h->hdef);
-    assert(base == h->stackbase);
+    assert(hdef == h->op.hdef);
+    assert(base == h->op.stackbase);
     #endif
     // pop our handler
-    lh_resultfun* resfun = h->hdef->resultfun;
-    lh_value local = h->local;
-    rcont = hstack_pop_cont(hs);
-    // and invoke the return wrapper
+    lh_resultfun* resfun = h->op.hdef->resultfun;
+    lh_value local = h->op.local;
+    hstack_pop(hs);
     if (resfun != NULL) {
-      // and return with the result wrapper
       res = resfun(local, res);
     }
+    return res;
   }
+  /*
   // and finally continue with our return continuation if it is set
   if (rcont != NULL) {
     #ifndef NDEBUG
@@ -1090,6 +1102,7 @@ lh_value handle_with(hstack* hs, handler* h, lh_value(*action)(lh_value), lh_val
     // and otherwise return normally
     return res;
   }
+  */
 }
 
 // `handle_upto` installs a handler on the stack with a given stack `base`. 
@@ -1099,14 +1112,22 @@ static __noinline lh_value handle_upto(
 {
   // allocate handler frame on the stack so it will be part of a captured continuation
   handler* h = hstack_push(hs);
-  h->stackbase  = base;
-  h->effect     = def->effect; // cache in handler for faster find
-  h->hdef       = def;
-  h->rcont      = NULL;
-  h->local      = local;
-  h->arg        = lh_value_null;
-  h->toskip     = 0;
-  return handle_with(hs, h, action, arg );
+  h->effect = def->effect; // cache in handler for faster find
+  h->op.stackbase  = base;
+  h->op.hdef       = def;
+  h->op.local      = local;
+  h->op.arg        = lh_value_null;
+  h->op.arg_opfun  = NULL;
+  h->op.arg_resume = NULL;
+  lh_value res = handle_with(hs, h, action, arg);
+  hs = &__hstack;
+  if (hs->count > 0) {
+    h = hstack_top(hs);
+    if (is_fragmenthandler(h)) {
+      jumpto_fragment(h->frag.fragment, res);
+    }
+  }
+  return res;
 }
 
 
@@ -1126,48 +1147,29 @@ lh_value lh_handle( const lh_handlerdef* def, lh_value local, lh_actionfun* acti
   yield
 -----------------------------------------------------------------*/
 
-// Return to a handler with result `res` by unwinding the handler stack
-static void __noreturn yield_to_handler(hstack* hs, handler* h, lh_value res) {
-  cstack cs;
-  hstack_pop_upto(hs, h, &cs);
-  h->arg = res;
-  jumpto(&cs, NULL, &h->entry, true);
-  //_lh_longjmp(sc->handler->entry, 1);
-}
-
-// clang v3.8 on x86_64 needs __noopt here: when using -O3 or -Ofast it will generate wrong code (-O2 is fine)
-// (probably due to -argpromotion pushing the value of sc instead of the pointer in the function body)
-static __noinline __returnstwice 
-#if defined(__clang__) && defined(LH_ABI_x86_64)  // clang v3.8 with -O3 or -Ofast
-__noopt
-#endif
-lh_value yieldop_scoped(scopedcont* sc, lh_opfun* opfun, lh_value local, lh_value arg)
-{
-  if (_lh_setjmp(sc->entry) != 0) {
-    // operation resume'd, sc->arg & sc->resumed is filled in
-    sc->resumed = true;
-    return sc->arg;
-  }
-  else {
-    return opfun(sc, local, arg);    
-  }
-}
 
 // `yieldop` yields to the first enclosing handler that can handle
 //   operation `optag` and passes it the argument `arg`.
 static lh_value __noinline yieldop(lh_optag optag, lh_value arg)
 {
-  // Create a scoped continuation on the stack
-  scopedcont cont;
-  cont.arg = lh_value_null;
-  cont.resumed = false;
-  cont.optag = optag;
-  cont.hs = &__hstack;
   // find the operation handler along the handler stack
+  hstack*   hs = &__hstack;
   count_t   skipped = 0;
-  lh_opfun* opfun = NULL;
-  lh_value  local = lh_value_null;
-  cont.hidx = hstack_find(cont.hs, optag, &cont.opkind, &opfun, &local, &skipped);
+  lh_opkind opkind;
+  lh_opfun* opfun;
+  lh_value  local;
+  handler* h = hstack_find(hs, optag, &opkind, &opfun, &local, &skipped);
+  if (opkind <= LH_OP_NORESUME) {
+    yield_to_handler(hs, h, NULL, opfun, arg);
+    assert(false);
+    return lh_value_null;
+  }
+  else {
+    return capture_resume_yield(hs, h, opfun, arg);
+  }
+}
+
+/*
   // push a special "skip" handler; when the operation function calls operations itself,
   // those will not be handled by any handlers above handler.
   if (cont.opkind == LH_OP_TAIL_NOOP) {
@@ -1204,6 +1206,7 @@ static lh_value __noinline yieldop(lh_optag optag, lh_value arg)
     }
   }
 }
+*/
 
 // Yield to the first enclosing handler that can handle
 // operation `optag` and pass it the argument `arg`.
@@ -1234,49 +1237,29 @@ lh_value lh_yieldN(lh_optag optag, int argcount, ...) {
 }
 
 
-// Return the current optag
-lh_optag lh_optag_current(lh_scopedcont sc) {
-  return sc->optag;
-}
 
 
 /*-----------------------------------------------------------------
   Resume
 -----------------------------------------------------------------*/
 
-// resume a given `continuation `c` with argument `arg`
-lh_value lh_scoped_resume(lh_scopedcont sc, lh_value local, lh_value arg)
-{
-  if (sc->opkind > LH_OP_SCOPED) fatal(ENOTSUP,"trying to generally resume an OP_TAIL/OP_THROW operation: '%s'", lh_optag_name(sc->optag));
-  return capture_scoped_resume_jump(sc->hs, sc, local, arg);
+
+lh_value lh_release_resume(lh_resume r, lh_value local, lh_value res) {
+  return capture_resume_call(&__hstack, r, local, res);
 }
 
-// Resume for the last time in a tail position
-lh_value lh_tail_resume(lh_scopedcont sc, lh_value local, lh_value arg) {
-  #ifdef _DEBUG_STATS
-  stats.rcont_resumed_tail++;
-  #endif
-  hstack_at(sc->hs, sc->hidx)->local = local;
-  sc->resumed = true;
-  return arg;
+lh_value lh_do_resume(lh_resume r, lh_value local, lh_value res) {
+  return lh_release_resume(resume_acquire(r), local, res);
 }
 
-/*-----------------------------------------------------------------
-  Resume
------------------------------------------------------------------*/
-
-lh_resumecont lh_capture(lh_scopedcont sc) {
-  return capture_continuation(&__hstack, sc);
+void lh_release(lh_resume r) {
+  resume_release(r);
 }
 
-lh_value lh_release_resume(lh_resumecont cont, lh_value res) {
-  return capture_resume_jump(&__hstack, cont,res);
+lh_value lh_tail_resume(lh_resume r, lh_value local, lh_value res) {
+  return lh_release_resume(r, local, res);
 }
 
-lh_value lh_resume(lh_resumecont cont,lh_value res) {
-  return lh_release_resume(rcont_copyref(cont), res);
-}
-
-void lh_release(lh_resumecont cont) {
-  rcont_release(cont);
+lh_value lh_scoped_resume(lh_resume r, lh_value local, lh_value res) {
+  return lh_do_resume(r, local, res);
 }

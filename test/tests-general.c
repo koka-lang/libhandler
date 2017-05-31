@@ -19,7 +19,7 @@ static lh_value _state_result(lh_value local, lh_value x) {
   return x;
 }
 
-static lh_value _state_get(lh_scopedcont sc, lh_value local, lh_value arg) {
+static lh_value _state_get(lh_resume sc, lh_value local, lh_value arg) {
   unreferenced(arg);
   unreferenced(sc);
   unreferenced(local);
@@ -29,7 +29,7 @@ static lh_value _state_get(lh_scopedcont sc, lh_value local, lh_value arg) {
   return lh_tail_resume(sc, local, local);
 }
 
-static lh_value _state_put(lh_scopedcont sc, lh_value local, lh_value arg) {
+static lh_value _state_put(lh_resume sc, lh_value local, lh_value arg) {
   unreferenced(arg);
   trace_printf("state put: %li, %li\n", lh_long_value(local), lh_long_value(arg));
   return lh_tail_resume(sc, arg, lh_value_null);

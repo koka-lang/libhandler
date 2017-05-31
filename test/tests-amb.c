@@ -109,10 +109,10 @@ static lh_value _amb_result(lh_value local, lh_value arg) {
   return lh_value_blist(blist_single(b));
 }
 
-static lh_value _amb_flip(lh_scopedcont rc, lh_value local, lh_value arg) {
+static lh_value _amb_flip(lh_resume rc, lh_value local, lh_value arg) {
   unreferenced(arg);
   blist xs = lh_blist_value(lh_scoped_resume(rc, local, lh_value_bool(false)));
-  blist ys = lh_blist_value(lh_scoped_resume(rc, local, lh_value_bool(true)));
+  blist ys = lh_blist_value(lh_release_resume(rc, local, lh_value_bool(true)));
   blist_appendto(xs, ys);
   blist_trace_print("amb flip: result", blist_copy(xs));
   return lh_value_blist(xs);
