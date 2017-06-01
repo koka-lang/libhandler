@@ -707,7 +707,7 @@ static handler* hstack_find(ref hstack* hs, lh_optag optag, out const lh_operati
     i--;
     handler* h = &hframes[i];
     if (h->effect == optag->effect) {
-      assert(h->eff.hdef != NULL);
+      assert(h->kind.eff.hdef != NULL);
       const lh_operation* oper = &h->kind.eff.hdef->operations[optag->opidx];
       assert(oper->optag == optag); // can fail if operations are defined in a different order than declared
       if (oper->opfun != NULL) {
@@ -807,7 +807,7 @@ static void hstack_pop_upto(ref hstack* hs, ref handler* h, out cstack* cs)
     handler* hf = &hs->hframes[hs->count - 1];
     if (is_fragmenthandler(hf)) { // (hf->hdef == NULL && hf->rcont != NULL && cs != NULL) {
       // special "fragment" handler; remember to restore the stack
-      assert(hf->frag.fragment != NULL);
+      assert(hf->kind.frag.fragment != NULL);
       cstack* hcs = &hf->kind.frag.fragment->cstack;
       if (hcs != NULL) {
         cstack_extendfrom(cs, hcs);
@@ -997,7 +997,7 @@ static __noinline lh_value capture_resume_call(hstack* hs, resume* r, lh_value r
     assert(hs == &__hstack);
     assert(hs->count > 0);
     assert(is_fragmenthandler(hstack_top(hs)));
-    assert(hstack_top(hs)->frag.fragment == f);
+    assert(hstack_top(hs)->kind.frag.fragment == f);
     hstack_pop(hs);
     // return the result of the resume call     
     return arg;
@@ -1054,7 +1054,7 @@ static __noinline lh_value capture_resume_yield(hstack* hs, handler* h, const lh
     if (r->cstack.frames == NULL) stats.rcont_captured_empty++;
     stats.rcont_captured_size += (long)r->cstack.size + (long)r->hstack.size * sizeof(handler);
     #endif
-    assert(h->eff.hdef == r->hstack.hframes[0].eff.hdef); // same handler?
+    assert(h->kind.eff.hdef == r->hstack.hframes[0].kind.eff.hdef); // same handler?
     // and yield to the handler
     yield_to_handler(hs, h, r, op, oparg);
   }
@@ -1068,7 +1068,7 @@ static __noinline lh_value capture_resume_yield(hstack* hs, handler* h, const lh
 
 // Start a handler 
 static __noinline
-#if defined(__GNUC__) && defined(LH_ABI_x86)
+#if defined(__GNUC__) && defined(LH_ABI_x86) && false
 __noopt
 #endif
 lh_value handle_with(hstack* hs, handler* h, lh_value(*action)(lh_value), lh_value arg )
@@ -1076,8 +1076,8 @@ lh_value handle_with(hstack* hs, handler* h, lh_value(*action)(lh_value), lh_val
   // set the handler entry point 
   assert(is_effhandler(h));
   #ifndef NDEBUG
-  const lh_handlerdef* hdef = h->eff.hdef;
-  void* base = h->eff.stackbase;  
+  const lh_handlerdef* hdef = h->kind.eff.hdef;
+  void* base = h->kind.eff.stackbase;
   #endif
   if (_lh_setjmp(h->kind.eff.entry) != 0) {
     // needed as some compilers optimize wrongly (e.g. gcc v5.4.0 x86_64 with -O2 on msys2)
@@ -1089,8 +1089,8 @@ lh_value handle_with(hstack* hs, handler* h, lh_value(*action)(lh_value), lh_val
     // ie. we need to load from the top of the current handler stack instead.
     h = hstack_top(hs);  // re-load our handler
     #ifndef NDEBUG
-    assert(hdef == h->eff.hdef);
-    assert(base == h->eff.stackbase);
+    assert(hdef == h->kind.eff.hdef);
+    assert(base == h->kind.eff.stackbase);
     #endif
     lh_value  res    = h->kind.eff.arg;
     lh_value  local  = h->kind.eff.local;
@@ -1120,8 +1120,8 @@ lh_value handle_with(hstack* hs, handler* h, lh_value(*action)(lh_value), lh_val
     assert(hs->count > 0);
     h = hstack_top(hs);  // re-load our handler since the handler stack could have been reallocated
     #ifndef NDEBUG
-    assert(hdef == h->eff.hdef);
-    assert(base == h->eff.stackbase);
+    assert(hdef == h->kind.eff.hdef);
+    assert(base == h->kind.eff.stackbase);
     #endif
     // pop our handler
     lh_resultfun* resfun = h->kind.eff.hdef->resultfun;
@@ -1179,9 +1179,6 @@ lh_value lh_handle( const lh_handlerdef* def, lh_value local, lh_actionfun* acti
 /*-----------------------------------------------------------------
   yield
 -----------------------------------------------------------------*/
-
-#define RES_TAIL -100
-#define RES_RESUMED -101
 
 // `yieldop` yields to the first enclosing handler that can handle
 //   operation `optag` and passes it the argument `arg`.
