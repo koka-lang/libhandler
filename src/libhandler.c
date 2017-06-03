@@ -140,8 +140,9 @@ __nothrow __noreturn     void _lh_longjmp(lh_jmp_buf buf, int arg);
 
 #ifdef HAS_STDBOOL_H
 # include <stdbool.h>
-#else
-typedef char bool
+#endif
+#ifndef __bool_true_false_are_defined
+typedef char bool;
 # define true  (1==1)
 # define false (1==0)
 #endif
