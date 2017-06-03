@@ -175,7 +175,7 @@ typedef struct _fragment {
   lh_jmp_buf         entry;
   cstack             cstack;
   count_t            refcount;
-  volatile lh_value  arg;
+  volatile lh_value  res;
 } fragment;
 
 typedef enum _resumekind {
@@ -220,8 +220,6 @@ typedef struct _skiphandler {
 
 typedef struct _fragmenthandler {
   fragment*            fragment;
-  lh_jmp_buf           entry;
-  volatile lh_value    arg;
 } fragmenthandler;
 
 typedef struct _scopedhandler {
@@ -240,10 +238,10 @@ typedef struct _scopedhandler {
 typedef struct _handler {
   lh_effect            effect;       // effect handled: cached from hdef
   union {
-    skiphandler        skip;
-    fragmenthandler    frag;
     effhandler         eff;
+    fragmenthandler    frag;
     scopedhandler      scoped;
+    skiphandler        skip;
   } kind;
 } handler;
 
@@ -907,17 +905,17 @@ static __noinline __noreturn void jumpto(
 }
 
 // jump to a continuation a result 
-static __noinline __noreturn void jumpto_resume( resume* r, lh_value local, lh_value res )
+static __noinline __noreturn void jumpto_resume( resume* r, lh_value local, lh_value arg )
 {
   r->hstack.hframes[0].kind.eff.local = local; // write directly so it gets restored with the new local
-  r->arg = res; // set the argument in the cont slot  
+  r->arg = arg; // set the argument in the cont slot  
   jumpto(&r->cstack, &r->hstack, &r->entry, false);
 }
 
 // jump to a continuation a result 
 static __noinline __noreturn void jumpto_fragment(fragment* f, lh_value res)
 {
-  f->arg = res; // set the argument in the cont slot  
+  f->res = res; // set the argument in the cont slot  
   jumpto(&f->cstack, NULL, &f->entry, false);
 }
 
@@ -983,14 +981,14 @@ static __noinline lh_value capture_resume_call(hstack* hs, resume* r, lh_value r
   // initialize continuation
   fragment* f = checked_malloc(sizeof(fragment));
   f->refcount = 1;
-  f->arg = lh_value_null; 
+  f->res = lh_value_null; 
   #ifdef _STATS
   stats.rcont_captured_fragment++;
   #endif    
   // and set our jump point
   if (_lh_setjmp(f->entry) != 0) {
     // longjmp back to our resume
-    lh_value arg = f->arg; // get result
+    lh_value res = f->res; // get result
     #ifdef _STATS
     stats.rcont_resumed_fragment++;
     #endif
@@ -1001,7 +999,7 @@ static __noinline lh_value capture_resume_call(hstack* hs, resume* r, lh_value r
     assert(hstack_top(hs)->kind.frag.fragment == f);
     hstack_pop(hs);
     // return the result of the resume call     
-    return arg;
+    return res;
   }
   else {
     // we set our jump point; now capture the stack upto the stack base of the continuation 
