@@ -8,7 +8,7 @@
 /* ----------------------------------------------------------------------------
   - We consider parent stack frames to be "below"(or "down") and child frames "above".
     The stack frame of the current function is the "top" of the stack.
-    We use this terminology regardless if the stack itself grows up or down on 
+    We use this terminology regardless if the stack itself actually grows up or down on 
     the specific architecture.
 
   - When we capture a stack we always capture a delimited stack up to some handler
@@ -22,25 +22,16 @@
 
     The following things may lead to trouble on some platforms:
     - Stacks cannot move during execution. No platform does this by itself (as far as I know)
-      but it does mean you cannot move continuations between threads! A continuation
+      but it does mean you cannot move resume functions between threads! A resume
       needs to be executed on the same thread as it was created.
-    - Code cannot unwind a stack beyond a fragment. This could happen with
-      garbage collectors or debuggers for example. Some platforms may need some
-      assembly to properly unwind through fragments.
+    - First class resumptions (that escape the scope of the handler) can lead
+      to a 'fragment' on the C stack. Code cannot unwind such stack beyond the fragment. 
+      This could happen with garbage collectors or debuggers for example. Some platforms 
+      may need some assembly to properly unwind through fragments. For C++ we need
+      to install an exception handler on the fragment boundary to unwind properly.
 
-  - There are 2 kinds of continuations: "scoped" continuations are not first-class
-    and can only be resumed within the scope of an operation function. This also
-    means that stack saving and restoring always leads to complete and valid 
-    stacks that can be unwound safely (i.e. no fragments).
-
-    A "resume" continuation is a first-class continuation that can be resumend outside
-    the scope of an operation function. In that case, sometimes we need to overwrite
-    part of a current stack to resume such continuation with its own saved stack at the
-    same location. We call such partially overwritten stacks "fragments". The top 
-    handler in a fragment always has his next `cont` field set to a routine that will
-    restore the old stack again.
-
-  - `_hstack` points to a global stack of handlers.
+    An `entry` is a jump buffer and contains the register context; it can 
+    be jumped to.
 -----------------------------------------------------------------------------*/
 
 #include "libhandler.h"
@@ -158,90 +149,99 @@ struct _handler;
 
 // A handler stack; Seperate from the C-stack so it can be searched even if the C-stack contains fragments
 typedef struct _hstack {
-  count_t            count;       // number of valid handlers in hframes
-  count_t            size;        // total entries available (auto grows exponential upto some limit)
-  struct _handler*   hframes;     // array of handlers (0 is bottom frame)
+  count_t            count;     // number of valid handlers in hframes
+  count_t            size;      // total entries available (auto grows exponential upto some limit)
+  struct _handler*   hframes;   // array of handlers (0 is bottom frame)
 } hstack;
 
 // A captured C stack
 typedef struct _cstack {           
-  void*              base;        // The `base` is the absolute address of the lowest frame on the original C stack
-  count_t            size;        // The byte size of the captured stack
-  byte*              frames;      // The captured stack data (allocated in the heap)
+  void*              base;      // The `base` is the absolute address of the lowest frame on the original C stack
+  count_t            size;      // The byte size of the captured stack
+  byte*              frames;    // The captured stack data (allocated in the heap)
 } cstack;
 
 
+// A `fragment` is a captured C-stack and an `entry`.
 typedef struct _fragment {
-  lh_jmp_buf         entry;
-  cstack             cstack;
-  count_t            refcount;
-  volatile lh_value  res;
+  lh_jmp_buf         entry;     // jump point where the fragment was captured
+  cstack             cstack;    // the captured c stack 
+  count_t            refcount;  // fragments are allocated on the heap and reference counted.
+  volatile lh_value  res;       // when jumped to, a result is passed through `res`
 } fragment;
 
+// Operation handlers receive an `lh_resume*`; the kind determines what it points to.
 typedef enum _resumekind {
-  FullResume,
-  TailResume
+  FullResume,       // `lh_resume` is a `resume`
+  TailResume        // `lh_resume` is a `tailresume`
 } resumekind;
 
+// Typedeffed to `lh_resume` in the header. 
 struct _lh_resume {
-  resumekind         rkind;
+  resumekind         rkind;       // the resumption kind
 };
 
+// A first-class resumption
 typedef struct _resume {
-  struct _lh_resume  lhresume;
-  lh_jmp_buf         entry;        // jump point for resumption
-  cstack             cstack;       // captured cstack
-  hstack             hstack;       // captured hstack  always `size == count`
-  count_t            refcount;
-  volatile lh_value  arg;
+  struct _lh_resume  lhresume;    // contains the kind: always `FullResume`
+  lh_jmp_buf         entry;       // jump point where the resume was captured
+  cstack             cstack;      // captured cstack
+  hstack             hstack;      // captured hstack  always `size == count`
+  count_t            refcount;    // resumptions are heap allocated
+  volatile lh_value  arg;         // the argument to `resume` is passed through `arg`.
 } resume;
 
+// A resumption that can only used for tail-call resumptions (`lh_tail_resume`).
 typedef struct _tailresume {
-  struct _lh_resume  lhresume;
-  volatile lh_value  local;
-  volatile bool      resumed;
+  struct _lh_resume  lhresume;    // the kind: always `TailResume`
+  volatile lh_value  local;       // the new local value for the handler
+  volatile bool      resumed;     // set to `true` if `lh_tail_resume` was called
 } tailresume;
 
 
+// Regular effect handler.
 typedef struct _effhandler {
-  const lh_handlerdef* hdef;         // operation definitions
-  lh_jmp_buf           entry;        // used to jump back to a handler if an operation function returns without a tail-resume
-  volatile lh_value    arg;          // if jumped back to, the result argument is passed here
-  resume*              arg_resume;
-  const lh_operation*  arg_op;
+  const lh_handlerdef* hdef;        // operation definitions
+  lh_jmp_buf           entry;       // used to jump back to a handler 
+  volatile lh_value    arg;         // the yield argument is passed here
+  const lh_operation*  arg_op;      // the yielded operation is passed here
+  resume*              arg_resume;  // the resumption function for the yielded operation
   void*                stackbase;
   lh_value             local;
 } effhandler;
 
-
+// A skip handler.
 typedef struct _skiphandler {
-  count_t   toskip;       // when looking for an operation handler, skip the next `toskip` frames.
+  count_t              toskip;      // when looking for an operation handler, skip the next `toskip` frames.
 } skiphandler;
 
+// A fragment handler just contains a `fragment`.
 typedef struct _fragmenthandler {
   fragment*            fragment;
 } fragmenthandler;
 
+// A scoped handler keeps track of the resumption in the scope of
+// an operator so it can be released properly.
 typedef struct _scopedhandler {
   resume*              resume;
 } scopedhandler;
 
-// A handler; there are three kinds used:
-// 1. normal ones pushed when a handler is called; always `hdef != NULL`
-// 2. a "skip" handler: this is pushed when handling an operation and disables the next `toskip`
-//    number of handlers below it. This disables operation handling for those and allows us to 
-//    no pop them explicitly (for performance). `hdef==NULL && rcont==NULL`, `toskip` is set.
-// 3. a "fragment" handler: these are pushed when a first-class continuation (`lh_resumecont`) is
+
+// A handler; there are four kinds of frames
+// 1. normal effect handlers, pushed when a handler is called
+// 2. a "fragment" handler: these are pushed when a first-class continuation is
 //    resumed through `lh_resume` or `lh_release_resume`. Such resume may overwrite parts of the
-//    current stack which is saved in its own "fragment" continuation. In this case, `hdef==NULL`
-//    and `rcont != NULL` where `rcont` is set to the fragment continuation.
+//    current stack which is saved in its own `fragment` continuation. 
+// 3. a "scoped" handler: these are pushed when a `LH_OP_SCOPED` operation is executed
+//    to automatically release the resumption function when the scope is exited.
+// 4. a "skip" handler: used to skip a number of handler frames for tail call resumptions.
 typedef struct _handler {
-  lh_effect            effect;       // effect handled: cached from hdef
+  lh_effect            effect;    // effect handled
   union {
     effhandler         eff;
-    fragmenthandler    frag;
-    scopedhandler      scoped;
-    skiphandler        skip;
+    fragmenthandler    frag;      // `effect == LH_EFFECT(__fragment)`    
+    scopedhandler      scoped;    // `effect == LH_EFFECT(__scoped)`
+    skiphandler        skip;      // `effect == LH_EFFECT(__skip)`  
   } kind;
 } handler;
 
@@ -482,52 +482,57 @@ static bool cstack_isbelow(const ref cstack* cs, void* top) {
   return (stackdown ? top > cs->base : top < cs->base);
 }
 
+
 /*-----------------------------------------------------------------
-  Resumecont
+  Fragments
 -----------------------------------------------------------------*/
 
 static void hstack_free(ref hstack* hs);
 
 // release a continuation; returns `true` if it was released
-static __noinline void fragment_free_(fragment* c) {
+static __noinline void fragment_free_(fragment* f) {
   #ifdef _STATS
   stats.rcont_released++;
-  stats.rcont_released_size += (long)c->cstack.size;
+  stats.rcont_released_size += (long)f->cstack.size;
   #endif
-  cstack_free(&c->cstack);
-  c->refcount = -1; // for debugging
-  checked_free(c);
+  cstack_free(&f->cstack);
+  f->refcount = -1; // for debugging
+  checked_free(f);
 }
 
-static void fragment_release_(fragment* c) {
-  assert(c->refcount > 0);
-  c->refcount--;
-  if (c->refcount == 0) fragment_free_(c);
+static void fragment_release_(fragment* f) {
+  assert(f->refcount > 0);
+  f->refcount--;
+  if (f->refcount == 0) fragment_free_(f);
 }
 
-static void fragment_release(fragment* c)
-{
-  if (c!=NULL) fragment_release_(c);
+// Release a fragment
+static void fragment_release(fragment* f) {
+  if (f!=NULL) fragment_release_(f);
 }
-
 
 // Release a resume continuation and set to `NULL`
-static void fragment_releaseat(fragment* volatile * pc) {
-  fragment_release(*pc);
-  *pc = NULL;
+static void fragment_releaseat(fragment* volatile * pf) {
+  fragment_release(*pf);
+  *pf = NULL;
 }
 
 // Copy a reference to a resume continuation, increasing its reference count.
-static fragment* fragment_acquire(fragment* c) {
-  if (c != NULL) {
-    assert(c->refcount > 0);
-    c->refcount++;
+static fragment* fragment_acquire(fragment* f) {
+  assert(f != NULL);
+  if (f != NULL) {
+    assert(f->refcount > 0);
+    f->refcount++;
   }
-  return c;
+  return f;
 }
 
 
-// release a continuation; returns `true` if it was released
+/*-----------------------------------------------------------------
+  Resumptions
+-----------------------------------------------------------------*/
+
+// release a resumptions; returns `true` if it was released
 static __noinline void resume_free_(resume* r) {
   #ifdef _STATS
   stats.rcont_released++;
@@ -546,12 +551,20 @@ static void resume_release_(resume* r) {
   if (r->refcount == 0) resume_free_(r);
 }
 
-static void resume_release(resume* r)
-{
+// Release a resumption
+static void resume_release(resume* r) {
   if (r != NULL) resume_release_(r);
 }
 
+// Release a resumption and set it to NULL;
+static void resume_release_at(ref resume** pr) {
+  resume_release(*pr);
+  *pr = NULL;
+}
+
+// Acquire a resumption by increasing its reference count.
 static resume* resume_acquire(resume* r) {
+  assert(r!=NULL);
   if (r != NULL) {
     assert(r->lhresume.rkind==FullResume);
     assert(r->refcount > 0);
@@ -974,9 +987,8 @@ static void __noreturn yield_to_handler(hstack* hs, handler* h,
   Captured resume & yield  
 -----------------------------------------------------------------*/
 
-// Used to resume a first-class continuation;
-// Capture our context and push a "fragment" handler to save back our stack after
-// returning.
+// Call a `resume* r`. First capture a jump point and c-stack into a `fragment`
+// and push it in a fragment handler so the resume will return here later on.
 static __noinline lh_value capture_resume_call(hstack* hs, resume* r, lh_value resumelocal, lh_value resumearg) {
   // initialize continuation
   fragment* f = checked_malloc(sizeof(fragment));
@@ -987,7 +999,7 @@ static __noinline lh_value capture_resume_call(hstack* hs, resume* r, lh_value r
   #endif    
   // and set our jump point
   if (_lh_setjmp(f->entry) != 0) {
-    // longjmp back to our resume
+    // longjmp back from the resume
     lh_value res = f->res; // get result
     #ifdef _STATS
     stats.rcont_resumed_fragment++;
@@ -1013,12 +1025,12 @@ static __noinline lh_value capture_resume_call(hstack* hs, resume* r, lh_value r
     handler* h = hstack_push(hs);
     h->effect = LH_EFFECT(__fragment);
     h->kind.frag.fragment = f;
-    // and now jump to the scoped entry with resume arg
+    // and now jump to the entry with resume arg
     jumpto_resume(r, resumelocal, resumearg);
   }
 }
 
-// Capture a first-class continuation from a scoped continuation.
+// Capture a first-class resumption and yield to the handler.
 static __noinline lh_value capture_resume_yield(hstack* hs, handler* h, const lh_operation* op, lh_value oparg )
 {
   // initialize continuation
@@ -1031,7 +1043,7 @@ static __noinline lh_value capture_resume_yield(hstack* hs, handler* h, const lh
   #endif    
   // and set our jump point
   if (_lh_setjmp(r->entry) != 0) {
-    // longjmp back to the yielded op with the resume result
+    // longjmp back here when the resumption is called
     assert(hs == &__hstack);
     lh_value res = r->arg;
     #ifdef _STATS
@@ -1039,7 +1051,7 @@ static __noinline lh_value capture_resume_yield(hstack* hs, handler* h, const lh
     #endif
     // release our context
     resume_release(r);
-    // return the result of the resume call; this jumps back down to the scopedcont entry.
+    // return the result of the resume call
     return res;
   }
   else {
@@ -1086,6 +1098,7 @@ lh_value handle_with(hstack* hs, handler* h, lh_value(*action)(lh_value), lh_val
     // note: if we return trough non-scoped resumes the handler stack may be
     // different and our handler will point to a random handler in that stack!
     // ie. we need to load from the top of the current handler stack instead.
+    // this is also necessary if the handler stack was reallocated to grow.
     h = hstack_top(hs);  // re-load our handler
     #ifndef NDEBUG
     assert(hdef == h->kind.eff.hdef);
@@ -1098,13 +1111,16 @@ lh_value handle_with(hstack* hs, handler* h, lh_value(*action)(lh_value), lh_val
     assert(op == NULL || op->optag->effect == h->effect);
     hstack_pop(hs);
     if (op != NULL && op->opfun != NULL) {
+      // push a scoped frame if necessary
       if (op->opkind==LH_OP_SCOPED) {
         h = hstack_push(hs);
         h->effect = LH_EFFECT(__scoped);
         h->kind.scoped.resume = resume;
       }
       assert((void*)&resume->lhresume == (void*)resume);
+      // and call the operation handler
       res = op->opfun(&resume->lhresume, local, res);
+      // pop our scoped frame (potentially releasing the resumption)
       if (op->opkind==LH_OP_SCOPED) {
         assert(hs==&__hstack);
         hstack_pop(hs);
@@ -1152,6 +1168,7 @@ lh_value handle_upto(
   h->kind.eff.arg_op     = NULL;
   h->kind.eff.arg_resume = NULL;
   lh_value res = handle_with(hs, h, action, arg);
+  // after returning, check if there is a fragment frame we should jump to..
   hs = &__hstack;
   if (hs->count > 0) {
     h = hstack_top(hs);
@@ -1159,6 +1176,7 @@ lh_value handle_upto(
       jumpto_fragment(h->kind.frag.fragment, res);
     }
   }
+  // otherwise just return normally
   return res;
 }
 
@@ -1200,26 +1218,32 @@ static lh_value __noinline yieldop(lh_optag optag, lh_value arg)
     // OP_TAIL_NOOP: will not call operations so no need for a skip frame
     // call the operation function and return directly (as it promised to tail resume)
     count_t  hidx = 0;
+    // push a skip frame
     if (op->opkind != LH_OP_TAIL_NOOP) {
       hidx = hstack_indexof(hs, h);
       handler* effhandler = hstack_push(hs);
       effhandler->effect = LH_EFFECT(__skip);
       effhandler->kind.skip.toskip = skipped + 1;
     }
+    // setup up a stack allocated tail resumption
     tailresume r;
     r.lhresume.rkind = TailResume;
     r.local = local;
     r.resumed = false;
     assert((void*)(&r.lhresume) == (void*)&r);
+    // call the operation handler directly for a tail resumption
     lh_value res = op->opfun(&r.lhresume, local, arg);
+    // pop our skip handler
     if (op->opkind != LH_OP_TAIL_NOOP) {
       hstack_pop_skip(hs);
       h = hstack_at(hs, hidx);
     }
+    // if we returned from a `lh_tail_resume` we just return its result
     if (r.resumed) {
       h->kind.eff.local = r.local;
       return res;
     }
+    // otherwise no resume was called; yield back to the handler with the result.
     else {
       yield_to_handler(hs, h, NULL, NULL, res);
       assert(false);
@@ -1227,6 +1251,7 @@ static lh_value __noinline yieldop(lh_optag optag, lh_value arg)
     }
   }
   else {
+    // In general, capture a resumption and yield to the handler
     return capture_resume_yield(hs, h, op, arg);
   }
 }
@@ -1260,11 +1285,11 @@ lh_value lh_yieldN(lh_optag optag, int argcount, ...) {
 }
 
 
-
-
 /*-----------------------------------------------------------------
   Resume
 -----------------------------------------------------------------*/
+
+// Cast to a first class resumption.
 static resume* to_resume(lh_resume r) {
   if (r->rkind != FullResume) fatal(EINVAL,"Trying to generally resume a tail-resumption");
   return (resume*)r;
@@ -1273,7 +1298,6 @@ static resume* to_resume(lh_resume r) {
 static lh_value lh_release_resume_(resume* r, lh_value local, lh_value res) {
   return capture_resume_call(&__hstack, r, local, res);
 }
-
 
 lh_value lh_release_resume(lh_resume r, lh_value local, lh_value res) {
   return lh_release_resume_(to_resume(r), local, res);
