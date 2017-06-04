@@ -41,7 +41,7 @@
 #include "cenv.h"     // configure generated
 
 #include <stddef.h>   // ptrdiff_t, size_t
-#include <stdlib.h>   // exit, malloc, min, max
+#include <stdlib.h>   // exit, malloc
 #include <stdio.h>    // fprintf, vfprintf
 #include <string.h>   // memcpy
 #include <stdarg.h>   // varargs
@@ -827,6 +827,8 @@ static handler* hstack_at(const hstack* hs, count_t idx) {
   base address we are going to jump and only restores pieces of stack
   below that.
 -----------------------------------------------------------------*/
+const byte* _min(const byte* p, const byte* q) { return (p <= q ? p : q); }
+const byte* _max(const byte* p, const byte* q) { return (p >= q ? p : q); }
 
 // Extend cstack `cs` in-place to encompass both the `ds` stack and itself.
 static void cstack_extendfrom(ref cstack* cs, const ref cstack* ds) {
@@ -843,8 +845,8 @@ static void cstack_extendfrom(ref cstack* cs, const ref cstack* ds) {
   }
   else {
     // otherwise extend such that we can merge `cs` and `ds` together
-    const byte* newsp = min(csp,dsp);
-    ptrdiff_t newsize = max(csp + cs->size, dsp + ds->size) - newsp;
+    const byte* newsp = _min(csp,dsp);
+    ptrdiff_t newsize = _max(csp + cs->size, dsp + ds->size) - newsp;
     if (newsize > cs->size) {
       cs->frames = checked_realloc(cs->frames, newsize);
       if (newsp != csp) {
@@ -1005,7 +1007,7 @@ static void capture_cstack(cstack* cs, const void* bottom, const void* top)
   }
   else {
     // copy the stack 
-    cs->base = min(bottom, top);
+    cs->base = (bottom <= top ? bottom : top); // always lowest address
     cs->size = size;
     cs->frames = checked_malloc(size);
     memcpy(cs->frames, cs->base, size);
@@ -1131,11 +1133,7 @@ static __noinline lh_value capture_resume_yield(hstack* hs, handler* h, const lh
 -----------------------------------------------------------------*/
 
 // Start a handler 
-static __noinline
-#if defined(__GNUC__) && defined(LH_ABI_x86) && false
-__noopt
-#endif
-lh_value handle_with(hstack* hs, handler* h, lh_value(*action)(lh_value), lh_value arg )
+static __noinline lh_value handle_with(hstack* hs, handler* h, lh_value(*action)(lh_value), lh_value arg )
 {
   // set the handler entry point 
   assert(is_effhandler(h));
