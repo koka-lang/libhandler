@@ -27,13 +27,13 @@ jump_buf layout (compatible with msvc):
   96: xmm6
   ... (128-bit registers)
  240: xmm15 
- 256: (sizeof jump_buf)
+ 256: sizeof jmp_buf
 */
 
 .global _lh_setjmp
 .global _lh_longjmp
 
-_lh_setjmp:                 /* rcx: jmp_buf, rdx: frame pointer */
+_lh_setjmp:                 /* input: rcx: jmp_buf, rdx: frame pointer */
   movq    (%rsp), %rax      /* return address is on the stack */
   movq    %rax, 80 (%rcx)   /* rip */
 

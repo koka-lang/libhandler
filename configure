@@ -261,7 +261,12 @@ asmfiles=""
 if test -f "../src/$asmsetjmp"; then
   echo "Assembly setjmp found for this ABI: '$asmsetjmp'"
   asmfiles="$asmsetjmp"
-  echo "#define HAS_ASMSETJMP" >> cenv.h;
+  echo "#define HAS_ASMSETJMP" >> cenv.h
+  jmpbufsz=`grep -o '[0-9][0-9]*: *sizeof ' ../src/$asmsetjmp`
+  #echo "grep found: $jmpbufsz"
+  jmpbufsz=`expr "X$jmpbufsz" : 'X\([0-9]*\)'`
+  echo "#define ASM_JMPBUF_SIZE $jmpbufsz" >> cenv.h
+  echo "Jump buffer size: $jmpbufsz";
 elif sh ./runtest has_sigsetjmp.c; then
   echo "POSIX sigsetjmp found."
   echo "#define HAS_SIGSETJMP" >> cenv.h;

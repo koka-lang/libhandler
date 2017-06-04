@@ -21,13 +21,13 @@
 ;  64: r14
 ;  72: r15
 ;  80: rip
-;  88: sse control word (32 bit)
-;  92: fpu control word (16 bit)
-;  94: scratch word (16 bit)
+;  88: mxcrs, sse control word (32 bit)
+;  92: fpcr, fpu control word (16 bit)
+;  94: unused (16 bit)
 ;  96: xmm6
 ;  ... (128-bit sse registers)
 ; 240: xmm15
-; 256: (sizeof jump_buf)
+; 256: sizeof jmp_buf
 ; -------------------------------------------------------
 
 .CODE 

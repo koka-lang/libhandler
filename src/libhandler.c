@@ -49,6 +49,10 @@
 #include <assert.h>   // assert
 #include <errno.h>    
 
+// Basic types
+typedef unsigned char byte;
+typedef ptrdiff_t     count_t;   // signed natural machine word
+
 // maintain cheap statistics
 #define _STATS
 
@@ -66,6 +70,7 @@
 # endif
 # define __returnstwice
 # define __noopt       
+# define __align(x)     __declspec(align(x))
 #else
 // assume gcc or clang 
 // __thread is already defined
@@ -82,6 +87,7 @@
 # ifndef __nothrow
 #  define __nothrow     __attribute__((nothrow))
 # endif
+# define __align(x)     __attribute__((align_value(x~)))
 #endif 
 
 
@@ -100,7 +106,9 @@
    masks. In those cases we try to substitute our own definitions.
 */
 #if defined(HAS_ASMSETJMP)
-# define lh_jmp_buf jmp_buf
+// re-use library jmp_buf so alignment is guaranteed;
+// we check for the required size during initialization.
+# define lh_jmp_buf jmp_buf     
 __nothrow __returnstwice int  _lh_setjmp(lh_jmp_buf buf);
 __nothrow __noreturn     void _lh_longjmp(lh_jmp_buf buf, int arg);
 
@@ -145,8 +153,6 @@ typedef char bool;
 /*-----------------------------------------------------------------
   Types
 -----------------------------------------------------------------*/
-typedef unsigned char byte;
-typedef ptrdiff_t     count_t;
 
 struct _handler;
 
@@ -898,6 +904,11 @@ static __noinline bool _lh_init(hstack* hs) {
   if (!initialized) {
     initialized = true;
     infer_stackdir();
+    #ifdef ASM_JMPBUF_SIZE
+    if (sizeof(lh_jmp_buf) < ASM_JMPBUF_SIZE) {
+      fatal(EFAULT, "runtime jmp_buf is smaller than required by the libhander routines!");
+    }
+    #endif
   }
   assert(__hstack.size==0 && hs == &__hstack);
   hstack_init(hs);
@@ -1024,10 +1035,10 @@ static void capture_hstack(hstack* hs, hstack* to, handler* h ) {
 }
 
 /*-----------------------------------------------------------------
-    yield
+    Yield to handler
 -----------------------------------------------------------------*/
 
-// Return to a handler with result `res` by unwinding the handler stack
+// Return to a handler by unwinding the handler stack.
 static void __noreturn yield_to_handler(hstack* hs, handler* h,
   resume* resume, const lh_operation* op, lh_value oparg)
 {
@@ -1129,7 +1140,7 @@ static __noinline lh_value capture_resume_yield(hstack* hs, handler* h, const lh
 
 
 /*-----------------------------------------------------------------
-  handle
+   Handle
 -----------------------------------------------------------------*/
 
 // Start a handler 
@@ -1147,9 +1158,9 @@ static __noinline lh_value handle_with(hstack* hs, handler* h, lh_value(*action)
     assert(hs->count > 0);
     // we yielded back to the handler; the `handler->arg` is filled in.
     // note: if we return trough non-scoped resumes the handler stack may be
-    // different and our handler will point to a random handler in that stack!
+    // different and handler `h` will point to a random handler in that stack!
     // ie. we need to load from the top of the current handler stack instead.
-    // this is also necessary if the handler stack was reallocated to grow.
+    // This is also necessary if the handler stack was reallocated to grow.
     h = hstack_top(hs);  // re-load our handler
     #ifndef NDEBUG
     assert(hdef == h->kind.eff.hdef);
@@ -1203,9 +1214,8 @@ static __noinline
 #if defined(__GNUC__) && defined(LH_ABI_x86)
 __noopt
 #endif
-lh_value handle_upto(
-  hstack* hs, void* base, const lh_handlerdef* def,
-  lh_value local, lh_value(*action)(lh_value), lh_value arg)
+lh_value handle_upto( hstack* hs, void* base, const lh_handlerdef* def,
+                      lh_value local, lh_value(*action)(lh_value), lh_value arg)
 {
   // allocate handler frame on the stack so it will be part of a captured continuation
   handler* h = hstack_push_effect(hs,def,base,local);
@@ -1236,7 +1246,7 @@ lh_value lh_handle( const lh_handlerdef* def, lh_value local, lh_actionfun* acti
 
 
 /*-----------------------------------------------------------------
-  yield
+  Yield an operation
 -----------------------------------------------------------------*/
 
 // `yieldop` yields to the first enclosing handler that can handle
@@ -1245,14 +1255,12 @@ static lh_value __noinline yieldop(lh_optag optag, lh_value arg)
 {
   // find the operation handler along the handler stack
   hstack*   hs = &__hstack;
-  count_t   skipped = 0;
+  count_t   skipped;
   const lh_operation* op;
   lh_value  local;
   handler* h = hstack_find(hs, optag, &op, &local, &skipped);
   if (op->opkind <= LH_OP_NORESUME) {
     yield_to_handler(hs, h, NULL, op, arg);
-    assert(false);
-    return lh_value_null;
   }
   // push a special "skip" handler; when the operation function calls operations itself,
   // those will not be handled by any handlers above handler.
@@ -1286,14 +1294,14 @@ static lh_value __noinline yieldop(lh_optag optag, lh_value arg)
     // otherwise no resume was called; yield back to the handler with the result.
     else {
       yield_to_handler(hs, h, NULL, NULL, res);
-      assert(false);
-      return lh_value_null;
     }
   }
   else {
     // In general, capture a resumption and yield to the handler
     return capture_resume_yield(hs, h, op, arg);
   }
+  assert(false);
+  return lh_value_null;
 }
 
 // Yield to the first enclosing handler that can handle

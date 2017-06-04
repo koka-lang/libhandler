@@ -8,6 +8,7 @@
 /*
 Code for amd64 calling convention on x86_64: Solaris, Linux, FreeBSD, OS X
 See: https://en.wikipedia.org/wiki/X86_calling_conventions
+And: http://chamilo2.grenet.fr/inp/courses/ENSIMAG3MM1LDB/document/doc_abi_ia64.pdf
 
 jump_buf layout (compatible with FreeBSD):
    0: rip
@@ -18,10 +19,10 @@ jump_buf layout (compatible with FreeBSD):
   40: r13
   48: r14
   56: r15
-  64: fpu control word (16 bits)
+  64: fpcr, fpu control word (16 bits)
   66: unused
-  68: sse control word (32 bits)
-  72: (sizeof jump_buf)
+  68: mxcsr, sse status register (32 bits)
+  72: sizeof jmp_buf
 */
 
 .global _lh_setjmp

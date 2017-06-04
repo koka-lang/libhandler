@@ -21,7 +21,7 @@ jump_buf layout
   64: fpu control word (16 bits)
   66: unused
   68: sse control word (32 bits)
-  72: (sizeof jump_buf)
+  72: sizeof jmp_buf
 */
 
 

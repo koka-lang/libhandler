@@ -18,7 +18,7 @@
 ; 20: eip
 ; 24: fpu control word
 ; 26: unused
-; 28: (sizeof jump_buf)
+; 28: sizeof jmp_buf
 ; -------------------------------------------------------
 
 .386
