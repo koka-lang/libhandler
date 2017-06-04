@@ -684,16 +684,51 @@ static void hstack_init(ref hstack* hs) {
 }
 
 // Current top handler frame
-static ref handler* hstack_top(ref hstack* hs) {
+static handler* hstack_top(ref hstack* hs) {
   assert(hs->count > 0);
   return &hs->hframes[hs->count - 1];
 }
 
 // Push a new uninitialized handler frame and return a reference to it.
-static ref handler* hstack_push(ref hstack* hs) {
+static handler* _hstack_push(ref hstack* hs, const lh_effect effect) {
   hstack_ensure_space(hs, 1);
   hs->count++;
-  return &hs->hframes[hs->count - 1];
+  handler* h = &hs->hframes[hs->count - 1];
+  h->effect = effect;
+  return h;
+}
+
+// Push an effect handler
+static handler* hstack_push_effect(ref hstack* hs, const lh_handlerdef* hdef, void* stackbase, lh_value local) {
+  handler* h = _hstack_push(hs, hdef->effect);
+  h->kind.eff.stackbase = stackbase;
+  h->kind.eff.hdef = hdef;
+  h->kind.eff.local = local;
+  h->kind.eff.arg = lh_value_null;
+  h->kind.eff.arg_op = NULL;
+  h->kind.eff.arg_resume = NULL;
+  return h;
+}
+
+// Push a skip handler
+static handler* hstack_push_skip(ref hstack* hs, count_t toskip) {
+  handler* h = _hstack_push(hs, LH_EFFECT(__skip));
+  h->kind.skip.toskip = toskip;
+  return h;
+}
+
+// Push a fragment handler
+static handler* hstack_push_fragment(ref hstack* hs, fragment* fragment) {
+  handler* h = _hstack_push(hs, LH_EFFECT(__fragment));
+  h->kind.frag.fragment = fragment;
+  return h;
+}
+
+// Push a scoped handler
+static handler* hstack_push_scoped(ref hstack* hs, resume* resume) {
+  handler* h = _hstack_push(hs, LH_EFFECT(__scoped));
+  h->kind.scoped.resume = resume;
+  return h;
 }
 
 // Pop a handler frame, decreasing its reference counts.
@@ -723,7 +758,7 @@ static void hstack_free(ref hstack* hs) {
 }
 
 
-static count_t hstack_append_movefrom(ref hstack* hs, ref hstack* topush, count_t idx) {
+static count_t _hstack_append_movefrom(ref hstack* hs, ref hstack* topush, count_t idx) {
   count_t cnt = topush->count - idx;
   hstack_ensure_space(hs, cnt);
   memcpy(hs->hframes + hs->count, topush->hframes + idx, sizeof(handler) * cnt);
@@ -733,7 +768,7 @@ static count_t hstack_append_movefrom(ref hstack* hs, ref hstack* topush, count_
 
 // Copy handlers from one stack to another increasing reference counts as appropiate.
 static void hstack_append_copyfrom(ref hstack* hs, ref hstack* tocopy, count_t idx) {
-  count_t copied = hstack_append_movefrom(hs, tocopy, idx);
+  count_t copied = _hstack_append_movefrom(hs, tocopy, idx);
   for (count_t i = 0; i < copied; i++) {
     handler_acquire(&hs->hframes[hs->count - i - 1]);    
   }
@@ -1042,9 +1077,7 @@ static __noinline lh_value capture_resume_call(hstack* hs, resume* r, lh_value r
     stats.rcont_captured_size += (long)f->cstack.size;
     #endif
     // push a special "fragment" frame to remember to restore the stack when yielding to a handler across non-scoped resumes
-    handler* h = hstack_push(hs);
-    h->effect = LH_EFFECT(__fragment);
-    h->kind.frag.fragment = f;
+    hstack_push_fragment(hs, f);
     // and now jump to the entry with resume arg
     jumpto_resume(r, resumelocal, resumearg);
   }
@@ -1133,9 +1166,7 @@ lh_value handle_with(hstack* hs, handler* h, lh_value(*action)(lh_value), lh_val
     if (op != NULL && op->opfun != NULL) {
       // push a scoped frame if necessary
       if (op->opkind==LH_OP_SCOPED) {
-        h = hstack_push(hs);
-        h->effect = LH_EFFECT(__scoped);
-        h->kind.scoped.resume = resume;
+        hstack_push_scoped(hs,resume);
       }
       assert((void*)&resume->lhresume == (void*)resume);
       // and call the operation handler
@@ -1179,14 +1210,7 @@ lh_value handle_upto(
   lh_value local, lh_value(*action)(lh_value), lh_value arg)
 {
   // allocate handler frame on the stack so it will be part of a captured continuation
-  handler* h = hstack_push(hs);
-  h->effect = def->effect; // cache in handler for faster find
-  h->kind.eff.stackbase  = base;
-  h->kind.eff.hdef       = def;
-  h->kind.eff.local      = local;
-  h->kind.eff.arg        = lh_value_null;
-  h->kind.eff.arg_op     = NULL;
-  h->kind.eff.arg_resume = NULL;
+  handler* h = hstack_push_effect(hs,def,base,local);
   lh_value res = handle_with(hs, h, action, arg);
   // after returning, check if there is a fragment frame we should jump to..
   hs = &__hstack;
@@ -1241,9 +1265,7 @@ static lh_value __noinline yieldop(lh_optag optag, lh_value arg)
     // push a skip frame
     if (op->opkind != LH_OP_TAIL_NOOP) {
       hidx = hstack_indexof(hs, h);
-      handler* effhandler = hstack_push(hs);
-      effhandler->effect = LH_EFFECT(__skip);
-      effhandler->kind.skip.toskip = skipped + 1;
+      hstack_push_skip(hs,skipped+1);
     }
     // setup up a stack allocated tail resumption
     tailresume r;
