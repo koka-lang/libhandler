@@ -10,7 +10,7 @@ bindir=''
 cc=gcc
 ccoption=''
 ccflags=''
-
+asmflags=''
 verbose=no
 
 
@@ -32,6 +32,8 @@ while : ; do
         host_type=$ac_optarg ;;
     -cc-opts*|--cc-opts*)
         ccflags=$ac_optarg;;
+    -asm-opts*|--asm-opts*)
+        asmflags=$ac_optarg;;
     -cc*|--cc*)
         ccoption=$ac_optarg;;
     -verbose|--verbose)
@@ -40,10 +42,12 @@ while : ; do
         host_abi=$ac_optarg;;
     -h|--help|-\?|help|\?)
         echo "./configure [options]"
-        echo "  --host=<arch>-<vendor>-<os>   set the host (for example 'x86_64-pc-windows')"
-        echo "  --cc=<ccomp>                  set the c-compiler (for example 'clang')"
-        echo "  --abi=<abi>                   set ABI (for example: 'x32' or 'amd64')"
-        echo "  --verbose                     be verbose"
+        echo "  --cc=<ccomp>                 set the c-compiler (for example 'clang')"
+        echo "  --cc-opts=<options>          set extra c-compiler options (for example '-m32')"
+        echo "  --asm-opts=<options>         set extra assembler options (for example '-m32')"
+        echo "  --abi=<abi>                  set ABI (for example: 'x32' or 'amd64')"
+        echo "  --host=<arch>-<vendor>-<os>  set the host (for example 'x86_64-pc-windows')"
+        echo "  --verbose                    be verbose"
         exit 0;;
     *) echo "warning: unknown option \"$1\"." 1>&2
   esac
@@ -145,7 +149,6 @@ ar="ar"
 arflags="rcs"
 arflagout=""
 ccflagout="-o "
-asmflags=""
 asmflagout="-o "
 ostype="unix"
 exe=""
@@ -193,10 +196,10 @@ case "$ccname" in
     asm=".asm";;
   gcc*)   
     ccflags="-Wall -std=c99 -pedantic $ccflags"
-    asmflags="-Wall";;
+    asmflags="-Wall $asmflags";;
   clang*)
     ccflags="-Wall $ccflags"
-    asmflags="-Wall";;
+    asmflags="-Wall $asmflags";;
   *)
     echo "warning: unknown c-compiler '$ccname' -- command options might be wrong";;        
 esac
@@ -381,7 +384,8 @@ echo "System:"
 echo "  host        : $host"
 echo "  abi         : $host_abi"
 echo "Build:"
-echo "  C compiler  : $cc $ccflags"
+echo "  c compiler  : $cc $ccflags"
+echo "  assembler   : $cc $asmflags"
 echo "  linker      : $link $cclinkflags"
 echo
 echo "Use the following commands to build:"
@@ -390,4 +394,7 @@ echo "> make"
 echo 
 echo "To run tests:"
 echo "> make tests"
+echo 
+echo "Test release version:"
+echo "> make tests VARIANT=release"
 echo
