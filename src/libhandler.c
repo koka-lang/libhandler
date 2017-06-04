@@ -30,15 +30,18 @@
       may need some assembly to properly unwind through fragments. For C++ we need
       to install an exception handler on the fragment boundary to unwind properly.
 
-    An `entry` is a jump buffer and contains the register context; it can 
-    be jumped to.
+    Names:
+    - The `base` of C stack is always the lowest address; it equals the `top`
+      of the stack if the stack grows down, or the `bottom` if the stack grows up.
+    - An `entry` is a jump buffer (`_jmp_buf`) and contains the register context; it can 
+      be jumped to.
 -----------------------------------------------------------------------------*/
 
 #include "libhandler.h"
 #include "cenv.h"     // configure generated
 
 #include <stddef.h>   // ptrdiff_t, size_t
-#include <stdlib.h>   // exit, malloc 
+#include <stdlib.h>   // exit, malloc, min, max
 #include <stdio.h>    // fprintf, vfprintf
 #include <string.h>   // memcpy
 #include <stdarg.h>   // varargs
@@ -156,7 +159,7 @@ typedef struct _hstack {
 
 // A captured C stack
 typedef struct _cstack {           
-  void*              base;      // The `base` is the absolute address of the lowest frame on the original C stack
+  const void*        base;      // The `base` is the lowest adress of where the stack is captured
   count_t            size;      // The byte size of the captured stack
   byte*              frames;    // The captured stack data (allocated in the heap)
 } cstack;
@@ -328,32 +331,51 @@ static void checked_free(void* p) {
 
 
 /*-----------------------------------------------------------------
-  Stack helpers
+  Stack helpers; these abstract over the direction the C stack grows.
+  The functions here give an interface _as if_ the stack
+  always grows 'up' with the 'top' of the stack at the highest absolute address.
 -----------------------------------------------------------------*/
 
-// stack top adjustment; becomes the size of a stack frame.
-static ptrdiff_t stacktop_adjust = 0;
-
 // approximate the top of the stack
-static __noinline __noopt void* _get_stacktop() {
+static __noinline __noopt void* get_cstack_top() {
   auto byte* top = (byte*)&top;
-  return (top + stacktop_adjust);
+  return top;
 }
 
-// true if the stack grows down 
-static bool stackdown = false;
+// true if the stack grows up
+static bool stackup = false;
 
 // infer the direction in which the stack grows and the size of a stack frame 
-static __noinline __noopt void _infer_stackdir() {
+static __noinline __noopt void infer_stackdir() {
   auto void* mark = (void*)&mark;
-  stacktop_adjust = 0;
-  void* top = _get_stacktop();
-  stackdown = (mark >= top);
-  // The adjustment works in principle to narrow the amount of stack we save.
-  // However on some platforms (msvc,debug,x86) this does not work due to 
-  // debug info. So we turn it off just to be safe and capture a bit more stack than strictly necessary.
-  //  stacktop_adjust = mark - top - (stackdown ? sizeof(mark) : 0);   // correct for both up or down
+  void* top = get_cstack_top();
+  stackup = (mark < top);
 }
+
+// The difference between stack pointers (pretending the stack grows up)
+// i.e. it is `p - q` for a stack that grows up, but `q - p` for a stack that grows down.
+static ptrdiff_t stack_diff(const void* p, const void* q) {
+  ptrdiff_t diff = (byte*)p - (byte*)q;
+  return (stackup ? diff : -diff);
+}
+
+// The address of the bottom of the stack given the `base` and `size` of a stack.
+static const void* stack_bottom(const void* base, ptrdiff_t size) {
+  return (stackup ? base : (byte*)base + size);
+}
+
+// The address of the top of the stack given the `base` and `size` of the stack.
+static const void* stack_top(const void* base, ptrdiff_t size) {
+  return (stackup ? (byte*)base + size : base);
+}
+
+// Is an address `below` another in the stack?
+// i.e. if the stack grows up `p < q` and otherwise `p > q`
+static bool stack_isbelow(const void* p, const void* q) {
+  return (stackup ? p < q : p > q);
+}
+
+
 
 
 /*-----------------------------------------------------------------
@@ -457,7 +479,7 @@ void lh_check_memory(FILE* h) {
 -----------------------------------------------------------------*/
 static void cstack_init(ref cstack* cs) {
   assert(cs != NULL);
-  cs->base = 0;
+  cs->base = NULL;
   cs->size = 0;
   cs->frames = NULL;
 }
@@ -471,16 +493,22 @@ static void cstack_free(ref cstack* cs) {
   }
 }
 
+
 // Return the lowest address to a c-stack regardless if the stack grows up or down
-static const byte* cstack_sp(const ref cstack* cs) {
-  const byte* base = (const byte*)(cs->base);
-  return (stackdown ? base - cs->size : base);
+static const void* cstack_base(const cstack* cs) {
+  return cs->base;
 }
 
-// Return true if the stack is located 'below' a given address
-static bool cstack_isbelow(const ref cstack* cs, void* top) {
-  return (stackdown ? top > cs->base : top < cs->base);
+// Return the top of the c-stack
+static const void* cstack_top(const cstack* cs) {
+  return stack_top(cs->base, cs->size);
 }
+
+// Return the bottom of the c-stack
+static const void* cstack_bottom(const cstack* cs) {
+  return stack_bottom(cs->base, cs->size);
+}
+
 
 
 /*-----------------------------------------------------------------
@@ -500,7 +528,7 @@ static __noinline void fragment_free_(fragment* f) {
   checked_free(f);
 }
 
-static void fragment_release_(fragment* f) {
+static void _fragment_release(fragment* f) {
   assert(f->refcount > 0);
   f->refcount--;
   if (f->refcount == 0) fragment_free_(f);
@@ -508,11 +536,11 @@ static void fragment_release_(fragment* f) {
 
 // Release a fragment
 static void fragment_release(fragment* f) {
-  if (f!=NULL) fragment_release_(f);
+  if (f!=NULL) _fragment_release(f);
 }
 
 // Release a resume continuation and set to `NULL`
-static void fragment_releaseat(fragment* volatile * pf) {
+static void fragment_release_at(fragment* volatile * pf) {
   fragment_release(*pf);
   *pf = NULL;
 }
@@ -544,7 +572,7 @@ static __noinline void resume_free_(resume* r) {
   checked_free(r);
 }
 
-static void resume_release_(resume* r) {
+static void _resume_release(resume* r) {
   assert(r->lhresume.rkind == FullResume);
   assert(r->refcount > 0);
   r->refcount--;
@@ -553,7 +581,7 @@ static void resume_release_(resume* r) {
 
 // Release a resumption
 static void resume_release(resume* r) {
-  if (r != NULL) resume_release_(r);
+  if (r != NULL) _resume_release(r);
 }
 
 // Release a resumption and set it to NULL;
@@ -610,10 +638,10 @@ static handler* handler_acquire(handler* h) {
 // Decrease the reference count of a handler's `rcont`.
 static void handler_release(ref handler* h) {
   if (is_fragmenthandler(h)) {
-    fragment_releaseat(&h->kind.frag.fragment);
+    fragment_release_at(&h->kind.frag.fragment);
   }
   else if (is_scopedhandler(h)) {
-    resume_release(h->kind.scoped.resume);
+    resume_release_at(&h->kind.scoped.resume);
   }
 }
 
@@ -740,12 +768,6 @@ static handler* hstack_find(ref hstack* hs, lh_optag optag, out const lh_operati
   return NULL;
 }
 
-// Return difference in bytes between two `void` pointers.
-static ptrdiff_t ptrdiff(void* p, void* q) {
-  return ((byte*)p - (byte*)q);
-}
-
-
 static count_t hstack_indexof(const hstack* hs, const handler* h) {
   assert(hs->count > 0 && h >= hs->hframes && h <= &hs->hframes[hs->count - 1]);
   return (h - hs->hframes);
@@ -771,13 +793,10 @@ static handler* hstack_at(const hstack* hs, count_t idx) {
   below that.
 -----------------------------------------------------------------*/
 
-static const byte* _max(const byte* x, const byte* y) { return (x >= y ? x : y); }
-static const byte* _min(const byte* x, const byte* y) { return (x <= y ? x : y); }
-
 // Extend cstack `cs` in-place to encompass both the `ds` stack and itself.
 static void cstack_extendfrom(ref cstack* cs, const ref cstack* ds) {
-  const byte* csp = cstack_sp(cs);
-  const byte* dsp = cstack_sp(ds);
+  const byte* csp = cstack_base(cs);
+  const byte* dsp = cstack_base(ds);
   if (cs->frames == NULL) {
     // nothing yet, just copy `ds`
     if (ds->frames != NULL) {
@@ -789,14 +808,14 @@ static void cstack_extendfrom(ref cstack* cs, const ref cstack* ds) {
   }
   else {
     // otherwise extend such that we can merge `cs` and `ds` together
-    const byte* newsp = _min(csp,dsp);
-    ptrdiff_t newsize = _max(csp + cs->size, dsp + ds->size) - newsp;
+    const byte* newsp = min(csp,dsp);
+    ptrdiff_t newsize = max(csp + cs->size, dsp + ds->size) - newsp;
     if (newsize > cs->size) {
       cs->frames = checked_realloc(cs->frames, newsize);
       if (newsp != csp) {
         assert(csp > newsp);
         memmove(cs->frames + (csp - newsp), cs->frames, cs->size);
-        cs->base = (void*)(stackdown ? csp + newsize : csp);
+        cs->base = csp;
       }
       cs->size = newsize;
     }
@@ -836,12 +855,12 @@ static void hstack_pop_upto(ref hstack* hs, ref handler* h, out cstack* cs)
   Initialize globals
 -----------------------------------------------------------------*/
 
-static bool _init = false;
+static bool initialized = false;
 
-static __noinline bool lh_init_(hstack* hs) {
-  if (!_init) {
-    _init = true;
-    _infer_stackdir();
+static __noinline bool _lh_init(hstack* hs) {
+  if (!initialized) {
+    initialized = true;
+    infer_stackdir();
   }
   assert(__hstack.size==0 && hs == &__hstack);
   hstack_init(hs);
@@ -850,7 +869,7 @@ static __noinline bool lh_init_(hstack* hs) {
 
 static bool lh_init(hstack* hs) {
   if (hs->size!=0) return false;
-              else return lh_init_(hs);
+              else return _lh_init(hs);
 }
 
 static __noinline void lh_done(hstack* hs) {
@@ -869,12 +888,12 @@ static __noinline void lh_done(hstack* hs) {
 // variables will remain in-tact. The `no_opt` parameter is there so 
 // smart compilers (i.e. clang) will not optimize away the `alloca` in `jumpto`.
 static __noinline __noreturn __noopt void _jumpto_stack(
-  byte* cframes, ptrdiff_t size, byte* sp, lh_jmp_buf* entry, bool freecframes,
+  byte* cframes, ptrdiff_t size, byte* base, lh_jmp_buf* entry, bool freecframes,
   char* no_opt)
 {
   if (no_opt != NULL) no_opt[0] = 0;
   // copy the saved stack onto our stack
-  memcpy(sp, cframes, size);
+  memcpy(base, cframes, size);
   if (freecframes) { free(cframes); } // should be fine to call `free` (assuming it will not mess with the stack above its frame)
   // and jump 
   _lh_longjmp( *entry, 1);
@@ -891,19 +910,20 @@ static __noinline __noreturn void jumpto(
     hstack_append_copyfrom(&__hstack, hs, 0);
   }
   if (cs->frames == NULL) {
-    // if no stack, just jump back down; this never happens with a capture_resume_jump or capture_continuation
+    // if no stack, just jump back down the stack; 
     // sanity: check if the entry is really below us!
-    void* top = _get_stacktop();
-    if (cs->base != 0 && cstack_isbelow(cs,top)) {
-      fatal(EFAULT,"returning from resume down the stack to a scope that was already exited!");
+    void* top = get_cstack_top();
+    if (cs->base != NULL && stack_isbelow(top,cstack_top(cs))) {
+      fatal(EFAULT,"Trying to jump up the stack to a scope that was already exited!");
     }
     // long jump back up direcly, no need to restore stacks
     _lh_longjmp(*entry, 1);
   }
   else {
     // ensure there is enough room on the stack; 
-    void* top = _get_stacktop();
-    ptrdiff_t extra = (stackdown ? ptrdiff(top, cs->base) : ptrdiff(cs->base,top)) + cs->size;
+    void* top = get_cstack_top();
+    ptrdiff_t extra = stack_diff(cstack_top(cs), top);
+                      // (stackdown ? ptrdiff(top, cs->bottom) : ptrdiff(cs->bottom,top)) + cs->size;
     extra += 0x200; // ensure a little more for the `_jumpto_stack` stack frame
                     // clang tends to optimize out a bare `alloca` call so we need to 
                     //  ensure it sees it as live; we store it in a local and pass that to `_jumpto_stack`
@@ -913,7 +933,7 @@ static __noinline __noreturn void jumpto(
     }
     // since we allocated more, the execution of `_jumpto_stack` will be in a stack frame 
     // that will not get overwritten itself when copying the new stack
-    _jumpto_stack(cs->frames, cs->size, (byte*)cstack_sp(cs), entry, freecframes, no_opt);
+    _jumpto_stack(cs->frames, cs->size, (byte*)cstack_base(cs), entry, freecframes, no_opt);
   }
 }
 
@@ -939,21 +959,21 @@ static __noinline __noreturn void jumpto_fragment(fragment* f, lh_value res)
 -----------------------------------------------------------------*/
 
 // Copy part of the C stack into a context.
-static void capture_cstack(cstack* cs, void* base, void* top)
+static void capture_cstack(cstack* cs, const void* bottom, const void* top)
 {
-  cs->base = base;
-  if (stackdown ? top >= base : top <= base) {
-    // delimiter below or no delimiter; don't capture the stack
+  ptrdiff_t size = stack_diff(top, bottom);
+  if (size <= 0) { // (stackdown ? top >= bottom : top <= bottom) {
+    // top is not above bottom; don't capture the stack
+    cs->base = bottom;
     cs->size = 0;
     cs->frames = NULL;
   }
   else {
-    // delimiter above us: copy the stack 
-    ptrdiff_t size = (stackdown ? ptrdiff(base,top) : ptrdiff(top,base));
-    assert(size > 0);
+    // copy the stack 
+    cs->base = min(bottom, top);
     cs->size = size;
     cs->frames = checked_malloc(size);
-    memcpy(cs->frames, cstack_sp(cs), size);
+    memcpy(cs->frames, cs->base, size);
   }
 }
 
@@ -1015,8 +1035,8 @@ static __noinline lh_value capture_resume_call(hstack* hs, resume* r, lh_value r
   }
   else {
     // we set our jump point; now capture the stack upto the stack base of the continuation 
-    void* top = _get_stacktop();
-    capture_cstack(&f->cstack, r->cstack.base, top);
+    void* top = get_cstack_top();
+    capture_cstack(&f->cstack, cstack_bottom(&r->cstack), top);
     #ifdef _STATS
     if (f->cstack.frames == NULL) stats.rcont_captured_empty++;
     stats.rcont_captured_size += (long)f->cstack.size;
@@ -1056,7 +1076,7 @@ static __noinline lh_value capture_resume_yield(hstack* hs, handler* h, const lh
   }
   else {
     // we set our jump point; now capture the stack upto the handler
-    void* top = _get_stacktop();
+    void* top = get_cstack_top();
     assert(is_effhandler(h));
     capture_cstack(&r->cstack, h->kind.eff.stackbase, top);
     // capture hstack
@@ -1186,7 +1206,7 @@ lh_value lh_handle( const lh_handlerdef* def, lh_value local, lh_actionfun* acti
 {
   hstack* hs = &__hstack;
   bool init = lh_init(hs);
-  void* base = _get_stacktop();
+  void* base = get_cstack_top();
   lh_value res = handle_upto(hs, base, def, local, action, arg);
   if (init) lh_done(hs);
   return res;
