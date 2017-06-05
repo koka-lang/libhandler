@@ -38,6 +38,9 @@
     <ClCompile Include="..\..\test\tests-general.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\test\tests-tailops.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\test\tests.h">

@@ -18,7 +18,7 @@ int __cdecl main(void) {
   tests_dynamic();
   tests_raise();
   tests_general();
-
+  tests_tailops();
   tests_done();
   #else
   test_perf1();

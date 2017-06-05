@@ -308,7 +308,7 @@ const char* lh_effect_name(lh_effect effect);
   lh_value wrap_##fun(lh_value arg) { (void)(arg); return lh_value_##restype(fun()); }
 
 #define LH_WRAP_FUN1(fun,argtype,restype) \
-  lh_value wrap_##fun(lh_value arg) { return lh_value_##restype(fun(lh_##argtype##_value(arg)); }
+  lh_value wrap_##fun(lh_value arg) { return lh_value_##restype(fun(lh_##argtype##_value(arg))); }
 
 #define LH_WRAP_VOIDFUN0(fun) \
   lh_value wrap_##fun(lh_value arg) { (void)(arg); fun(); return lh_value_null; }

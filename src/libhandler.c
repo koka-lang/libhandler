@@ -885,13 +885,19 @@ static void cstack_extendfrom(ref cstack* cs, const ref cstack* ds) {
 static void hstack_pop_upto(ref hstack* hs, ref handler* h, out cstack* cs) 
 {
   count_t hidx = hstack_indexof(hs, h);
+  assert(hidx >= 0);
   assert(hs->count > hidx);
   assert(&hs->hframes[hidx] == h);
   if (cs != NULL) cstack_init(cs);
   count_t cnt = hs->count - hidx - 1;
+  count_t toskip = 0;
   for (count_t i = 0; i < cnt; i++) {
     handler* hf = &hs->hframes[hs->count - 1];
-    if (is_fragmenthandler(hf)) { // (hf->hdef == NULL && hf->rcont != NULL && cs != NULL) {
+    if (toskip > 0) {
+      // ignore frames in the skip parts
+      toskip--;
+    }
+    else if (is_fragmenthandler(hf)) { 
       // special "fragment" handler; remember to restore the stack
       assert(hf->kind.frag.fragment != NULL);
       cstack* hcs = &hf->kind.frag.fragment->cstack;
@@ -899,8 +905,12 @@ static void hstack_pop_upto(ref hstack* hs, ref handler* h, out cstack* cs)
         cstack_extendfrom(cs, hcs);
       }
     }
+    else if (is_skiphandler(hf)) {    // test[pop-over-skip] in test-tailops.c
+      toskip = hf->kind.skip.toskip;
+    }
     hstack_pop(hs);
   }
+  assert(toskip == 0);
   assert(hs->count == hidx + 1);
   assert(hstack_top(hs) == h);
 }
@@ -1271,6 +1281,7 @@ static lh_value __noinline yieldop(lh_optag optag, lh_value arg)
   const lh_operation* op;
   lh_value  local;
   handler* h = hstack_find(hs, optag, &op, &local, &skipped);
+
   if (op->opkind <= LH_OP_NORESUME) {
     yield_to_handler(hs, h, NULL, op, arg);
   }

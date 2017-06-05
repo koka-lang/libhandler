@@ -88,6 +88,7 @@ void tests_dynamic();
 //void tests2();
 void tests_raise();
 void tests_general();
+void tests_tailops();
 
 void test_perf1();
 
