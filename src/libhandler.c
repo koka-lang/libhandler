@@ -1209,7 +1209,7 @@ static __noinline lh_value handle_with(hstack* hs, handler* h, lh_value(*action)
 
 // `handle_upto` installs a handler on the stack with a given stack `base`. 
 static __noinline 
-#if defined(__GNUC__) && defined(LH_ABI_x86)
+#if defined(__GNUC__) && defined(LH_ABI_x86) 
 __noopt
 #endif
 lh_value handle_upto( hstack* hs, void* base, const lh_handlerdef* def,
