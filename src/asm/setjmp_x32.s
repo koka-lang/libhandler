@@ -6,6 +6,7 @@
 -----------------------------------------------------------------------------*/
 
 /*
+*UNTESTED*
 Code for x32 calling convention: Linux
 See: https://en.wikipedia.org/wiki/X32_ABI
 
@@ -59,9 +60,9 @@ _lh_longjmp:                  /* rdi: jmp_buf, esi: arg */
   movq  48 (%rdi), %r14
   movq  56 (%rdi), %r15
 
-  ldmxcsr 68 (%rdi)           /* restore sse control word */
   fnclex                      /* clear fpu exception flags */
   fldcw   64 (%rdi)           /* restore fpu control word */
+  ldmxcsr 68 (%rdi)           /* restore sse control word */
 
   testl %eax, %eax            /* longjmp should never return 0 */ 
   jnz   ok

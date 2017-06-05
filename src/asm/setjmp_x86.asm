@@ -16,12 +16,14 @@
 ; 12: esi
 ; 16: esp
 ; 20: eip
-; 24: fpu control word
-; 26: unused
-; 28: sizeof jmp_buf
+; 24: sse control word
+; 28: fpu control word
+; 30: unused
+; 32: sizeof jmp_buf
 ; -------------------------------------------------------
 
 .386
+.XMM            
 .MODEL FLAT, C 
 .CODE 
 
@@ -39,7 +41,8 @@ _lh_setjmp PROC
   mov     [ecx+ 8], edi
   mov     [ecx+12], esi
   
-  fnstcw  [ecx+24]         ; save fpu control word
+  stmxcsr [ecx+24]         ; save sse control word
+  fnstcw  [ecx+28]         ; save fpu control word
     
   xor     eax, eax         ; return zero
   ret
@@ -57,8 +60,9 @@ _lh_longjmp PROC
   mov     edi, [ecx+ 8]
   mov     esi, [ecx+12]
   
+  ldmxcsr [ecx+24]            ; load sse control word
   fnclex                      ; clear fpu exception flags
-  fldcw   [ecx+24]            ; restore fpu control word
+  fldcw   [ecx+28]            ; restore fpu control word
    
   test    eax, eax            ; longjmp should never return 0
   jnz     ok

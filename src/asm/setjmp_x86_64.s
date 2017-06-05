@@ -53,16 +53,16 @@ _lh_setjmp:                 /* input: rcx: jmp_buf, rdx: frame pointer */
   stmxcsr 88 (%rcx)          /* save sse control word */
   fnstcw  92 (%rcx)          /* save fpu control word */
 
-  movdqa  %xmm6,   96 (%rcx) /* save sse registers */
-  movdqa  %xmm7,  112 (%rcx) 
-  movdqa  %xmm8,  128 (%rcx) 
-  movdqa  %xmm9,  144 (%rcx) 
-  movdqa  %xmm10, 160 (%rcx) 
-  movdqa  %xmm11, 176 (%rcx) 
-  movdqa  %xmm12, 192 (%rcx) 
-  movdqa  %xmm13, 208 (%rcx) 
-  movdqa  %xmm14, 224 (%rcx) 
-  movdqa  %xmm15, 240 (%rcx) 
+  movdqu  %xmm6,   96 (%rcx) /* save sse registers */
+  movdqu  %xmm7,  112 (%rcx) 
+  movdqu  %xmm8,  128 (%rcx) 
+  movdqu  %xmm9,  144 (%rcx) 
+  movdqu  %xmm10, 160 (%rcx) 
+  movdqu  %xmm11, 176 (%rcx) 
+  movdqu  %xmm12, 192 (%rcx) 
+  movdqu  %xmm13, 208 (%rcx) 
+  movdqu  %xmm14, 224 (%rcx) 
+  movdqu  %xmm15, 240 (%rcx) 
 
   xor     %rax, %rax          /* return 0 */
   ret
@@ -84,16 +84,16 @@ _lh_longjmp:                  /* rcx: jmp_buf, edx: arg */
   fnclex                      /* clear fpu exception flags */
   fldcw   92 (%rcx)           /* restore fpu control word */
   
-  movdqa   96 (%rcx), %xmm6   /* restore sse registers */
-  movdqa  112 (%rcx), %xmm7
-  movdqa  128 (%rcx), %xmm8 
-  movdqa  144 (%rcx), %xmm9 
-  movdqa  160 (%rcx), %xmm10 
-  movdqa  176 (%rcx), %xmm11 
-  movdqa  192 (%rcx), %xmm12 
-  movdqa  208 (%rcx), %xmm13 
-  movdqa  224 (%rcx), %xmm14
-  movdqa  240 (%rcx), %xmm15
+  movdqu   96 (%rcx), %xmm6   /* restore sse registers */
+  movdqu  112 (%rcx), %xmm7
+  movdqu  128 (%rcx), %xmm8 
+  movdqu  144 (%rcx), %xmm9 
+  movdqu  160 (%rcx), %xmm10 
+  movdqu  176 (%rcx), %xmm11 
+  movdqu  192 (%rcx), %xmm12 
+  movdqu  208 (%rcx), %xmm13 
+  movdqu  224 (%rcx), %xmm14
+  movdqu  240 (%rcx), %xmm15
 
   testl %eax, %eax            /* longjmp should never return 0 */ 
   jnz   ok

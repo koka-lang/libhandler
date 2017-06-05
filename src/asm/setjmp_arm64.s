@@ -45,14 +45,14 @@ _lh_setjmp:
     stp   x23, x24, [x0], #16
     stp   x25, x26, [x0], #16
     stp   x27, x28, [x0], #16
-    stp   x29, x30, [x0], #16
-    mov   x10, sp
+    stp   x29, x30, [x0], #16   /* fp and lr */
+    mov   x10, sp               /* sp */
     str   x10, [x0], #8
     /* store fp control and status */
     mrs   x10, fpcr
     mrs   x11, fpsr
     strp  x10, x11, [x0], #16
-    add   x0, #8
+    add   x0, #8                /* skip unused */
     /* store float registers */
     stp   q8,  q9,  [x0], #32
     stp   q10, q11, [x0], #32
@@ -60,7 +60,7 @@ _lh_setjmp:
     stp   q14, q15, [x0], #32
     /* always return zero */
     mov   x0, xzr
-    ret
+    ret                         /* jump to lr */
 
     
 /* called with x0: &jmp_buf, x1: return code */
@@ -70,14 +70,14 @@ _lh_longjmp:
     ldp   x23, x24, [x0], #16
     ldp   x25, x26, [x0], #16
     ldp   x27, x28, [x0], #16
-    ldp   x29, x30, [x0], #16
-    ldr   x10, [x0], #8
+    ldp   x29, x30, [x0], #16   /* fp and lr */
+    ldr   x10, [x0], #8         /* sp */
     mov   sp,  x10
     /* load fp control and status */
     ldp   x10, x11, [x0], #16
-    add   x0, #8
     msr   fpcr, x10
     msr   fpsr, x11
+    add   x0, #8                /* skip unused */
     /* load float registers */
     ldp   q8,  q9,  [x0], #32
     ldp   q10, q11, [x0], #32
@@ -86,5 +86,4 @@ _lh_longjmp:
     /* never return zero */
     cmp   x1, wzr
     csinc x0, x1, xzr, ne
-    ret   
-    
+    ret                         /* jump to lr */

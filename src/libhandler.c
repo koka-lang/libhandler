@@ -87,7 +87,7 @@ typedef ptrdiff_t     count_t;   // signed natural machine word
 # ifndef __nothrow
 #  define __nothrow     __attribute__((nothrow))
 # endif
-# define __align(x)     __attribute__((align_value(x~)))
+# define __align(x)     __attribute__((align_value(x)))
 #endif 
 
 
@@ -106,9 +106,8 @@ typedef ptrdiff_t     count_t;   // signed natural machine word
    masks. In those cases we try to substitute our own definitions.
 */
 #if defined(HAS_ASMSETJMP)
-// re-use library jmp_buf so alignment is guaranteed;
-// we check for the required size during initialization.
-# define lh_jmp_buf jmp_buf     
+// define the lh_jmp_buf in terms of `void*` elements to have natural alignment
+typedef void* lh_jmp_buf[ASM_JMPBUF_SIZE/sizeof(void*)];
 __nothrow __returnstwice int  _lh_setjmp(lh_jmp_buf buf);
 __nothrow __noreturn     void _lh_longjmp(lh_jmp_buf buf, int arg);
 
@@ -210,8 +209,8 @@ typedef struct _tailresume {
 
 // Regular effect handler.
 typedef struct _effhandler {
-  const lh_handlerdef* hdef;        // operation definitions
   lh_jmp_buf           entry;       // used to jump back to a handler 
+  const lh_handlerdef* hdef;        // operation definitions
   volatile lh_value    arg;         // the yield argument is passed here
   const lh_operation*  arg_op;      // the yielded operation is passed here
   resume*              arg_resume;  // the resumption function for the yielded operation

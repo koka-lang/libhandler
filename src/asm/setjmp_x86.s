@@ -16,9 +16,10 @@
 // 12: esi
 // 16: esp
 // 20: eip
-// 24: fpu control word
-// 26: unused
-// 28: sizeof jmp_buf
+// 24: sse control word (32 bits)
+// 28: fpu control word (16 bits)
+// 30: unused
+// 32: sizeof jmp_buf
 // ------------------------------------------------------- */
 
 .global _lh_setjmp
@@ -44,7 +45,8 @@ _lh_setjmp:
   movl    %edi,  8 (%ecx)
   movl    %esi, 12 (%ecx)
 
-  fnstcw  24 (%ecx)        /* save fpu control word */
+  stmxcsr 24 (%ecx)        /* save sse control word */
+  fnstcw  28 (%ecx)        /* save fpu control word */
     
   xorl    %eax, %eax       /* return zero */
   ret
@@ -61,8 +63,9 @@ _lh_longjmp:
   movl    8 (%ecx), %edi
   movl    12 (%ecx), %esi
 
+  ldmxcsr 24 (%ecx)           /* restore sse control word */
   fnclex                      /* clear fpu exception flags */
-  fldcw   24 (%ecx)           /* restore fpu control word */
+  fldcw   28 (%ecx)           /* restore fpu control word */
    
   testl   %eax, %eax          /* longjmp should never return 0 */
   jnz     ok

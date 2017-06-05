@@ -9,6 +9,9 @@
 ; Code for x86-64 calling convention: Win64 (MSVC)
 ; see: https://en.wikipedia.org/wiki/X86_calling_conventions
 ;
+; note: we use 'movdqu' instead of 'movdqa' since we cannot
+;       guarantee proper alignment.
+;
 ; jump_buf layout, compatible with msvc
 ;   0: rdx (frame pointer on msvc)
 ;   8: rbx
@@ -53,16 +56,16 @@ _lh_setjmp PROC
   stmxcsr [rcx+88]         ; save sse control word
   fnstcw  [rcx+92]         ; save fpu control word
   
-  movdqa  [rcx+96],  xmm6  ; save sse registers
-  movdqa  [rcx+112], xmm7
-  movdqa  [rcx+128], xmm8
-  movdqa  [rcx+144], xmm9 
-  movdqa  [rcx+160], xmm10
-  movdqa  [rcx+176], xmm11
-  movdqa  [rcx+192], xmm12
-  movdqa  [rcx+208], xmm13
-  movdqa  [rcx+224], xmm14
-  movdqa  [rcx+240], xmm15
+  movdqu  [rcx+96],  xmm6  ; save sse registers
+  movdqu  [rcx+112], xmm7
+  movdqu  [rcx+128], xmm8
+  movdqu  [rcx+144], xmm9 
+  movdqu  [rcx+160], xmm10
+  movdqu  [rcx+176], xmm11
+  movdqu  [rcx+192], xmm12
+  movdqu  [rcx+208], xmm13
+  movdqu  [rcx+224], xmm14
+  movdqu  [rcx+240], xmm15
   
   xor     eax, eax
   ret
@@ -88,16 +91,16 @@ _lh_longjmp PROC
   fnclex                        ; clear fpu exception flags
   fldcw   [rcx+92]              ; restore fpu control word
   
-  movdqa  xmm6,  [rcx+96]       ; restore sse registers
-  movdqa  xmm7,  [rcx+112]
-  movdqa  xmm8,  [rcx+128]
-  movdqa  xmm9,  [rcx+144]
-  movdqa  xmm10, [rcx+160]
-  movdqa  xmm11, [rcx+176]
-  movdqa  xmm12, [rcx+192]
-  movdqa  xmm13, [rcx+208]
-  movdqa  xmm14, [rcx+224]
-  movdqa  xmm15, [rcx+240]
+  movdqu  xmm6,  [rcx+96]       ; restore sse registers
+  movdqu  xmm7,  [rcx+112]
+  movdqu  xmm8,  [rcx+128]
+  movdqu  xmm9,  [rcx+144]
+  movdqu  xmm10, [rcx+160]
+  movdqu  xmm11, [rcx+176]
+  movdqu  xmm12, [rcx+192]
+  movdqu  xmm13, [rcx+208]
+  movdqu  xmm14, [rcx+224]
+  movdqu  xmm15, [rcx+240]
    
   test    eax, eax              ; longjmp should never return 0
   jnz     ok
