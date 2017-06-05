@@ -350,11 +350,15 @@ static __noinline __noopt void* get_cstack_top() {
 // true if the stack grows up
 static bool stackup = false;
 
+// base of our c stack
+static const void* stackbottom = NULL;
+
 // infer the direction in which the stack grows and the size of a stack frame 
 static __noinline __noopt void infer_stackdir() {
   auto void* mark = (void*)&mark;
   void* top = get_cstack_top();
   stackup = (mark < top);
+  stackbottom = mark;
 }
 
 // The difference between stack pointers (pretending the stack grows up)
@@ -380,7 +384,17 @@ static bool stack_isbelow(const void* p, const void* q) {
   return (stackup ? p < q : p > q);
 }
 
+#ifndef NDEBUG
+static bool in_cstack(const void* p) {
+  const void* top = get_cstack_top();
+  return !(stack_isbelow(top, p) || stack_isbelow(p, stackbottom));
+}
 
+lh_value lh_value_ptr(const void* p) {
+  if (in_cstack(p)) fatal(EINVAL,"Cannot pass pointers to the c-stack in a lh_value");
+  return ((lh_value)(p));
+}
+#endif
 
 /*-----------------------------------------------------------------
   Predefined operators

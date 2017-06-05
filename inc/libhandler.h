@@ -30,8 +30,12 @@ typedef ptrdiff_t lh_value;
 
 #define lh_value_null       ((lh_value)0)
 
-#define lh_value_ptr(p)     ((lh_value)(p))
 #define lh_ptr_value(v)     ((void*)v)
+#ifdef NDEBUG
+# define lh_value_ptr(p)     ((lh_value)(p))
+#else
+lh_value lh_value_ptr(const void* p); // checks if no pointers to the stack are passed in an lh_value
+#endif
 
 #define lh_int_value(v)     ((int)v)
 #define lh_value_int(i)     ((lh_value)(i))
