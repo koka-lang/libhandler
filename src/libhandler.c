@@ -1331,17 +1331,22 @@ static const yieldargs yargs_null = { 0, { lh_value_null } };
 // Yield N arguments to an operation
 lh_value lh_yieldN(lh_optag optag, int argcount, ...) {
   assert(argcount >= 0);
-  if (argcount <= 0) return lh_yield(optag, lh_value_yieldargs(&yargs_null));
-  va_list ap;
-  va_start(ap, argcount);
-  yieldargs* yargs = lh_alloca(sizeof(yieldargs) + ((argcount - 1) * sizeof(lh_value)));
-  yargs->argcount = argcount;
-  for (int i = 0; i < argcount; i++) {
-    yargs->args[i] = va_arg(ap, lh_value);
+  if (argcount <= 0) {
+    return lh_yield(optag, lh_value_yieldargs(&yargs_null));
   }
-  va_end(ap);
-  lh_value res = lh_yield(optag, lh_value_yieldargs(yargs));
-  return res;
+  else {
+    va_list ap;
+    va_start(ap, argcount);
+    yieldargs* yargs = checked_malloc(sizeof(yieldargs) + ((argcount - 1) * sizeof(lh_value)));
+    yargs->argcount = argcount;
+    for (int i = 0; i < argcount; i++) {
+      yargs->args[i] = va_arg(ap, lh_value);
+    }
+    va_end(ap);
+    lh_value res = lh_yield(optag, lh_value_yieldargs(yargs));
+    checked_free(yargs);
+    return res;
+  }
 }
 
 
