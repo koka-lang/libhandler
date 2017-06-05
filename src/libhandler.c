@@ -840,8 +840,7 @@ static handler* hstack_at(const hstack* hs, count_t idx) {
   the unwinding returns a `cstack` object that should be restored when
   possible. 
 
-  Todo: optimize this more to avoid an initial copy if the refcount
-  on ds would drop to zero anyways; also, we could first scan to which
+  Todo:  we could first scan to which
   base address we are going to jump and only restores pieces of stack
   below that.
 -----------------------------------------------------------------*/
@@ -849,16 +848,25 @@ const byte* _min(const byte* p, const byte* q) { return (p <= q ? p : q); }
 const byte* _max(const byte* p, const byte* q) { return (p >= q ? p : q); }
 
 // Extend cstack `cs` in-place to encompass both the `ds` stack and itself.
-static void cstack_extendfrom(ref cstack* cs, const ref cstack* ds) {
+static void cstack_extendfrom(ref cstack* cs, ref cstack* ds, bool will_free_ds) {
   const byte* csp = cstack_base(cs);
   const byte* dsp = cstack_base(ds);
   if (cs->frames == NULL) {
     // nothing yet, just copy `ds`
     if (ds->frames != NULL) {
-      cs->frames = checked_malloc(ds->size);
-      memcpy(cs->frames, ds->frames, ds->size);
-      cs->base = ds->base;
-      cs->size = ds->size;
+      if (will_free_ds) {
+        // `ds` is about to be freed.. take over its frames
+        *cs = *ds; // copy fields
+        // and prevent freeing `ds`
+        ds->frames = NULL;
+        ds->size = 0;
+      }
+      else {
+        cs->frames = checked_malloc(ds->size);
+        memcpy(cs->frames, ds->frames, ds->size);
+        cs->base = ds->base;
+        cs->size = ds->size;
+      }
     }
   }
   else {
@@ -900,9 +908,9 @@ static void hstack_pop_upto(ref hstack* hs, ref handler* h, out cstack* cs)
     else if (is_fragmenthandler(hf)) { 
       // special "fragment" handler; remember to restore the stack
       assert(hf->kind.frag.fragment != NULL);
-      cstack* hcs = &hf->kind.frag.fragment->cstack;
-      if (hcs != NULL) {
-        cstack_extendfrom(cs, hcs);
+      fragment* f = hf->kind.frag.fragment;
+      if (f->cstack.frames != NULL) {
+        cstack_extendfrom(cs, &f->cstack, f->refcount == 1);
       }
     }
     else if (is_skiphandler(hf)) {    // test[pop-over-skip] in test-tailops.c
