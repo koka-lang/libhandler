@@ -1077,7 +1077,7 @@ static void capture_hstack(hstack* hs, hstack* to, handler* h ) {
 -----------------------------------------------------------------*/
 
 // Return to a handler by unwinding the handler stack.
-static void __noreturn yield_to_handler(hstack* hs, handler* h,
+static void __noinline __noreturn yield_to_handler(hstack* hs, handler* h,
   resume* resume, const lh_operation* op, lh_value oparg)
 {
   assert(is_effhandler(h));
