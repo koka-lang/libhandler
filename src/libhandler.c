@@ -849,8 +849,8 @@ const byte* _max(const byte* p, const byte* q) { return (p >= q ? p : q); }
 
 // Extend cstack `cs` in-place to encompass both the `ds` stack and itself.
 static void cstack_extendfrom(ref cstack* cs, ref cstack* ds, bool will_free_ds) {
-  const byte* csp = cstack_base(cs);
-  const byte* dsp = cstack_base(ds);
+  const byte* csb = cstack_base(cs);
+  const byte* dsb = cstack_base(ds);
   if (cs->frames == NULL) {
     // nothing yet, just copy `ds`
     if (ds->frames != NULL) {
@@ -862,6 +862,7 @@ static void cstack_extendfrom(ref cstack* cs, ref cstack* ds, bool will_free_ds)
         ds->size = 0;
       }
       else {
+        // otherwise copy the c-stack from ds
         cs->frames = checked_malloc(ds->size);
         memcpy(cs->frames, ds->frames, ds->size);
         cs->base = ds->base;
@@ -871,19 +872,26 @@ static void cstack_extendfrom(ref cstack* cs, ref cstack* ds, bool will_free_ds)
   }
   else {
     // otherwise extend such that we can merge `cs` and `ds` together
-    const byte* newsp = _min(csp,dsp);
-    ptrdiff_t newsize = _max(csp + cs->size, dsp + ds->size) - newsp;
-    if (newsize > cs->size) {
-      cs->frames = checked_realloc(cs->frames, newsize);
-      if (newsp != csp) {
-        assert(csp > newsp);
-        memmove(cs->frames + (csp - newsp), cs->frames, cs->size);
-        cs->base = csp;
-      }
-      cs->size = newsize;
+    const byte* newbase = _min(csb,dsb);
+    ptrdiff_t newsize = _max(csb + cs->size, dsb + ds->size) - newbase;
+    byte* newframes = checked_malloc(newsize);
+    // if non-overlapping, copy the current stack first into the new frames (to fill in the gaps)
+    if (dsb > csb + cs->size || dsb + ds->size < csb) {
+      memcpy(newframes, newbase, newsize);
     }
-    assert(dsp >= newsp);
-    memcpy(cs->frames + (dsp - newsp), ds->frames, ds->size);
+    // next copy the cs->frames into the new frames
+    assert(csb >= newbase);
+    assert(csb + cs->size <= newbase + newsize);
+    memcpy(newframes + (csb - newbase), cs->frames, cs->size);
+    // and finally copy the new ds->frames
+    assert(dsb >= newbase);
+    assert(dsb + ds->size <= newbase + newsize);
+    memcpy(newframes + (dsb - newbase), ds->frames, ds->size);
+    // and update cs
+    checked_free(cs->frames);
+    cs->frames = newframes;
+    cs->size = newsize;
+    cs->base = newbase;
   }
 }
 
