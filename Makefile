@@ -28,6 +28,7 @@ SRCFILES = libhandler.c
 
 TESTFILES= main.c tests.c \
 					 tests-exn.c tests-state.c tests-amb.c tests-dynamic.c tests-raise.c tests-general.c \
+					 tests-tailops.c \
 					 test-perf1.c
 
 

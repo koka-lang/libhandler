@@ -12,8 +12,8 @@ found in the file "license.txt" at the root of this distribution.
 /*-----------------------------------------------------------------
   A tail resume handler that raises an exception
 -----------------------------------------------------------------*/
-LH_DEFINE_EFFECT1(tr, raise);
-LH_DEFINE_OP1(tr, raise, long, long);
+LH_DEFINE_EFFECT1(tr, raise)
+LH_DEFINE_OP1(tr, raise, long, long)
 
 static lh_value _tr_raise(lh_resume r, lh_value local, lh_value arg) {
   unreferenced(arg);
@@ -35,7 +35,7 @@ lh_value tr_handle(lh_value(*action)(lh_value), lh_value arg) {
 long tr_test() {
   return tr_raise(42);
 }
-LH_WRAP_FUN0(tr_test, long);
+LH_WRAP_FUN0(tr_test, long)
 
 lh_value tr_handle_test(lh_value arg) {
   return tr_handle(wrap_tr_test, arg);
