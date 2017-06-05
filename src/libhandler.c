@@ -49,10 +49,6 @@
 #include <assert.h>   // assert
 #include <errno.h>    
 
-// Basic types
-typedef unsigned char byte;
-typedef ptrdiff_t     count_t;   // signed natural machine word
-
 // maintain cheap statistics
 #define _STATS
 
@@ -152,7 +148,11 @@ typedef char bool;
 /*-----------------------------------------------------------------
   Types
 -----------------------------------------------------------------*/
+// Basic types
+typedef unsigned char byte;
+typedef ptrdiff_t     count_t;   // signed natural machine word
 
+// forward declarations
 struct _handler;
 
 // A handler stack; Seperate from the C-stack so it can be searched even if the C-stack contains fragments
@@ -191,17 +191,17 @@ struct _lh_resume {
 
 // A first-class resumption
 typedef struct _resume {
-  struct _lh_resume  lhresume;    // contains the kind: always `FullResume`
+  struct _lh_resume  lhresume;    // contains the kind: always `FullResume` (must be first field, used for casts)
+  count_t            refcount;    // resumptions are heap allocated
   lh_jmp_buf         entry;       // jump point where the resume was captured
   cstack             cstack;      // captured cstack
   hstack             hstack;      // captured hstack  always `size == count`
-  count_t            refcount;    // resumptions are heap allocated
   volatile lh_value  arg;         // the argument to `resume` is passed through `arg`.
 } resume;
 
 // A resumption that can only used for tail-call resumptions (`lh_tail_resume`).
 typedef struct _tailresume {
-  struct _lh_resume  lhresume;    // the kind: always `TailResume`
+  struct _lh_resume  lhresume;    // the kind: always `TailResume` (must be first field, used for casts)
   volatile lh_value  local;       // the new local value for the handler
   volatile bool      resumed;     // set to `true` if `lh_tail_resume` was called
 } tailresume;
@@ -250,7 +250,7 @@ typedef struct _handler {
     fragmenthandler    frag;      // `effect == LH_EFFECT(__fragment)`    
     scopedhandler      scoped;    // `effect == LH_EFFECT(__scoped)`
     skiphandler        skip;      // `effect == LH_EFFECT(__skip)`  
-  } kind;
+  } kind;                         // c99 doesn't allow unnamed unions :-(
 } handler;
 
 LH_DEFINE_EFFECT0(__skip)
@@ -379,7 +379,6 @@ static const void* stack_top(const void* base, ptrdiff_t size) {
 static bool stack_isbelow(const void* p, const void* q) {
   return (stackup ? p < q : p > q);
 }
-
 
 
 
@@ -940,7 +939,7 @@ static __noinline __noreturn __noopt void _jumpto_stack(
 {
   if (no_opt != NULL) no_opt[0] = 0;
   // copy the saved stack onto our stack
-  memcpy(base, cframes, size);
+  memcpy(base, cframes, size);        // this will not overwrite our stack frame 
   if (freecframes) { free(cframes); } // should be fine to call `free` (assuming it will not mess with the stack above its frame)
   // and jump 
   _lh_longjmp( *entry, 1);

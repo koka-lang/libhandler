@@ -20,6 +20,7 @@ extern "C" {
 /*-----------------------------------------------------------------
 	 Generic values
    Because C has no parametric polymorphism we use `lh_value` as a substitute.
+   It is not allowed to pass stack addresses through an `lh_value`!
    All operations can be statically typed though in more expressive type systems.
 -----------------------------------------------------------------*/
 
@@ -60,7 +61,7 @@ typedef const char* lh_string;
 // Continuations are abstract and can only be `resume`d.
 struct _lh_resume;
 
-// A "resume" continuation is first-class, stored in data structures etc, and can survive
+// A "resume" continuation is first-class, can be stored in data structures etc, and can survive
 // the scope of an operation function. It can be resumed through `lh_resume` or `lh_release_resume`.
 typedef struct _lh_resume* lh_resume;
 
@@ -68,6 +69,9 @@ typedef struct _lh_resume* lh_resume;
 // They are compared by address though so they must be declared as static constants (using `LH_NEWOPTAG`)
 typedef const char* const * lh_effect;
 
+// An operation is identified by an effect and index in that effect. 
+// There are defined automatically using `LH_DEFINE_OPn` macros and can be referred to 
+// using `LH_OPTAG(effect,opname)`.
 typedef const struct lh_optag_ {
   lh_effect effect;
   ptrdiff_t opidx;
@@ -89,14 +93,11 @@ typedef void lh_freefun(void* local);
 // A fatal function is called on fatal errors.
 typedef void lh_fatalfun(int err, const char* msg);
 
-// Function definitions if using custom malloc
+// Function definitions if using custom allocators
 typedef void* lh_mallocfun(size_t size);
 typedef void* lh_reallocfun(void* p, size_t size);
 
 // Operation functions are called when that operation is `yield`ed to. 
-// The `optag` of the yielded operation is also passed which is needed
-// when the operation was registered using `lh_op_any` which matches any
-// yielded operation.
 typedef lh_value(lh_opfun)(lh_resume r, lh_value local, lh_value arg);
 
 
@@ -110,7 +111,7 @@ typedef enum _lh_opkind {
   LH_OP_NORESUME,  // promise to never resume.
   LH_OP_TAIL_NOOP, // promise to not call `yield` and resume at most once, and if resumed, it is the last action performed by the operation function.
   LH_OP_TAIL,      // promise to resume at most once, and if resumed, it is the last action performed by the operation function.
-  LH_OP_SCOPED,    // promise to resume within the scope of an operation function.
+  LH_OP_SCOPED,    // promise to never resume, or to always resume within the scope of an operation function.
   LH_OP_GENERAL    // may resume zero, once, or multiple times, and can be resumed outside the scope of the operation function.
 } lh_opkind;
 
@@ -122,7 +123,7 @@ typedef struct _lh_operation {
 } lh_operation;
 
 // Define a handler by giving
-// `funlocal`  : a function to free the local state (optional, can be NULL).
+// `freelocal`  : a function to free the local state (optional, can be NULL).
 // `copylocal` : a function to copy the local state (optional, can be NULL).
 // `resultfun` : a function invoked when an handled action is done; can be NULL in which case the action result is passed unchanged.
 // `operations`: the definitions of all handled operations ending with an operation with `lh_opfun` `NULL`. Can be NULL to handle no operations;
