@@ -172,7 +172,7 @@ lh_value lh_tail_resume(lh_resume r, lh_value local, lh_value res);
 void          lh_release(lh_resume r);
 
 // Resume a first-class contiunation with a specified result.
-lh_value      lh_do_resume(lh_resume r, lh_value local, lh_value res);
+lh_value      lh_call_resume(lh_resume r, lh_value local, lh_value res);
 
 // Resume a first-class contiunation with a specified result. 
 // Also releases the continuation and it cannot be resumed again!

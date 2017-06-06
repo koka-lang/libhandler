@@ -185,6 +185,8 @@ typedef enum _resumekind {
 } resumekind;
 
 // Typedeffed to `lh_resume` in the header. 
+// This is an algebraic data type and is either a `resume` or `tailresume`.
+// The `_lh_resume` should be the first field of those (so we can upcast safely).
 struct _lh_resume {
   resumekind         rkind;       // the resumption kind
 };
@@ -199,7 +201,7 @@ typedef struct _resume {
   volatile lh_value  arg;         // the argument to `resume` is passed through `arg`.
 } resume;
 
-// A resumption that can only used for tail-call resumptions (`lh_tail_resume`).
+// An optimized resumption that can only used for tail-call resumptions (`lh_tail_resume`).
 typedef struct _tailresume {
   struct _lh_resume  lhresume;    // the kind: always `TailResume` (must be first field, used for casts)
   volatile lh_value  local;       // the new local value for the handler
@@ -250,7 +252,7 @@ typedef struct _handler {
     fragmenthandler    frag;      // `effect == LH_EFFECT(__fragment)`    
     scopedhandler      scoped;    // `effect == LH_EFFECT(__scoped)`
     skiphandler        skip;      // `effect == LH_EFFECT(__skip)`  
-  } kind;                         // c99 doesn't allow unnamed unions :-(
+  } kind;                         // c99 doesn't allow unnamed unions...
 } handler;
 
 LH_DEFINE_EFFECT0(__skip)
@@ -342,7 +344,7 @@ static void checked_free(void* p) {
 -----------------------------------------------------------------*/
 
 // approximate the top of the stack
-static __noinline __noopt void* get_cstack_top() {
+static __noinline __noopt void* get_stack_top() {
   auto byte* top = (byte*)&top;
   return top;
 }
@@ -356,7 +358,7 @@ static const void* stackbottom = NULL;
 // infer the direction in which the stack grows and the size of a stack frame 
 static __noinline __noopt void infer_stackdir() {
   auto void* mark = (void*)&mark;
-  void* top = get_cstack_top();
+  void* top = get_stack_top();
   stackup = (mark < top);
   stackbottom = mark;
 }
@@ -386,7 +388,7 @@ static bool stack_isbelow(const void* p, const void* q) {
 
 #ifndef NDEBUG
 static bool in_cstack(const void* p) {
-  const void* top = get_cstack_top();
+  const void* top = get_stack_top();
   return !(stack_isbelow(top, p) || stack_isbelow(p, stackbottom));
 }
 
@@ -1010,7 +1012,7 @@ static __noinline __noreturn void jumpto(
   if (cs->frames == NULL) {
     // if no stack, just jump back down the stack; 
     // sanity: check if the entry is really below us!
-    void* top = get_cstack_top();
+    void* top = get_stack_top();
     if (cs->base != NULL && stack_isbelow(top,cstack_top(cs))) {
       fatal(EFAULT,"Trying to jump up the stack to a scope that was already exited!");
     }
@@ -1019,9 +1021,8 @@ static __noinline __noreturn void jumpto(
   }
   else {
     // ensure there is enough room on the stack; 
-    void* top = get_cstack_top();
-    ptrdiff_t extra = stack_diff(cstack_top(cs), top);
-                      // (stackdown ? ptrdiff(top, cs->bottom) : ptrdiff(cs->bottom,top)) + cs->size;
+    void* top = get_stack_top();
+    ptrdiff_t extra = stack_diff(cstack_top(cs), top);                     
     extra += 0x200; // ensure a little more for the `_jumpto_stack` stack frame
                     // clang tends to optimize out a bare `alloca` call so we need to 
                     //  ensure it sees it as live; we store it in a local and pass that to `_jumpto_stack`
@@ -1133,7 +1134,7 @@ static __noinline lh_value capture_resume_call(hstack* hs, resume* r, lh_value r
   }
   else {
     // we set our jump point; now capture the stack upto the stack base of the continuation 
-    void* top = get_cstack_top();
+    void* top = get_stack_top();
     capture_cstack(&f->cstack, cstack_bottom(&r->cstack), top);
     #ifdef _STATS
     if (f->cstack.frames == NULL) stats.rcont_captured_empty++;
@@ -1172,7 +1173,7 @@ static __noinline lh_value capture_resume_yield(hstack* hs, handler* h, const lh
   }
   else {
     // we set our jump point; now capture the stack upto the handler
-    void* top = get_cstack_top();
+    void* top = get_stack_top();
     assert(is_effhandler(h));
     capture_cstack(&r->cstack, h->kind.eff.stackbase, top);
     // capture hstack
@@ -1288,7 +1289,7 @@ lh_value lh_handle( const lh_handlerdef* def, lh_value local, lh_actionfun* acti
 {
   hstack* hs = &__hstack;
   bool init = lh_init(hs);
-  void* base = get_cstack_top();
+  void* base = get_stack_top();
   lh_value res = handle_upto(hs, base, def, local, action, arg);
   if (init) lh_done(hs);
   return res;
@@ -1376,6 +1377,8 @@ lh_value lh_yieldN(lh_optag optag, int argcount, ...) {
   else {
     va_list ap;
     va_start(ap, argcount);
+    // note: we need to use 'malloc' as we cannot pass arguments to an operation as a stack address
+    // todo: perhaps we need to reserve more space in the handler to pass arguments?
     yieldargs* yargs = checked_malloc(sizeof(yieldargs) + ((argcount - 1) * sizeof(lh_value)));
     yargs->argcount = argcount;
     for (int i = 0; i < argcount; i++) {
@@ -1407,7 +1410,7 @@ lh_value lh_release_resume(lh_resume r, lh_value local, lh_value res) {
   return lh_release_resume_(to_resume(r), local, res);
 }
 
-lh_value lh_do_resume(lh_resume r, lh_value local, lh_value res) {
+lh_value lh_call_resume(lh_resume r, lh_value local, lh_value res) {
   return lh_release_resume_(resume_acquire(to_resume(r)), local, res);
 }
 
