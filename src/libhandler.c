@@ -644,7 +644,7 @@ static bool is_effhandler(const handler* h) {
 }
 #endif
 
-// Increase the reference count of a handler's `rcont`.
+// Increase the reference count of handler fields
 static handler* handler_acquire(handler* h) {
   if (is_fragmenthandler(h)) {
     fragment_acquire(h->kind.frag.fragment);
@@ -655,7 +655,7 @@ static handler* handler_acquire(handler* h) {
   return h;
 }
 
-// Decrease the reference count of a handler's `rcont`.
+// Decrease the reference count of handler fields
 static void handler_release(ref handler* h) {
   if (is_fragmenthandler(h)) {
     fragment_release_at(&h->kind.frag.fragment);
@@ -823,15 +823,18 @@ static handler* hstack_find(ref hstack* hs, lh_optag optag, out const lh_operati
   return NULL;
 }
 
+// Return the number of entries up the  handler stack from `top` to `h`. 
 static count_t hstack_indexof(const hstack* hs, const handler* h) {
   assert(hs->count > 0 && h >= hs->hframes && h <= &hs->hframes[hs->count - 1]);
-  return (h - hs->hframes);
+  return (&hs->hframes[hs->count - 1] - h);
 }
 
+// Return the handler that is `idx` entries up the handler stack
 static handler* hstack_at(const hstack* hs, count_t idx) {
   assert(hs->count > idx);
-  return &hs->hframes[idx];
+  return &hs->hframes[hs->count - 1 - idx];
 }
+
 
 /*-----------------------------------------------------------------
   Unwind a handler stack
@@ -911,15 +914,14 @@ static void cstack_extendfrom(ref cstack* cs, ref cstack* ds, bool will_free_ds)
 // Return a stack object in `cs` (if not `NULL) that should be restored later on.
 static void hstack_pop_upto(ref hstack* hs, ref handler* h, out cstack* cs) 
 {
-  count_t hidx = hstack_indexof(hs, h);
-  assert(hidx >= 0);
-  assert(hs->count > hidx);
-  assert(&hs->hframes[hidx] == h);
   if (cs != NULL) cstack_init(cs);
-  count_t cnt = hs->count - hidx - 1;
   count_t toskip = 0;
+  count_t cnt = hstack_indexof(hs, h);
+  assert(cnt >= 0);
+  assert(hs->count > cnt);
+  assert(&hs->hframes[hs->count - 1 - cnt] == h);
   for (count_t i = 0; i < cnt; i++) {
-    handler* hf = &hs->hframes[hs->count - 1];
+    handler* hf = hstack_top(hs);
     if (toskip > 0) {
       // ignore frames in the skip parts
       // todo: optimize: if we ignore skip regions when copying an hstack
@@ -941,7 +943,6 @@ static void hstack_pop_upto(ref hstack* hs, ref handler* h, out cstack* cs)
     hstack_pop(hs);
   }
   assert(toskip == 0);
-  assert(hs->count == hidx + 1);
   assert(hstack_top(hs) == h);
 }
 
@@ -1431,5 +1432,5 @@ lh_value lh_tail_resume(lh_resume r, lh_value local, lh_value res) {
 }
 
 lh_value lh_scoped_resume(lh_resume r, lh_value local, lh_value res) {
-  return lh_do_resume(r, local, res);
+  return lh_call_resume(r, local, res);
 }
