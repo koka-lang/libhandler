@@ -24,10 +24,10 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <MASM Include="..\..\src\asm\setjmp_x86_64.asm">
+    <MASM Include="..\..\src\asm\setjmp_x86.asm">
       <Filter>Source Files</Filter>
     </MASM>
-    <MASM Include="..\..\src\asm\setjmp_x86.asm">
+    <MASM Include="..\..\src\asm\setjmp_x64.asm">
       <Filter>Source Files</Filter>
     </MASM>
   </ItemGroup>
