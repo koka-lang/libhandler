@@ -6,7 +6,7 @@
 // -----------------------------------------------------------------------------
 
 // -------------------------------------------------------
-// Code for arm 32-bit *UNTESTED*
+// Code for ARM 32-bit *UNTESTED*
 // See: https://en.wikipedia.org/wiki/Calling_convention#ARM_.28A32.29
 //
 // jump_buf layout, 

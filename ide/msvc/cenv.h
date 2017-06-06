@@ -1,6 +1,6 @@
 // C environment definition for Microsoft Visual C++
 #ifdef _M_X64
-# define LH_ABI_x86_64
+# define LH_ABI_x64
 # define ASM_JMPBUF_SIZE 256
 #elif _M_IX86
 # define LH_ABI_x86

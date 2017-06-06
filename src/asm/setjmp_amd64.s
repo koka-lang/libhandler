@@ -8,8 +8,8 @@
 /*
 UNTESTED!!
 Code for amd64 calling convention on x86_64: Solaris, Linux, FreeBSD, OS X
-See: https://en.wikipedia.org/wiki/X86_calling_conventions
-And: http://chamilo2.grenet.fr/inp/courses/ENSIMAG3MM1LDB/document/doc_abi_ia64.pdf
+See: <https://en.wikipedia.org/wiki/X86_calling_conventions>
+And: <http://chamilo2.grenet.fr/inp/courses/ENSIMAG3MM1LDB/document/doc_abi_ia64.pdf>, page 21
 
 jump_buf layout (compatible with FreeBSD):
    0: rip

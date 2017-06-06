@@ -6,8 +6,9 @@
 -----------------------------------------------------------------------------*/
 
 /*
-Code for x86-64 calling convention: Win64 (clang, mingw)
-See: https://en.wikipedia.org/wiki/X86_calling_conventions
+Code for x64 (x86_64) calling convention as used on Windows and mingw64
+see: <https://en.wikipedia.org/wiki/X86_calling_conventions>
+and: <https://msdn.microsoft.com/en-us/library/ms235286.aspx>
 
 jump_buf layout (compatible with msvc):
    0: rdx ( frame pointer on msvc)
