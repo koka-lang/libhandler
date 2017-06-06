@@ -1308,15 +1308,16 @@ static lh_value __noinline yieldop(lh_optag optag, lh_value arg)
   // find the operation handler along the handler stack
   hstack*   hs = &__hstack;
   count_t   skipped;
-  const lh_operation* op;
   lh_value  local;
+  const lh_operation* op;
   handler* h = hstack_find(hs, optag, &op, &local, &skipped);
 
+  // No resume (i.e. like `throw`)
   if (op->opkind <= LH_OP_NORESUME) {
     yield_to_handler(hs, h, NULL, op, arg);
   }
-  // push a special "skip" handler; when the operation function calls operations itself,
-  // those will not be handled by any handlers above handler.
+  
+  // Tail resumptions
   else if (op->opkind <= LH_OP_TAIL) {
     // OP_TAIL_NOOP: will not call operations so no need for a skip frame
     // call the operation function and return directly (as it promised to tail resume)
@@ -1349,10 +1350,12 @@ static lh_value __noinline yieldop(lh_optag optag, lh_value arg)
       yield_to_handler(hs, h, NULL, NULL, res);
     }
   }
+
+  // In general, capture a resumption and yield to the handler
   else {
-    // In general, capture a resumption and yield to the handler
     return capture_resume_yield(hs, h, op, arg);
   }
+
   assert(false);
   return lh_value_null;
 }
