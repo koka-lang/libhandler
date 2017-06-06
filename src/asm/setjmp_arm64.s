@@ -6,7 +6,7 @@
 -----------------------------------------------------------------------------*/
 
 /*
-Code for arm64  UNTESTED!
+Code for ARM 64-bit  UNTESTED!
 See: https://en.wikipedia.org/wiki/Calling_convention#ARM_.28A64.29
 
 jump_buf layout:
