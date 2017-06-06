@@ -840,9 +840,10 @@ static handler* hstack_at(const hstack* hs, count_t idx) {
   the unwinding returns a `cstack` object that should be restored when
   possible. 
 
-  Todo:  we could first scan to which
-  base address we are going to jump and only restores pieces of stack
-  below that.
+  Todo:  we could optimize more by first scanning the maximum
+  stack we need and allocate only once; now we reallocate on every
+  newly extending fragment. In practice though it is rare to encounter
+  more than one fragment so this may not be worth it.
 -----------------------------------------------------------------*/
 const byte* _min(const byte* p, const byte* q) { return (p <= q ? p : q); }
 const byte* _max(const byte* p, const byte* q) { return (p >= q ? p : q); }
@@ -873,25 +874,33 @@ static void cstack_extendfrom(ref cstack* cs, ref cstack* ds, bool will_free_ds)
   else {
     // otherwise extend such that we can merge `cs` and `ds` together
     const byte* newbase = _min(csb,dsb);
-    ptrdiff_t newsize = _max(csb + cs->size, dsb + ds->size) - newbase;
-    byte* newframes = checked_malloc(newsize);
-    // if non-overlapping, copy the current stack first into the new frames (to fill in the gaps)
-    if (dsb > csb + cs->size || dsb + ds->size < csb) {
-      memcpy(newframes, newbase, newsize);
+    ptrdiff_t   newsize = _max(csb + cs->size, dsb + ds->size) - newbase;
+    // check if we need to reallocate; no need if `ds` fits right in.
+    if (csb != newbase || cs->size != newsize) {
+      // reallocate..
+      byte* newframes = checked_malloc(newsize);
+      // if non-overlapping, copy the current stack first into the gap
+      // (there is never a gap at the ends as `cs` or `ds` either start or end the `newframes`).
+      if ((dsb > csb + cs->size) || (dsb + ds->size < csb)) {
+        // todo: we could optimize this further by just copying the gap part
+        memcpy(newframes, newbase, newsize);
+      }
+      // next copy the cs->frames into the new frames
+      assert(csb >= newbase);
+      assert(csb + cs->size <= newbase + newsize);
+      memcpy(newframes + (csb - newbase), cs->frames, cs->size);
+      // and update cs
+      checked_free(cs->frames);
+      cs->frames = newframes;
+      cs->size = newsize;
+      cs->base = newbase;
     }
-    // next copy the cs->frames into the new frames
-    assert(csb >= newbase);
-    assert(csb + cs->size <= newbase + newsize);
-    memcpy(newframes + (csb - newbase), cs->frames, cs->size);
-    // and finally copy the new ds->frames
+    // and finally copy the new `ds->frames` into `cs` (which is now large enought to contain `ds`)
+    assert(cs->base == newbase);
+    assert(cs->size == newsize);
     assert(dsb >= newbase);
     assert(dsb + ds->size <= newbase + newsize);
-    memcpy(newframes + (dsb - newbase), ds->frames, ds->size);
-    // and update cs
-    checked_free(cs->frames);
-    cs->frames = newframes;
-    cs->size = newsize;
-    cs->base = newbase;
+    memcpy(cs->frames + (dsb - newbase), ds->frames, ds->size);    
   }
 }
 
@@ -911,6 +920,9 @@ static void hstack_pop_upto(ref hstack* hs, ref handler* h, out cstack* cs)
     handler* hf = &hs->hframes[hs->count - 1];
     if (toskip > 0) {
       // ignore frames in the skip parts
+      // todo: optimize: if we ignore skip regions when copying an hstack
+      // (i.e. ignore reference counts), then we don't have to pop them
+      // here and could just skip right over them.
       toskip--;
     }
     else if (is_fragmenthandler(hf)) { 
