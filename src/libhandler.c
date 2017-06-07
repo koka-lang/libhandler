@@ -343,7 +343,8 @@ static void checked_free(void* p) {
   always grows 'up' with the 'top' of the stack at the highest absolute address.
 -----------------------------------------------------------------*/
 
-// approximate the top of the stack
+
+// approximate the top of the stack -- conservatively upward
 static __noinline __noopt void* get_stack_top() {
   auto byte* top = (byte*)&top;
   return top;
@@ -1263,7 +1264,7 @@ static __noinline lh_value handle_with(hstack* hs, handler* h, lh_value(*action)
 
 // `handle_upto` installs a handler on the stack with a given stack `base`. 
 static __noinline 
-#if defined(__GNUC__) && defined(LH_ABI_x86) 
+#if defined(__GNUC__) && defined(LH_ABI_x86) && false
 __noopt
 #endif
 lh_value handle_upto( hstack* hs, void* base, const lh_handlerdef* def,
@@ -1288,9 +1289,9 @@ lh_value handle_upto( hstack* hs, void* base, const lh_handlerdef* def,
 // `handle` installs a new handler on the stack and calls the given `action` with argument `arg`.
 lh_value lh_handle( const lh_handlerdef* def, lh_value local, lh_actionfun* action, lh_value arg)
 {
+  auto void* base = (void*)&base; // get_stack_top(); 
   hstack* hs = &__hstack;
   bool init = lh_init(hs);
-  void* base = get_stack_top();
   lh_value res = handle_upto(hs, base, def, local, action, arg);
   if (init) lh_done(hs);
   return res;
