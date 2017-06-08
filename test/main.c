@@ -11,7 +11,7 @@
   testing
 -----------------------------------------------------------------*/
 int __cdecl main(void) {
-  #if true
+  #if false
   tests_exn();
   tests_state();
   tests_amb();

@@ -157,7 +157,7 @@ lib=".a"
 obj=".o"
 asm=".s"
 config="$ccname-$host"
-ccflagopt="-O2 -DNDEBUG"
+ccflagopt="-O3 -DNDEBUG"
 ccflagdebug="-g"
 ccdepend="$cc -MM "
 
@@ -168,7 +168,7 @@ host_os=`expr "$host" : '.*-.*-\([^-]*\)$'`
 case "$ccname" in
   clang-cl)
     ccflags="-W3 $ccflags"
-    ccflagopt="-O2 -GS-"  # fiber-safe optimize
+    ccflagopt="-GS- $ccflagopt"  # fiber-safe optimize
     ccflagdebug="-Z7"
     ccdepend="clang -MM "
     ar="llvm-lib"

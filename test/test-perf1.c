@@ -29,7 +29,7 @@ found in the file "license.txt" at the root of this distribution.
 
 
 static int __noinline comp(int i) {
-  return (int)sin((double)(i));
+  return (int)(sin((float)i));
 }
 
 static int counter_native(int i) {
@@ -41,12 +41,13 @@ static int counter_native(int i) {
   return sum;
 }
 
+static bool dowork;
 
 static int counter() {
   int i;
   int sum = 0;
   while ((i = state_get()) > 0) {
-    sum += comp(i);
+    sum += (dowork ? comp(i) : 1);
     state_put(i - 1);
   }
   return sum;
@@ -68,11 +69,22 @@ void test_perf1() {
   int sum1 = counter_native(n);
   clock_t end = clock();
   double t1 = (double)(end - start) / CLOCKS_PER_SEC;
+
   start = clock();
   int sum2 = counter_eff(n);
   end = clock();
   double t2 = (double)(end - start) / CLOCKS_PER_SEC;
-  printf("native:  %fs, %i\n", t1, sum1);
-  printf("effects: %fs, %i, %3fx slower\n", t2, sum2, t2/t1);
+
+  dowork = true;
+  start = clock();
+  int sum3 = counter_eff(n);
+  end = clock();
+  double t3 = (double)(end - start) / CLOCKS_PER_SEC;
+
+  double opsec = (double)(2 * n) / t2;
+  printf("native:  %6fs, %i\n", t1, sum1);
+  printf("effects: %6fs, %i  (no work)\n", t2, sum2);
+  printf("effects: %6fs, %i\n", t3, sum3);
+  printf("summary: n=%i, %.3fx slower, %.3fx slower (work), %.3f ops/sec\n", n, t2/t1, t3/t1, opsec);
 }
 
