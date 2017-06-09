@@ -11,43 +11,27 @@ found in the file "license.txt" at the root of this distribution.
 
 #if defined(_MSC_VER) && !defined(__clang__) && !defined(__GNUC__)
 # define __noinline     __declspec(noinline)
-# define __noopt       
 #else
 # define __noinline     __attribute__((noinline))
-# if defined(__clang__)
-#  define __noopt       __attribute__((optnone))
-# elif defined(__GNUC__)
-#  define __noopt       __attribute__((optimize("O0")))
-# else
-#  define __noopt       /*no optimization*/
-# endif
 #endif
 
 #ifdef _WIN32
 #include <windows.h>
+typedef LARGE_INTEGER clockval;
+static clockval freq = { { 0, 0 } };
 
-typedef __int64 clockval;
-static clockval freq;
-void init_clock() {
-  QueryPerformanceFrequency((LARGE_INTEGER*)&freq);
-}
-void timestamp(clockval* cv) {
-  QueryPerformanceCounter((LARGE_INTEGER*)cv);
-}
 void start_clock(clockval* cv) {
-  timestamp(cv);
+  QueryPerformanceCounter(cv);
 }
 double end_clock(clockval start) {
   clockval end;
-  timestamp(&end);
-  return (double)(end - start) / (double)freq;
+  QueryPerformanceCounter(&end);
+  if (freq.QuadPart <= 0) QueryPerformanceFrequency(&freq);
+  return (double)(end.QuadPart - start.QuadPart) / (double)(freq.QuadPart);
 }
-
 #else
 typedef clock_t clockval;
 
-void init_clock() {
-}
 void start_clock(clockval* cv) {
   *cv = clock();
 }
@@ -62,26 +46,26 @@ double end_clock(clockval start) {
 -----------------------------------------------------------------*/
 
 
-static int __noinline comp(int i) {
+static int __noinline work(int i) {
   return (int)(sin((float)i));
 }
 
 static int counter_native(int i) {
   int sum = 0;
   while (i > 0) {
-    sum += comp(i);
+    sum += work(i);
     i--;
   }
   return sum;
 }
 
-static bool dowork;
+static bool dowork = false;
 
 static int counter() {
   int i;
   int sum = 0;
   while ((i = state_get()) > 0) {
-    sum += (dowork ? comp(i) : 1);
+    sum += (dowork ? work(i) : 1);
     state_put(i - 1);
   }
   return sum;
@@ -100,12 +84,12 @@ static int counter_eff(int n) {
 void test_perf1() {
   int n = 10000000;
   clockval cv;
-  init_clock();
-
+  
   start_clock(&cv);
   int sum1 = counter_native(n);
   double t1 = end_clock(cv);
 
+  dowork = false;
   start_clock(&cv);
   int sum2 = counter_eff(n);
   double t2 = end_clock(cv);
