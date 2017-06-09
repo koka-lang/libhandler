@@ -21,6 +21,40 @@ found in the file "license.txt" at the root of this distribution.
 # else
 #  define __noopt       /*no optimization*/
 # endif
+#endif
+
+#ifdef _WIN32
+#include <windows.h>
+
+typedef __int64 clockval;
+static clockval freq;
+void init_clock() {
+  QueryPerformanceFrequency((LARGE_INTEGER*)&freq);
+}
+void timestamp(clockval* cv) {
+  QueryPerformanceCounter((LARGE_INTEGER*)cv);
+}
+void start_clock(clockval* cv) {
+  timestamp(cv);
+}
+double end_clock(clockval start) {
+  clockval end;
+  timestamp(&end);
+  return (double)(end - start) / (double)freq;
+}
+
+#else
+typedef clock_t clockval;
+
+void init_clock() {
+}
+void start_clock(clockval* cv) {
+  *cv = clock();
+}
+double end_clock(clockval start) {
+  clockval end = clock();
+  return (double)(end - start) / (double)CLOCKS_PER_SEC;
+}
 #endif 
 
 /*-----------------------------------------------------------------
@@ -65,26 +99,27 @@ static int counter_eff(int n) {
 
 void test_perf1() {
   int n = 10000000;
-  clock_t start = clock();
-  int sum1 = counter_native(n);
-  clock_t end = clock();
-  double t1 = (double)(end - start) / CLOCKS_PER_SEC;
+  clockval cv;
+  init_clock();
 
-  start = clock();
+  start_clock(&cv);
+  int sum1 = counter_native(n);
+  double t1 = end_clock(cv);
+
+  start_clock(&cv);
   int sum2 = counter_eff(n);
-  end = clock();
-  double t2 = (double)(end - start) / CLOCKS_PER_SEC;
+  double t2 = end_clock(cv);
 
   dowork = true;
-  start = clock();
+  start_clock(&cv);
   int sum3 = counter_eff(n);
-  end = clock();
-  double t3 = (double)(end - start) / CLOCKS_PER_SEC;
+  double t3 = end_clock(cv);
 
   double opsec = (double)(2 * n) / t2;
   printf("native:  %6fs, %i\n", t1, sum1);
   printf("effects: %6fs, %i  (no work)\n", t2, sum2);
   printf("effects: %6fs, %i\n", t3, sum3);
-  printf("summary: n=%i, %.3fx slower, %.3fx slower (work), %.3fx sin, %.3f ops/sec\n", n, t2/t1, t3/t1, ((t3 / t1) - 1.0) / 2.0, opsec);
+  printf("summary: n=%i, %.3fx slower, %.3fx slower (work)\n", n, t2 / t1, t3 / t1);
+  printf("       : %.3fx sin, %.3f ops/sec\n", ((t3 / t1) - 1.0) / 2.0, opsec);
 }
 
