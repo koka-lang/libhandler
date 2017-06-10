@@ -82,7 +82,7 @@ static int counter_eff(int n) {
 
 
 void test_perf1() {
-  int n = 10000000;
+  int n = 100000;
   clockval cv;
   
   start_clock(&cv);

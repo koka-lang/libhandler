@@ -1129,12 +1129,8 @@ static __noinline lh_value capture_resume_call(hstack* hs, resume* r, lh_value r
     #ifdef _STATS
     stats.rcont_resumed_fragment++;
     #endif
-    // pop our special "fragment" frame
-    assert(hs == &__hstack);
-    assert(hs->count > 0);
-    assert(is_fragmenthandler(hstack_top(hs)));
-    assert(hstack_top(hs)->kind.frag.fragment == f);
-    hstack_pop(hs);
+    // release our fragment
+    fragment_release(f);
     // return the result of the resume call     
     return res;
   }
@@ -1199,9 +1195,20 @@ static __noinline lh_value capture_resume_yield(hstack* hs, handler* h, const lh
 /*-----------------------------------------------------------------
    Handle
 -----------------------------------------------------------------*/
+static void hstack_pop_fragment(hstack* hs, fragment** fragment) 
+{
+  if (hs->count > 0) {
+    handler* h = hstack_top(hs);
+    if (is_fragmenthandler(h)) {
+      *fragment = fragment_acquire(h->kind.frag.fragment);
+      hstack_pop(hs);
+    }
+  }
+}
 
 // Start a handler 
-static __noinline lh_value handle_with(hstack* hs, handler* h, lh_value(*action)(lh_value), lh_value arg )
+static __noinline lh_value handle_with(
+    hstack* hs, handler* h, lh_value(*action)(lh_value), lh_value arg, out fragment** fragment )
 {
   // set the handler entry point 
   assert(is_effhandler(h));
@@ -1229,6 +1236,7 @@ static __noinline lh_value handle_with(hstack* hs, handler* h, lh_value(*action)
     const lh_operation* op = h->kind.eff.arg_op;
     assert(op == NULL || op->optag->effect == h->effect);
     hstack_pop(hs);
+    hstack_pop_fragment(hs,fragment);
     if (op != NULL && op->opfun != NULL) {
       // push a scoped frame if necessary
       if (op->opkind==LH_OP_SCOPED) {
@@ -1259,6 +1267,7 @@ static __noinline lh_value handle_with(hstack* hs, handler* h, lh_value(*action)
     lh_resultfun* resfun = h->kind.eff.hdef->resultfun;
     lh_value local = h->kind.eff.local;
     hstack_pop(hs);
+    hstack_pop_fragment(hs, fragment);
     if (resfun != NULL) {
       res = resfun(local, res);
     }
@@ -1271,19 +1280,16 @@ static __noinline
 #if defined(__GNUC__) && defined(LH_ABI_x86) && false
 __noopt
 #endif
-lh_value handle_upto( hstack* hs, void* base, const lh_handlerdef* def,
-                      lh_value local, lh_value(*action)(lh_value), lh_value arg)
+lh_value handle_upto(hstack* hs, void* base, const lh_handlerdef* def,
+  lh_value local, lh_value(*action)(lh_value), lh_value arg)
 {
   // allocate handler frame on the stack so it will be part of a captured continuation
-  handler* h = hstack_push_effect(hs,def,base,local);
-  lh_value res = handle_with(hs, h, action, arg);
+  handler* h = hstack_push_effect(hs, def, base, local);
+  fragment* fragment = NULL;
+  lh_value res = handle_with(hs, h, action, arg, &fragment);
   // after returning, check if there is a fragment frame we should jump to..
-  hs = &__hstack;
-  if (hs->count > 0) {
-    h = hstack_top(hs);
-    if (is_fragmenthandler(h)) {
-      jumpto_fragment(h->kind.frag.fragment, res);
-    }
+  if (fragment != NULL) {
+    jumpto_fragment(fragment, res);
   }
   // otherwise just return normally
   return res;
@@ -1323,7 +1329,7 @@ static lh_value __noinline yieldop(lh_optag optag, lh_value arg)
   }
   
   // Tail resumptions
-  else if (op->opkind <= LH_OP_TAIL) {
+  else if (false && op->opkind <= LH_OP_TAIL) {
     // OP_TAIL_NOOP: will not call operations so no need for a skip frame
     // call the operation function and return directly (as it promised to tail resume)
     count_t  hidx = 0;
