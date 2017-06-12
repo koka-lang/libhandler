@@ -151,7 +151,6 @@ typedef char bool;
 // Basic types
 typedef unsigned char byte;
 typedef ptrdiff_t     count_t;   // signed natural machine word
-typedef ptrdiff_t     offset_t;  // byte offset
 
 // forward declarations
 struct _handler;
@@ -159,8 +158,9 @@ typedef struct _handler handler;
 
 // A handler stack; Seperate from the C-stack so it can be searched even if the C-stack contains fragments
 typedef struct _hstack {
-  offset_t           top;       // number of valid handlers in hframes
-  count_t            size;      // total entries available (auto grows exponential upto some limit)
+  count_t            top;       
+  count_t            count;     
+  count_t            size;      
   byte*              hframes;   // array of handlers (0 is bottom frame)
 } hstack;
 
@@ -225,7 +225,6 @@ typedef struct _tailresume {
 // 4. a "skip" handler: used to skip a number of handler frames for tail call resumptions.
 struct _handler {
   lh_effect   effect;
-  count_t     size;
   count_t     prev;
 };
 
@@ -268,7 +267,7 @@ LH_DEFINE_EFFECT0(__scoped);
 LH_DEFINE_EFFECT0(__skip);
 
 // thread local `__hstack` is the 'shadow' handler stack
-__thread hstack __hstack = { 0, 0, NULL };
+__thread hstack __hstack = { 0, 0, 0, NULL };
 
 
 /*-----------------------------------------------------------------
@@ -672,6 +671,13 @@ static bool is_effhandler(const handler* h) {
     h->effect != LH_EFFECT(__skip)
   );
 }
+
+static count_t sizeof_handler(const lh_effect effect) {
+  if (effect == LH_EFFECT(__skip)) return sizeof(skiphandler);
+  else if (effect == LH_EFFECT(__fragment)) return sizeof(fragmenthandler);
+  else if (effect == LH_EFFECT(__scoped)) return sizeof(scopedhandler);
+  else return sizeof(effhandler);
+}
 #endif
 
 // Increase the reference count of handler fields
@@ -730,7 +736,8 @@ static void hstack_realloc_(ref hstack* hs, count_t needed) {
 
 // Initialize a handler stack
 static void hstack_init(hstack* hs) {
-  hs->top = -1;
+  hs->top = 0;
+  hs->count = 0;
   hs->size = 0;
   hs->hframes = NULL;
 }
@@ -738,57 +745,38 @@ static void hstack_init(hstack* hs) {
 
 // Current top handler frame
 static handler* hstack_top(const hstack* hs) {
-  return (hs->top < 0 ? NULL : (handler*)&hs->hframes[hs->top]);
+  return (hs->count <= 0 ? NULL : (handler*)&hs->hframes[hs->top]);
 }
 
 static handler* hstack_bottom(const hstack* hs) {
-  return (hs->top < 0 ? NULL : (handler*)hs->hframes);
+  return (hs->count <= 0 ? NULL : (handler*)hs->hframes);
+}
+
+static count_t hstack_topsize(const hstack* hs) {
+  return (hs->count - hs->top);
 }
 
 #ifndef NDEBUG
 static bool hstack_contains(const hstack* hs, const handler* h) {
-  return (hstack_bottom(hs) <= h && h <= hstack_top(hs));
+  return (hs->count > 0 && hstack_bottom(hs) <= h && h <= hstack_top(hs));
 }
 
 static bool valid_handler(const hstack* hs, const handler* h) {
   return (hstack_contains(hs, h));
 }
+
+static handler* _handler_add(const handler* h, ptrdiff_t ofs) {
+  return (handler*)((byte*)h + ofs);
+}
 #endif
 
-static byte* hstack_toptop(const hstack* hs) {
-  return (hs->top < 0 ? hs->hframes : &hs->hframes[hs->top + hstack_top(hs)->size]);
-}
-
-static count_t hstack_used(const hstack* hs) {
-  return ptrdiff(hstack_toptop(hs), hs->hframes);
-}
-
-
-static handler* _handler_add(const handler* h, offset_t ofs) {
-  return (handler*)ptradd(h, ofs);
-}
-
-static handler* _handler_sub(const handler* h, offset_t ofs) {
-  return _handler_add(h, -ofs);
-}
-static handler* _handler_next(const handler* h) {
-  return _handler_add(h, h->size);
+static handler* _handler_sub(const handler* h, ptrdiff_t ofs) {
+  return (handler*)((byte*)h - ofs);
 }
 
 static handler* _handler_prev(const handler* h) {
-  return (h->prev <= 1 ? NULL : _handler_sub( h, h->prev ));
-}
-
-
-static handler* hstack_next(hstack* hs, handler* h) {
-  assert(hstack_contains(hs, h));
-  handler* next = _handler_next(h);
-  next = (hstack_top(hs) < next ? NULL : next);
-  if (next != NULL) {
-    assert(valid_handler(hs, next));
-    assert(_handler_sub(next, next->prev) == h);
-  }
-  return next;
+  return (h->prev <= 0
+    ? NULL : _handler_sub( h, h->prev ));
 }
 
 static handler* hstack_prev(hstack* hs, handler* h) {
@@ -796,7 +784,7 @@ static handler* hstack_prev(hstack* hs, handler* h) {
   handler* prev = _handler_prev(h);
   if (prev!=NULL) {
     assert(valid_handler(hs, prev));
-    assert(_handler_add(prev,prev->size) == h);
+    assert(_handler_add(prev,sizeof_handler(prev->effect)) == h);
   }
   return prev;
 }
@@ -810,17 +798,31 @@ static handler* hstack_prev_skip(hstack* hs, handler* h) {
   else {
     ph = _handler_prev(h);
   }
-  assert(hstack_contains(hs, h));
-  assert(hstack_contains(hs, ph));
+  assert(valid_handler(hs, h));
   assert(valid_handler(hs, ph));
-  assert(sh != NULL || _handler_add(ph,ph->size) == h);
+  assert(sh != NULL || _handler_add(ph,sizeof_handler(ph->effect)) == h);
   return ph;
 }
 
+
+// Return the number of entries up the  handler stack from `top` to `h`. 
+static count_t hstack_indexof(const hstack* hs, const handler* h) {
+  assert(valid_handler(hs, h));
+  return (hs->count - ptrdiff(h, hs->hframes));
+}
+
+// Return the handler that is `idx` entries up the handler stack
+static handler* hstack_at(const hstack* hs, count_t idx) {
+  assert(idx > 0 && idx >= hs->count);
+  handler* h = (handler*)(&hs->hframes[hs->count - idx]);
+  assert(valid_handler(hs, h));
+  return h;
+}
+
+
 // Find an operation that handles `optag` in the handler stack.
 static effhandler* hstack_find(ref hstack* hs, lh_optag optag, out const lh_operation** op, out lh_value* local, out count_t* skipped) {
-  handler* htop = hstack_top(hs);
-  handler* h = htop;
+  handler* h = hstack_top(hs);
   while (h != NULL) {
     if (h->effect == optag->effect) {
       effhandler* eh = (effhandler*)h;
@@ -828,7 +830,7 @@ static effhandler* hstack_find(ref hstack* hs, lh_optag optag, out const lh_oper
       const lh_operation* oper = &eh->hdef->operations[optag->opidx];
       assert(oper->optag == optag); // can fail if operations are defined in a different order than declared
       if (oper->opfun != NULL) {
-        *skipped = ptrdiff(htop,eh) + htop->size + h->prev;
+        *skipped = hstack_indexof(hs,h) + h->prev;
         *op = oper;
         *local = eh->local;
         return eh;
@@ -846,28 +848,29 @@ static effhandler* hstack_find(ref hstack* hs, lh_optag optag, out const lh_oper
 
 // Ensure the handler stack is big enough for `extracount` handlers.
 static handler* hstack_ensure_space(ref hstack* hs, count_t extracount) {
-  count_t needed = hstack_used(hs) + extracount;
+  count_t needed = hs->count + extracount;
   if (needed > hs->size) {
     hstack_realloc_(hs, needed);
   }
-  return (handler*)hstack_toptop(hs);
+  return (handler*)(&hs->hframes[hs->count]);
 }
 
 
 // Push a new uninitialized handler frame and return a reference to it.
 static handler* _hstack_push(ref hstack* hs, lh_effect effect, count_t size ) {
+  assert(size == sizeof_handler(effect));
   handler* h = hstack_ensure_space(hs, size);
   assert(h!=NULL);
   h->effect = effect;
-  h->size = size;
-  h->prev = (hs->top < 0 ? -(hs->top) : hstack_top(hs)->size);
-  hs->top += h->prev;
+  h->prev = hs->count - hs->top;
+  hs->top = hs->count;
+  hs->count += size;
   return h;
 }
 
 // Push an effect handler
-static effhandler* hstack_push_effect(ref hstack* hs, const lh_handlerdef* hdef, void* stackbase, lh_value local) {
-
+static effhandler* hstack_push_effect(ref hstack* hs, const lh_handlerdef* hdef, void* stackbase, lh_value local) 
+{
   effhandler* h = (effhandler*)_hstack_push(hs, hdef->effect, sizeof(effhandler));
   h->hdef = hdef;
   h->stackbase = stackbase;
@@ -901,8 +904,10 @@ static scopedhandler* hstack_push_scoped(ref hstack* hs, resume* resume) {
 
 // Pop a handler frame, decreasing its reference counts.
 static void hstack_pop(ref hstack* hs) {
+  assert(hs->count > 0);
   handler* h = hstack_top(hs);
   handler_release(h);
+  hs->count = hs->top;
   hs->top -= h->prev;
 }
 
@@ -910,6 +915,7 @@ static void hstack_pop(ref hstack* hs) {
 static void hstack_pop_skip(ref hstack* hs) {
   handler* h = hstack_top(hs);
   assert(h->effect == LH_EFFECT(__skip));
+  hs->count = hs->top;
   hs->top -= h->prev;
 }
 
@@ -917,7 +923,7 @@ static void hstack_pop_skip(ref hstack* hs) {
 static void hstack_free(ref hstack* hs) {
   assert(hs!=NULL);
   if (hs->hframes != NULL) {
-    while (hs->top>=0) {
+    while (hs->count > 0) {
       hstack_pop(hs); // decrease reference counts (but don't restore fragments)
     }
     checked_free(hs->hframes);
@@ -929,12 +935,12 @@ static void hstack_free(ref hstack* hs) {
 
 static void _hstack_append_movefrom(ref hstack* hs, ref hstack* topush, const handler* from) {
   assert(hstack_contains(topush, from));
-  handler* top = hstack_top(topush);
-  count_t  needed = ptrdiff(top, from) + top->size;
+  count_t  needed = hstack_indexof(topush, from);
   handler* bot = hstack_ensure_space(hs, needed);
   memcpy(bot, from, needed);
-  bot->prev = (hs->top < 0 ? -(hs->top) : hstack_top(hs)->size);
-  hs->top   += bot->prev + needed - top->size;
+  bot->prev = hstack_topsize(hs);
+  hs->count += needed;
+  hs->top = hs->count - hstack_topsize(topush);
 }
 
 // Copy handlers from one stack to another increasing reference counts as appropiate.
@@ -942,29 +948,15 @@ static void _hstack_append_movefrom(ref hstack* hs, ref hstack* topush, const ha
 static void hstack_append_copyfrom(ref hstack* hs, ref hstack* tocopy, handler* from) {
   assert(hstack_contains(tocopy,from));
   _hstack_append_movefrom(hs, tocopy, from);
-  handler* h = from;
-  while (h != NULL) {
+  handler* h = hstack_top(tocopy);
+  while (h > from) {
     handler_acquire(h);    
-    h = hstack_next(tocopy,h);
+    h = hstack_prev(tocopy,h);
   }
+  assert(h == from);
 }
 
 
-
-typedef count_t index_t;
-
-// Return the number of entries up the  handler stack from `top` to `h`. 
-static index_t hstack_indexof(const hstack* hs, const handler* h) {
-  assert(valid_handler(hs,h));
-  return ptrdiff(hstack_top(hs),h);
-}
-
-// Return the handler that is `idx` entries up the handler stack
-static handler* hstack_at(const hstack* hs, index_t idx) {
-  handler* h = _handler_add(hstack_top(hs), -idx); 
-  assert(valid_handler(hs, h));
-  return h;
-}
 
 
 /*-----------------------------------------------------------------
@@ -1056,20 +1048,24 @@ static void hstack_pop_upto(ref hstack* hs, ref handler* h, out cstack* cs)
       if (cur==skip_upto) skip_upto = NULL;
       else if (cur < skip_upto) fatal(EFAULT, "handler stack is invalid");
     }
-    else if ((fh = to_fragmenthandler(cur)) != NULL) {
-      // special "fragment" handler; remember to restore the stack
-      assert(fh->fragment != NULL);
-      fragment* f = fh->fragment;
-      if (f->cstack.frames != NULL) {
-        cstack_extendfrom(cs, &f->cstack, f->refcount == 1);
+    if (skip_upto != NULL) {
+      if ((fh = to_fragmenthandler(cur)) != NULL) {
+        // special "fragment" handler; remember to restore the stack
+        assert(fh->fragment != NULL);
+        fragment* f = fh->fragment;
+        if (f->cstack.frames != NULL) {
+          cstack_extendfrom(cs, &f->cstack, f->refcount == 1);
+        }
       }
-    }
-    else if ((sh = to_skiphandler(cur)) != NULL) {
-      skip_upto = hstack_next(hs, _handler_sub(to_handler(sh), sh->toskip));
+      else if ((sh = to_skiphandler(cur)) != NULL) {
+        skip_upto = _handler_sub(to_handler(sh), sh->toskip);
+        assert(valid_handler(hs, skip_upto));
+      }
     }
     hstack_pop(hs);
     cur = hstack_top(hs);
   }
+  assert(cur == h);
   assert(hstack_top(hs) == h);
 }
 
@@ -1096,7 +1092,7 @@ static bool lh_init(hstack* hs) {
 }
 
 static __noinline void lh_done(hstack* hs) {
-  assert(hs == &__hstack && hs->size!=0 && hs->top<0);
+  assert(hs == &__hstack && hs->size!=0 && hs->count==0 && hs->top==0);
   hstack_free(hs);
 }
 
@@ -1311,7 +1307,7 @@ static __noinline lh_value capture_resume_yield(hstack* hs, effhandler* h, const
 -----------------------------------------------------------------*/
 static void hstack_pop_fragment(hstack* hs, fragment** fragment) 
 {
-  if (hs->top>=0) {
+  if (hs->count > 0) {
     fragmenthandler* fh = to_fragmenthandler(hstack_top(hs));
     if (fh != NULL) {
       *fragment = fragment_acquire(fh->fragment);
@@ -1441,7 +1437,7 @@ static lh_value __noinline yieldop(lh_optag optag, lh_value arg)
   }
   
   // Tail resumptions
-  else if (op->opkind <= LH_OP_TAIL) {
+  else if (false && op->opkind <= LH_OP_TAIL) {
     // OP_TAIL_NOOP: will not call operations so no need for a skip frame
     // call the operation function and return directly (as it promised to tail resume)
     count_t  hidx = 0;
