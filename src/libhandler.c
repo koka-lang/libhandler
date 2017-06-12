@@ -262,9 +262,9 @@ typedef struct _scopedhandler {
   resume*              resume;
 } scopedhandler;
 
-LH_DEFINE_EFFECT0(__fragment);
-LH_DEFINE_EFFECT0(__scoped);
-LH_DEFINE_EFFECT0(__skip);
+LH_DEFINE_EFFECT0(__fragment)
+LH_DEFINE_EFFECT0(__scoped)
+LH_DEFINE_EFFECT0(__skip)
 
 // thread local `__hstack` is the 'shadow' handler stack
 __thread hstack __hstack = { NULL, 0, NULL, 0 };
@@ -654,7 +654,7 @@ static bool is_fragmenthandler(const handler* h) {
   return (h->effect == LH_EFFECT(__fragment));
 }
 
-static is_scopedhandler(const handler* h) {
+static bool is_scopedhandler(const handler* h) {
   return (h->effect == LH_EFFECT(__scoped));
 }
 
@@ -730,7 +730,6 @@ static handler* hstack_top(const hstack* hs) {
 static handler* hstack_bottom(const hstack* hs) {
   return (hs->count <= 0 ? NULL : (handler*)hs->hframes);
 }
-
 
 static handler* _handler_prev(const handler* h) {
   return (h->prev <= 0 ? NULL : (handler*)((byte*)h - h->prev));
@@ -813,7 +812,7 @@ static effhandler* hstack_find(ref hstack* hs, lh_optag optag, out const lh_oper
         return eh;
       }
     }
-    if (is_skiphandler(h)) {
+    else if (is_skiphandler(h)) {
       h = _handler_prev_skip((skiphandler*)h);  
     }
     h = _handler_prev(h);
