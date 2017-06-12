@@ -13,7 +13,7 @@
 extern "C" {
   #endif
   
-#include <stddef.h> // ptrdiff_t
+#include <stdint.h> // intptr_t
 #include <stdio.h>  // FILE*
 
 
@@ -24,34 +24,33 @@ extern "C" {
    All operations can be statically typed though in more expressive type systems.
 -----------------------------------------------------------------*/
 
-// Generic values are represented by `lh_value`
+// Generic values are represented by `lh_value` which can hold a `long long` (which is at least 64-bits).
 // The macros `lh_<to>_<from>` or used to convert to and from `lh_value`s.
-typedef ptrdiff_t lh_value;
+typedef long long lh_value;
 
-#define lh_value_null       ((lh_value)0)
+#define lh_value_null         ((lh_value)0)
 
-#define lh_ptr_value(v)     ((void*)v)
+#define lh_ptr_value(v)       ((void*)((intptr_t)(v)))
 #ifdef NDEBUG
-# define lh_value_ptr(p)     ((lh_value)(p))
+# define lh_value_ptr(p)      ((lh_value)((intptr_t)(p)))
 #else
 lh_value lh_value_ptr(const void* p); // checks if no pointers to the stack are passed in an lh_value
 #endif
 
-#define lh_int_value(v)     ((int)v)
-#define lh_value_int(i)     ((lh_value)(i))
+#define lh_int_value(v)       ((int)v)
+#define lh_value_int(i)       ((lh_value)(i))
 
-#define lh_long_value(v)     ((long)(v))
-#define lh_value_long(i)     ((lh_value)(i))
+#define lh_long_value(v)      ((long)(v))
+#define lh_value_long(i)      ((lh_value)(i))
 
+#define lh_longlong_value(v)  ((long long)(v))
+#define lh_value_longlong(i)  ((lh_value)(i))
 
-#define lh_uint_value(v)    ((size_t)(v))
-#define lh_value_uint(u)    ((lh_value)(u))
+#define lh_bool_value(v)      (lh_int_value(v) != 0 ? (1==1) : (1==0))
+#define lh_value_bool(b)      (lh_value_int(b ? 1 : 0))
 
-#define lh_bool_value(v)    (lh_int_value(v) != 0 ? (1==1) : (1==0))
-#define lh_value_bool(b)    (lh_value_int(b ? 1 : 0))
-
-#define lh_optag_value(v)   ((lh_optag)lh_ptr_value(v))
-#define lh_value_optag(o)   lh_value_ptr(o)
+#define lh_optag_value(v)     ((lh_optag)lh_ptr_value(v))
+#define lh_value_optag(o)     lh_value_ptr(o)
 
 typedef const char* lh_string;
 
@@ -78,7 +77,7 @@ typedef const char* const * lh_effect;
 // using `LH_OPTAG(effect,opname)`.
 typedef const struct lh_optag_ {
   lh_effect effect;
-  ptrdiff_t opidx;
+  long      opidx;
 } * lh_optag;
 
 
@@ -213,8 +212,9 @@ void lh_check_memory(FILE* out);
 // Use NULL for the default handler (outputs the error to stderr and exits)
 // - ENOMEM : cannot allocate more memory.
 // - EFAULT : internal error when trying jump into invalid stack frames.
-// - ENOTSUP: trying to generally resume a continuation that where the operation was registers with OP_TAIL or OP_THROW.
+// - ENOTSUP: trying to generally resume a continuation that where the operation was registered with OP_TAIL or OP_THROW.
 // - ENOSYS : an operation was called but no handler was found for it. 
+// - EINVAL : invalid arguments for an operation.
 void lh_register_onfatal(lh_fatalfun* onfatal);
 
 

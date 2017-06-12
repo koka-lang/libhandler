@@ -8,7 +8,7 @@
 #include "tests.h"
 
 #ifdef NDEBUG
-#define BENCHMARK
+//  #define BENCHMARK
 #endif
 
 /*-----------------------------------------------------------------
