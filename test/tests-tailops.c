@@ -18,7 +18,7 @@ LH_DEFINE_OP1(tr, raise, long, long)
 static lh_value _tr_raise(lh_resume r, lh_value local, lh_value arg) {
   unreferenced(arg);
   test_printf("tail-raise called: %li\n", lh_long_value(arg));
-  id_raise(arg);
+  lh_release(r);  id_raise(arg);
   return lh_tail_resume(r, local, lh_value_long(42));
 }
 

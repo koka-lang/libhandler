@@ -104,6 +104,6 @@ void test_perf1() {
   printf("effects: %6fs, %i  (no work)\n", t2, sum2);
   printf("effects: %6fs, %i\n", t3, sum3);
   printf("summary: n=%i, %.3fx slower, %.3fx slower (work)\n", n, t2 / t1, t3 / t1);
-  printf("       : %.3fx sin, %.3f ops/sec\n", ((t3 / t1) - 1.0) / 2.0, opsec);
+  printf("       : %.3fx sin, %.3f million ops/sec\n", ((t3 / t1) - 1.0) / 2.0, opsec/1e6);
 }
 

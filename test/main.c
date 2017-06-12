@@ -7,11 +7,15 @@
 #include "libhandler.h"
 #include "tests.h"
 
+#ifdef NDEBUG
+#define BENCHMARK
+#endif
+
 /*-----------------------------------------------------------------
   testing
 -----------------------------------------------------------------*/
 int __cdecl main(void) {
-  #if false
+  #ifndef BENCHMARK
   tests_exn();
   tests_state();
   tests_amb();
