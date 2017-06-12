@@ -156,9 +156,9 @@ typedef ptrdiff_t     count_t;   // signed natural machine word
 struct _handler;
 typedef struct _handler handler;
 
-// A handler stack; Seperate from the C-stack so it can be searched even if the C-stack contains fragments
+// A handler stack; Separate from the C-stack so it can be searched even if the C-stack contains fragments
 typedef struct _hstack {
-  count_t            top;       
+  handler*           top;       
   count_t            count;     
   count_t            size;      
   byte*              hframes;   // array of handlers (0 is bottom frame)
@@ -725,18 +725,10 @@ static count_t hstack_goodsize(count_t needed) {
   }
 }
 
-static void hstack_realloc_(ref hstack* hs, count_t needed) {
-  count_t newsize = hstack_goodsize(needed);
-  hs->hframes = checked_realloc(hs->hframes, newsize);
-  hs->size = newsize;
-  #ifdef _STATS
-  if (newsize > stats.hstack_max) stats.hstack_max = newsize;
-  #endif
-}
 
 // Initialize a handler stack
 static void hstack_init(hstack* hs) {
-  hs->top = 0;
+  hs->top = NULL;
   hs->count = 0;
   hs->size = 0;
   hs->hframes = NULL;
@@ -745,38 +737,59 @@ static void hstack_init(hstack* hs) {
 
 // Current top handler frame
 static handler* hstack_top(const hstack* hs) {
-  return (hs->count <= 0 ? NULL : (handler*)&hs->hframes[hs->top]);
+  return hs->top;
 }
 
 static handler* hstack_bottom(const hstack* hs) {
   return (hs->count <= 0 ? NULL : (handler*)hs->hframes);
 }
 
-static count_t hstack_topsize(const hstack* hs) {
-  return (hs->count - hs->top);
-}
 
 #ifndef NDEBUG
 static bool hstack_contains(const hstack* hs, const handler* h) {
-  return (hs->count > 0 && hstack_bottom(hs) <= h && h <= hstack_top(hs));
+  return (h != NULL && hs->count > 0 && hstack_bottom(hs) <= h && h <= hstack_top(hs));
 }
 
 static bool valid_handler(const hstack* hs, const handler* h) {
-  return (hstack_contains(hs, h));
-}
-
-static handler* _handler_add(const handler* h, ptrdiff_t ofs) {
-  return (handler*)((byte*)h + ofs);
+  return (h != NULL && hstack_contains(hs, h));
 }
 #endif
+
+
+// Return the number of bytes between a handler and the end of the handler stack
+static count_t hstack_indexof(const hstack* hs, const handler* h) {
+  assert(valid_handler(hs,h));
+  return (hs->count - ptrdiff(h, hs->hframes));
+}
+
+// Return the handler that is `idx` bytes down the handler stack
+static handler* hstack_at(const hstack* hs, count_t idx) {
+  assert(idx > 0 && idx <= hs->count);
+  return (handler*)(&hs->hframes[hs->count - idx]);
+}
+
+static count_t hstack_topsize(const hstack* hs) {
+  return (hs->count <= 0 ? 0 : hstack_indexof(hs,hs->top));
+}
+
+
+static void hstack_realloc_(ref hstack* hs, count_t needed) {
+  count_t newsize = hstack_goodsize(needed);
+  count_t topsize = hstack_topsize(hs);
+  hs->hframes = checked_realloc(hs->hframes, newsize);
+  hs->size = newsize;
+  hs->top = (topsize <= 0 ? NULL : hstack_at(hs, topsize));
+  #ifdef _STATS
+  if (newsize > stats.hstack_max) stats.hstack_max = newsize;
+  #endif
+}
 
 static handler* _handler_sub(const handler* h, ptrdiff_t ofs) {
   return (handler*)((byte*)h - ofs);
 }
 
 static handler* _handler_prev(const handler* h) {
-  return (h->prev <= 0
-    ? NULL : _handler_sub( h, h->prev ));
+  return (h->prev <= 0 ? NULL : _handler_sub( h, h->prev ));
 }
 
 static handler* hstack_prev(hstack* hs, handler* h) {
@@ -784,7 +797,7 @@ static handler* hstack_prev(hstack* hs, handler* h) {
   handler* prev = _handler_prev(h);
   if (prev!=NULL) {
     assert(valid_handler(hs, prev));
-    assert(_handler_add(prev,sizeof_handler(prev->effect)) == h);
+    assert(_handler_sub(prev,-sizeof_handler(prev->effect)) == h);
   }
   return prev;
 }
@@ -800,24 +813,10 @@ static handler* hstack_prev_skip(hstack* hs, handler* h) {
   }
   assert(valid_handler(hs, h));
   assert(valid_handler(hs, ph));
-  assert(sh != NULL || _handler_add(ph,sizeof_handler(ph->effect)) == h);
+  assert(sh != NULL || _handler_sub(ph,-sizeof_handler(ph->effect)) == h);
   return ph;
 }
 
-
-// Return the number of entries up the  handler stack from `top` to `h`. 
-static count_t hstack_indexof(const hstack* hs, const handler* h) {
-  assert(valid_handler(hs, h));
-  return (hs->count - ptrdiff(h, hs->hframes));
-}
-
-// Return the handler that is `idx` entries up the handler stack
-static handler* hstack_at(const hstack* hs, count_t idx) {
-  assert(idx > 0 && idx >= hs->count);
-  handler* h = (handler*)(&hs->hframes[hs->count - idx]);
-  assert(valid_handler(hs, h));
-  return h;
-}
 
 
 // Find an operation that handles `optag` in the handler stack.
@@ -862,8 +861,8 @@ static handler* _hstack_push(ref hstack* hs, lh_effect effect, count_t size ) {
   handler* h = hstack_ensure_space(hs, size);
   assert(h!=NULL);
   h->effect = effect;
-  h->prev = hs->count - hs->top;
-  hs->top = hs->count;
+  h->prev = (hs->count <= 0 ? 0 : ptrdiff(h, hs->top));
+  hs->top = h;
   hs->count += size;
   return h;
 }
@@ -907,16 +906,16 @@ static void hstack_pop(ref hstack* hs) {
   assert(hs->count > 0);
   handler* h = hstack_top(hs);
   handler_release(h);
-  hs->count = hs->top;
-  hs->top -= h->prev;
+  hs->count = ptrdiff(hs->top, hs->hframes);
+  hs->top = _handler_prev(hs->top);
 }
 
 // Pop a skip frame
 static void hstack_pop_skip(ref hstack* hs) {
   handler* h = hstack_top(hs);
   assert(h->effect == LH_EFFECT(__skip));
-  hs->count = hs->top;
-  hs->top -= h->prev;
+  hs->count = ptrdiff(hs->top, hs->hframes);
+  hs->top = _handler_prev(hs->top);
 }
 
 // Release the handler frames of an `hstack`
@@ -940,7 +939,7 @@ static void _hstack_append_movefrom(ref hstack* hs, ref hstack* topush, const ha
   memcpy(bot, from, needed);
   bot->prev = hstack_topsize(hs);
   hs->count += needed;
-  hs->top = hs->count - hstack_topsize(topush);
+  hs->top = hstack_at(hs,hstack_topsize(topush));
 }
 
 // Copy handlers from one stack to another increasing reference counts as appropiate.
@@ -1437,7 +1436,7 @@ static lh_value __noinline yieldop(lh_optag optag, lh_value arg)
   }
   
   // Tail resumptions
-  else if (false && op->opkind <= LH_OP_TAIL) {
+  else if (op->opkind <= LH_OP_TAIL) {
     // OP_TAIL_NOOP: will not call operations so no need for a skip frame
     // call the operation function and return directly (as it promised to tail resume)
     count_t  hidx = 0;
