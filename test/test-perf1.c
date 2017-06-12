@@ -89,15 +89,15 @@ void test_perf1() {
   int sum1 = counter_native(n);
   double t1 = end_clock(cv);
 
-  dowork = false;
-  start_clock(&cv);
-  int sum2 = counter_eff(n);
-  double t2 = end_clock(cv);
-
   dowork = true;
   start_clock(&cv);
   int sum3 = counter_eff(n);
   double t3 = end_clock(cv);
+
+  dowork = false;
+  start_clock(&cv);
+  int sum2 = counter_eff(n);
+  double t2 = end_clock(cv);
 
   double opsec = (double)(2 * n) / t2;
   printf("native:  %6fs, %i\n", t1, sum1);
