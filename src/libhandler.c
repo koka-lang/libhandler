@@ -154,12 +154,13 @@ typedef ptrdiff_t     count_t;   // signed natural machine word
 
 // forward declarations
 struct _handler;
+typedef struct _handler handler;
 
 // A handler stack; Seperate from the C-stack so it can be searched even if the C-stack contains fragments
 typedef struct _hstack {
-  count_t            count;     // number of valid handlers in hframes
+  handler*           top;       // number of valid handlers in hframes
   count_t            size;      // total entries available (auto grows exponential upto some limit)
-  struct _handler*   hframes;   // array of handlers (0 is bottom frame)
+  byte*              hframes;   // array of handlers (0 is bottom frame)
 } hstack;
 
 // A captured C stack
@@ -209,8 +210,25 @@ typedef struct _tailresume {
 } tailresume;
 
 
+
+// A handler; there are four kinds of frames
+// 1. normal effect handlers, pushed when a handler is called
+// 2. a "fragment" handler: these are pushed when a first-class continuation is
+//    resumed through `lh_resume` or `lh_release_resume`. Such resume may overwrite parts of the
+//    current stack which is saved in its own `fragment` continuation. 
+// 3. a "scoped" handler: these are pushed when a `LH_OP_SCOPED` operation is executed
+//    to automatically release the resumption function when the scope is exited.
+// 4. a "skip" handler: used to skip a number of handler frames for tail call resumptions.
+struct _handler {
+  lh_effect   effect;
+  count_t     size;
+  count_t     prev;
+};
+
+
 // Regular effect handler.
 typedef struct _effhandler {
+  handler              handler;
   lh_jmp_buf           entry;       // used to jump back to a handler 
   const lh_handlerdef* hdef;        // operation definitions
   volatile lh_value    arg;         // the yield argument is passed here
@@ -222,43 +240,26 @@ typedef struct _effhandler {
 
 // A skip handler.
 typedef struct _skiphandler {
+  handler              handler;
   count_t              toskip;      // when looking for an operation handler, skip the next `toskip` frames.
 } skiphandler;
 
 // A fragment handler just contains a `fragment`.
 typedef struct _fragmenthandler {
+  handler              handler;
   fragment*            fragment;
 } fragmenthandler;
 
 // A scoped handler keeps track of the resumption in the scope of
 // an operator so it can be released properly.
 typedef struct _scopedhandler {
+  handler              handler;
   resume*              resume;
 } scopedhandler;
 
-
-// A handler; there are four kinds of frames
-// 1. normal effect handlers, pushed when a handler is called
-// 2. a "fragment" handler: these are pushed when a first-class continuation is
-//    resumed through `lh_resume` or `lh_release_resume`. Such resume may overwrite parts of the
-//    current stack which is saved in its own `fragment` continuation. 
-// 3. a "scoped" handler: these are pushed when a `LH_OP_SCOPED` operation is executed
-//    to automatically release the resumption function when the scope is exited.
-// 4. a "skip" handler: used to skip a number of handler frames for tail call resumptions.
-typedef struct _handler {
-  lh_effect            effect;    // effect handled
-  union {
-    effhandler         eff;
-    fragmenthandler    frag;      // `effect == LH_EFFECT(__fragment)`    
-    scopedhandler      scoped;    // `effect == LH_EFFECT(__scoped)`
-    skiphandler        skip;      // `effect == LH_EFFECT(__skip)`  
-  } kind;                         // c99 doesn't allow unnamed unions...
-} handler;
-
-LH_DEFINE_EFFECT0(__skip)
-LH_DEFINE_EFFECT0(__fragment)
-LH_DEFINE_EFFECT0(__scoped)
-
+LH_DEFINE_EFFECT0(__fragment);
+LH_DEFINE_EFFECT0(__scoped);
+LH_DEFINE_EFFECT0(__skip);
 
 // thread local `__hstack` is the 'shadow' handler stack
 __thread hstack __hstack = { 0, 0, NULL };
@@ -535,6 +536,10 @@ static const void* cstack_bottom(const cstack* cs) {
 }
 
 
+static ptrdiff_t ptrdiff(const void* p, const void* q) {
+  return (byte*)p - (byte*)q;
+}
+
 
 /*-----------------------------------------------------------------
   Fragments
@@ -631,52 +636,59 @@ static resume* resume_acquire(resume* r) {
   Handler
 -----------------------------------------------------------------*/
 
-static bool is_skiphandler(const handler* h) {
-  return (h->effect == LH_EFFECT(__skip));
+static skiphandler* to_skiphandler(const handler* h) {
+  return (h->effect == LH_EFFECT(__skip) ? (skiphandler*)h : NULL);
 }
 
-static bool is_fragmenthandler(const handler* h) {
-  return (h->effect == LH_EFFECT(__fragment));
+static fragmenthandler* to_fragmenthandler(const handler* h) {
+  return (h->effect == LH_EFFECT(__fragment) ? (fragmenthandler*)h : NULL);
 }
 
-static bool is_scopedhandler(const handler* h) {
-  return (h->effect == LH_EFFECT(__scoped));
+static scopedhandler* to_scopedhandler(const handler* h) {
+  return (h->effect == LH_EFFECT(__scoped) ? (scopedhandler*)h : NULL);
 }
 
 #ifndef NDEBUG
 static bool is_effhandler(const handler* h) {
-  return (!is_skiphandler(h) && !is_fragmenthandler(h) && !is_scopedhandler(h));
+  return (h->effect != LH_EFFECT(__fragment) &&
+    h->effect != LH_EFFECT(__scoped) &&
+    h->effect != LH_EFFECT(__skip)
+    );
 }
 #endif
-
 // Increase the reference count of handler fields
 static handler* handler_acquire(handler* h) {
-  if (is_fragmenthandler(h)) {
-    fragment_acquire(h->kind.frag.fragment);
+  fragmenthandler* f;
+  scopedhandler* s; 
+  if ((f = to_fragmenthandler(h)) != NULL) {
+    fragment_acquire(f->fragment);
   }
-  else if (is_scopedhandler(h)) {
-    resume_acquire(h->kind.scoped.resume);
+  else if ((s = to_scopedhandler(h)) != NULL) {
+    resume_acquire(s->resume);
   }
   return h;
 }
 
 // Decrease the reference count of handler fields
 static void handler_release(ref handler* h) {
-  if (is_fragmenthandler(h)) {
-    fragment_release_at(&h->kind.frag.fragment);
+  fragmenthandler* f;
+  scopedhandler* s;
+  if ((f = to_fragmenthandler(h)) != NULL) {
+    fragment_release_at(&f->fragment);
   }
-  else if (is_scopedhandler(h)) {
-    resume_release_at(&h->kind.scoped.resume);
+  else if ((s = to_scopedhandler(h)) != NULL) {
+    resume_release_at(&s->resume);
   }
 }
+
 
 /*-----------------------------------------------------------------
   Handler stacks
 -----------------------------------------------------------------*/
 
 // Handler stacks increase exponentially in size up to a limit, then increase linearly
-#define HMINSIZE     32
-#define HMAXEXPAND 2048
+#define HMINSIZE     (32*sizeof(effhandler))
+#define HMAXEXPAND   (2*1024*1024)
 
 static count_t hstack_goodsize(count_t needed) {
   if (needed > HMAXEXPAND) {
@@ -691,89 +703,142 @@ static count_t hstack_goodsize(count_t needed) {
 
 static void hstack_realloc_(ref hstack* hs, count_t needed) {
   count_t newsize = hstack_goodsize(needed);
-  hs->hframes = checked_realloc(hs->hframes, sizeof(handler)*newsize);
+  hs->hframes = checked_realloc(hs->hframes, newsize);
   hs->size = newsize;
 }
 
+
+// Current top handler frame
+static handler* hstack_top(const hstack* hs) {
+  assert(hs->top != NULL);
+  return hs->top;
+}
+
+static handler* hstack_bottom(const hstack* hs) {
+  assert(hs->top != NULL);
+  return (handler*)hs->hframes;
+}
+
+static byte* hstack_topnext(const hstack* hs) {
+  handler* top = hstack_top(hs);
+  return ((byte*)top + top->size);
+}
+
+static count_t hstack_used(const hstack* hs) {
+  return (hs->top == NULL ? 0 : ptrdiff(hstack_topnext(hs), hs->hframes));
+}
+
+
+static handler* handler_next(const handler* h) {
+  return (handler*)((byte*)h + h->size);
+}
+
+static handler* handler_prev(const handler* h) {
+  return (h->prev <= 0 ? NULL : (handler*)((byte*)h - h->prev));
+}
+
+
 // Ensure the handler stack is big enough for `extracount` handlers.
 static void hstack_ensure_space(ref hstack* hs, count_t extracount) {
-  count_t needed = hs->count + extracount;
+  count_t needed = hstack_used(hs) + extracount;
   if (needed > hs->size) hstack_realloc_(hs, needed);
 }
 
 // Initialize a handler stack
-static void hstack_init(ref hstack* hs) {
-  hs->count = 0;
+static void hstack_init(hstack* hs) {
+  hs->top = NULL;
   hs->size = 0;
   hs->hframes = NULL;
 }
 
-// Current top handler frame
-static handler* hstack_top(ref hstack* hs) {
-  assert(hs->count > 0);
-  return &hs->hframes[hs->count - 1];
+
+
+
+
+#ifndef NDEBUG
+static bool hstack_contains(const hstack* hs, const handler* h) {
+  return (hstack_bottom(hs) <= h && h <= hstack_top(hs));
 }
 
+static bool valid_handler(const hstack* hs, const handler* h) {
+  return (hstack_contains(hs, h));
+}
+#endif
+
+
 // Push a new uninitialized handler frame and return a reference to it.
-static handler* _hstack_push(ref hstack* hs, const lh_effect effect) {
-  hstack_ensure_space(hs, 1);
-  hs->count++;
-  handler* h = &hs->hframes[hs->count - 1];
+static handler* _hstack_push(ref hstack* hs, lh_effect effect, count_t size ) {
+  hstack_ensure_space(hs, size);
+  count_t prev;
+  handler* h;
+  if (hs->top == NULL) {
+    prev = 0;
+    h = (handler*)hs->hframes;
+  }
+  else {
+    prev = hs->top->size;
+    h = handler_next(hs->top);
+  }
   h->effect = effect;
+  h->prev = prev;
+  h->size = size;
+  hs->top = h;
   return h;
 }
 
 // Push an effect handler
-static handler* hstack_push_effect(ref hstack* hs, const lh_handlerdef* hdef, void* stackbase, lh_value local) {
-  handler* h = _hstack_push(hs, hdef->effect);
-  h->kind.eff.stackbase = stackbase;
-  h->kind.eff.hdef = hdef;
-  h->kind.eff.local = local;
-  h->kind.eff.arg = lh_value_null;
-  h->kind.eff.arg_op = NULL;
-  h->kind.eff.arg_resume = NULL;
+static effhandler* hstack_push_effect(ref hstack* hs, const lh_handlerdef* hdef, void* stackbase, lh_value local) {
+
+  effhandler* h = (effhandler*)_hstack_push(hs, hdef->effect, sizeof(effhandler));
+  h->hdef = hdef;
+  h->stackbase = stackbase;
+  h->local = local;
+  h->arg = lh_value_null;
+  h->arg_op = NULL;
+  h->arg_resume = NULL;
   return h;
 }
 
 // Push a skip handler
-static handler* hstack_push_skip(ref hstack* hs, count_t toskip) {
-  handler* h = _hstack_push(hs, LH_EFFECT(__skip));
-  h->kind.skip.toskip = toskip;
+static skiphandler* hstack_push_skip(ref hstack* hs, count_t toskip) {
+  skiphandler* h = (skiphandler*)_hstack_push(hs, LH_EFFECT(__skip), sizeof(skiphandler));
+  h->toskip = toskip;
   return h;
 }
 
 // Push a fragment handler
-static handler* hstack_push_fragment(ref hstack* hs, fragment* fragment) {
-  handler* h = _hstack_push(hs, LH_EFFECT(__fragment));
-  h->kind.frag.fragment = fragment;
+static fragmenthandler* hstack_push_fragment(ref hstack* hs, fragment* fragment) {
+  fragmenthandler* h = _hstack_push(hs, LH_EFFECT(__fragment), sizeof(fragmenthandler));
+  h->fragment = fragment;
   return h;
 }
 
 // Push a scoped handler
-static handler* hstack_push_scoped(ref hstack* hs, resume* resume) {
-  handler* h = _hstack_push(hs, LH_EFFECT(__scoped));
-  h->kind.scoped.resume = resume;
+static scopedhandler* hstack_push_scoped(ref hstack* hs, resume* resume) {
+  scopedhandler* h = _hstack_push(hs, LH_EFFECT(__scoped), sizeof(scopedhandler));
+  h->resume = resume;
   return h;
 }
 
 // Pop a handler frame, decreasing its reference counts.
 static void hstack_pop(ref hstack* hs) {
-  assert(hs->count > 0);
-  handler_release(&hs->hframes[hs->count - 1]);
-  hs->count--;
+  handler* h = hstack_top(hs);
+  handler_release(h);
+  hs->top = handler_prev(h);
 }
 
 // Pop a skip frame
 static void hstack_pop_skip(ref hstack* hs) {
-  assert(hs->count > 0 && is_skiphandler(&hs->hframes[hs->count-1]));
-  hs->count--;
+  handler* h = hstack_top(hs);
+  assert(h->effect == LH_EFFECT(__scoped));
+  hs->top = handler_prev(h);
 }
 
 // Release the handler frames of an `hstack`
 static void hstack_free(ref hstack* hs) {
   assert(hs!=NULL);
   if (hs->hframes != NULL) {
-    while (hs->count > 0) {
+    while (hs->top != NULL) {
       hstack_pop(hs); // decrease reference counts (but don't restore fragments)
     }
     checked_free(hs->hframes);
@@ -783,43 +848,69 @@ static void hstack_free(ref hstack* hs) {
 }
 
 
-static count_t _hstack_append_movefrom(ref hstack* hs, ref hstack* topush, count_t idx) {
-  count_t cnt = topush->count - idx;
-  hstack_ensure_space(hs, cnt);
-  memcpy(hs->hframes + hs->count, topush->hframes + idx, sizeof(handler) * cnt);
-  hs->count += cnt;
-  return cnt;
+static handler* hstack_next(hstack* hs, handler* h) {
+  handler* next = (handler*)((byte*)h + h->size);
+  return (hs->top < next ? NULL : next);
+}
+
+static void _hstack_append_movefrom(ref hstack* hs, ref hstack* topush, const handler* from) {
+  assert(hstack_contains(topush, from));
+  handler* top = hstack_top(topush);
+  count_t  needed = ptrdiff(top, from) + top->size;
+  hstack_ensure_space(hs, needed);
+  byte* topn = hstack_topnext(hs);
+  memcpy(topn, from, needed);
+  hs->top = (handler*)(topn + (needed - top->size));
 }
 
 // Copy handlers from one stack to another increasing reference counts as appropiate.
-static void hstack_append_copyfrom(ref hstack* hs, ref hstack* tocopy, count_t idx) {
-  count_t copied = _hstack_append_movefrom(hs, tocopy, idx);
-  for (count_t i = 0; i < copied; i++) {
-    handler_acquire(&hs->hframes[hs->count - i - 1]);    
+// Include from.
+static void hstack_append_copyfrom(ref hstack* hs, ref hstack* tocopy, const handler* from) {
+  assert(hstack_contains(tocopy,from));
+  _hstack_append_movefrom(hs, tocopy, from);
+  handler* h = from;
+  while (h != NULL) {
+    handler_acquire(h);    
+    h = hstack_next(tocopy,h);
   }
 }
 
+
+static handler* hstack_prev(hstack* hs, handler* h) {
+  skiphandler* sh;
+  count_t prev;
+  handler* ph;
+  if ((sh = to_skiphandler(h)) != NULL) {
+    ph = (handler*)((byte*)sh - sh->toskip);
+  }
+  else {
+    ph = handler_prev(h);
+  }
+  assert(hstack_contains(hs, h));
+  assert(hstack_contains(hs, ph));
+  assert(valid_handler(hs, ph));
+  assert(sh != NULL || (byte*)ph + ph->size == (byte*)h);
+  return ph;
+}
+
 // Find an operation that handles `optag` in the handler stack.
-static handler* hstack_find(ref hstack* hs, lh_optag optag, out const lh_operation** op, out lh_value* local, out count_t* skipped) {
-  handler* hframes = hs->hframes;
-  count_t i = hs->count;
-  while (i > 0) {
-    i--;
-    handler* h = &hframes[i];
+static effhandler* hstack_find(ref hstack* hs, lh_optag optag, out const lh_operation** op, out lh_value* local, out count_t* skipped) {
+  handler* htop = hstack_top(hs);
+  handler* h = htop;
+  while (h != NULL) {
     if (h->effect == optag->effect) {
-      assert(h->kind.eff.hdef != NULL);
-      const lh_operation* oper = &h->kind.eff.hdef->operations[optag->opidx];
+      effhandler* eh = (effhandler*)h;
+      assert(eh->hdef != NULL);
+      const lh_operation* oper = &eh->hdef->operations[optag->opidx];
       assert(oper->optag == optag); // can fail if operations are defined in a different order than declared
       if (oper->opfun != NULL) {
-        *skipped = hs->count - i - 1;
+        *skipped = ((byte*)htop - (byte*)eh) + htop->size + h->prev;
         *op = oper;
-        *local = h->kind.eff.local;
-        return h;
+        *local = eh->local;
+        return eh;
       }
     }
-    else if (is_skiphandler(h)) {
-      i -= h->kind.skip.toskip; // skip `topskip` handler frames if needed
-    }
+    h = hstack_prev(hs, h);
   }
   fatal(ENOSYS,"no handler for operation found: '%s'", lh_optag_name(optag));
   *skipped = 0;
@@ -828,16 +919,19 @@ static handler* hstack_find(ref hstack* hs, lh_optag optag, out const lh_operati
   return NULL;
 }
 
+typedef count_t index_t;
+
 // Return the number of entries up the  handler stack from `top` to `h`. 
-static count_t hstack_indexof(const hstack* hs, const handler* h) {
-  assert(hs->count > 0 && h >= hs->hframes && h <= &hs->hframes[hs->count - 1]);
-  return (&hs->hframes[hs->count - 1] - h);
+static index_t hstack_indexof(const hstack* hs, const handler* h) {
+  assert(hstack_contains(hs,h));
+  return ptrdiff(hs->top,h);
 }
 
 // Return the handler that is `idx` entries up the handler stack
-static handler* hstack_at(const hstack* hs, count_t idx) {
-  assert(hs->count > idx);
-  return &hs->hframes[hs->count - 1 - idx];
+static handler* hstack_at(const hstack* hs, index_t idx) {
+  handler* h = (handler*)(hs->top - idx);
+  assert(hstack_contains(hs, h));
+  return h;
 }
 
 
@@ -920,34 +1014,19 @@ static void cstack_extendfrom(ref cstack* cs, ref cstack* ds, bool will_free_ds)
 static void hstack_pop_upto(ref hstack* hs, ref handler* h, out cstack* cs) 
 {
   if (cs != NULL) cstack_init(cs);
-  count_t toskip = 0;
-  count_t cnt = hstack_indexof(hs, h);
-  assert(cnt >= 0);
-  assert(hs->count > cnt);
-  assert(&hs->hframes[hs->count - 1 - cnt] == h);
-  for (count_t i = 0; i < cnt; i++) {
-    handler* hf = hstack_top(hs);
-    if (toskip > 0) {
-      // ignore frames in the skip parts
-      // todo: optimize: if we ignore skip regions when copying an hstack
-      // (i.e. ignore reference counts), then we don't have to pop them
-      // here and could just skip right over them.
-      toskip--;
-    }
-    else if (is_fragmenthandler(hf)) { 
+  handler* cur = hs->top;
+  while( cur > h ) {
+    fragmenthandler* fh;
+    if ((fh = to_fragmenthandler(cur)) != NULL) { 
       // special "fragment" handler; remember to restore the stack
-      assert(hf->kind.frag.fragment != NULL);
-      fragment* f = hf->kind.frag.fragment;
+      assert(fh->fragment != NULL);
+      fragment* f = fh->fragment;
       if (f->cstack.frames != NULL) {
         cstack_extendfrom(cs, &f->cstack, f->refcount == 1);
       }
     }
-    else if (is_skiphandler(hf)) {    // test[pop-over-skip] in test-tailops.c
-      toskip = hf->kind.skip.toskip;
-    }
-    hstack_pop(hs);
+    cur = hstack_prev(hs,cur);
   }
-  assert(toskip == 0);
   assert(hstack_top(hs) == h);
 }
 
@@ -979,7 +1058,7 @@ static bool lh_init(hstack* hs) {
 }
 
 static __noinline void lh_done(hstack* hs) {
-  assert(hs == &__hstack && hs->size!=0 && hs->count==0 );
+  assert(hs == &__hstack && hs->size!=0 && hs->top==NULL );
   hstack_free(hs);
 }
 
@@ -1045,7 +1124,9 @@ static __noinline __noreturn void jumpto(
 // jump to a continuation a result 
 static __noinline __noreturn void jumpto_resume( resume* r, lh_value local, lh_value arg )
 {
-  r->hstack.hframes[0].kind.eff.local = local; // write directly so it gets restored with the new local
+  handler* h = hstack_bottom(&r->hstack);
+  assert(is_effhandler(h));
+  ((effhandler*)h)->local = local; // write directly so it gets restored with the new local
   r->arg = arg; // set the argument in the cont slot  
   jumpto(&r->cstack, &r->hstack, &r->entry, false);
 }
@@ -1082,13 +1163,10 @@ static void capture_cstack(cstack* cs, const void* bottom, const void* top)
   }
 }
 
-// Capture part of a handler stack.
+// Capture part of a handler stack (includeing h).
 static void capture_hstack(hstack* hs, hstack* to, handler* h ) {
-  count_t hidx = (h - hs->hframes);
-  assert(hidx < hs->count);
-  assert(&hs->hframes[hidx] == h);
   hstack_init(to);
-  hstack_append_copyfrom(to, hs, hidx);  
+  hstack_append_copyfrom(to, hs, h);  
 }
 
 /*-----------------------------------------------------------------
@@ -1096,16 +1174,15 @@ static void capture_hstack(hstack* hs, hstack* to, handler* h ) {
 -----------------------------------------------------------------*/
 
 // Return to a handler by unwinding the handler stack.
-static void __noinline __noreturn yield_to_handler(hstack* hs, handler* h,
+static void __noinline __noreturn yield_to_handler(hstack* hs, effhandler* h,
   resume* resume, const lh_operation* op, lh_value oparg)
 {
-  assert(is_effhandler(h));
   cstack cs;
   hstack_pop_upto(hs, h, &cs);
-  h->kind.eff.arg = oparg;
-  h->kind.eff.arg_op = op;
-  h->kind.eff.arg_resume = resume;
-  jumpto(&cs, NULL, &h->kind.eff.entry, true);
+  h->arg = oparg;
+  h->arg_op = op;
+  h->arg_resume = resume;
+  jumpto(&cs, NULL, &h->entry, true);
 }
 
 /*-----------------------------------------------------------------
@@ -1150,7 +1227,7 @@ static __noinline lh_value capture_resume_call(hstack* hs, resume* r, lh_value r
 }
 
 // Capture a first-class resumption and yield to the handler.
-static __noinline lh_value capture_resume_yield(hstack* hs, handler* h, const lh_operation* op, lh_value oparg )
+static __noinline lh_value capture_resume_yield(hstack* hs, effhandler* h, const lh_operation* op, lh_value oparg )
 {
   // initialize continuation
   resume* r = checked_malloc(sizeof(resume));
@@ -1177,14 +1254,14 @@ static __noinline lh_value capture_resume_yield(hstack* hs, handler* h, const lh
     // we set our jump point; now capture the stack upto the handler
     void* top = get_stack_top();
     assert(is_effhandler(h));
-    capture_cstack(&r->cstack, h->kind.eff.stackbase, top);
+    capture_cstack(&r->cstack, h->stackbase, top);
     // capture hstack
     capture_hstack(hs, &r->hstack, h);
     #ifdef _STATS
     if (r->cstack.frames == NULL) stats.rcont_captured_empty++;
     stats.rcont_captured_size += (long)r->cstack.size + (long)r->hstack.size * sizeof(handler);
     #endif
-    assert(h->kind.eff.hdef == r->hstack.hframes[0].kind.eff.hdef); // same handler?
+    assert(h->hdef == ((effhandler*)(r->hstack.hframes))->hdef); // same handler?
     // and yield to the handler
     yield_to_handler(hs, h, r, op, oparg);
   }
@@ -1197,10 +1274,10 @@ static __noinline lh_value capture_resume_yield(hstack* hs, handler* h, const lh
 -----------------------------------------------------------------*/
 static void hstack_pop_fragment(hstack* hs, fragment** fragment) 
 {
-  if (hs->count > 0) {
-    handler* h = hstack_top(hs);
-    if (is_fragmenthandler(h)) {
-      *fragment = fragment_acquire(h->kind.frag.fragment);
+  if (hs->top != NULL) {
+    fragmenthandler* fh = to_fragmenthandler(hstack_top(hs));
+    if (fh != NULL) {
+      *fragment = fragment_acquire(fh->fragment);
       hstack_pop(hs);
     }
   }
@@ -1208,18 +1285,18 @@ static void hstack_pop_fragment(hstack* hs, fragment** fragment)
 
 // Start a handler 
 static __noinline lh_value handle_with(
-    hstack* hs, handler* h, lh_value(*action)(lh_value), lh_value arg, out fragment** fragment )
+    hstack* hs, effhandler* h, lh_value(*action)(lh_value), lh_value arg, out fragment** fragment )
 {
   // set the handler entry point 
   assert(is_effhandler(h));
   #ifndef NDEBUG
-  const lh_handlerdef* hdef = h->kind.eff.hdef;
-  void* base = h->kind.eff.stackbase;
+  const lh_handlerdef* hdef = h->hdef;
+  void* base = h->stackbase;
   #endif
-  if (_lh_setjmp(h->kind.eff.entry) != 0) {
+  if (_lh_setjmp(h->entry) != 0) {
     // needed as some compilers optimize wrongly (e.g. gcc v5.4.0 x86_64 with -O2 on msys2)
     hs = &__hstack;      
-    assert(hs->count > 0);
+    assert(hs->top != NULL);
     // we yielded back to the handler; the `handler->arg` is filled in.
     // note: if we return trough non-scoped resumes the handler stack may be
     // different and handler `h` will point to a random handler in that stack!
@@ -1227,16 +1304,15 @@ static __noinline lh_value handle_with(
     // This is also necessary if the handler stack was reallocated to grow.
     h = hstack_top(hs);  // re-load our handler
     #ifndef NDEBUG
-    assert(hdef == h->kind.eff.hdef);
-    assert(base == h->kind.eff.stackbase);
+    assert(hdef == h->hdef);
+    assert(base == h->stackbase);
     #endif
-    lh_value  res    = h->kind.eff.arg;
-    lh_value  local  = h->kind.eff.local;
-    resume*   resume = h->kind.eff.arg_resume;
-    const lh_operation* op = h->kind.eff.arg_op;
-    assert(op == NULL || op->optag->effect == h->effect);
+    lh_value  res    = h->arg;
+    lh_value  local  = h->local;
+    resume*   resume = h->arg_resume;
+    const lh_operation* op = h->arg_op;
+    assert(op == NULL || op->optag->effect == h->handler.effect);
     hstack_pop(hs);
-    hstack_pop_fragment(hs,fragment);
     if (op != NULL && op->opfun != NULL) {
       // push a scoped frame if necessary
       if (op->opkind==LH_OP_SCOPED) {
@@ -1251,26 +1327,27 @@ static __noinline lh_value handle_with(
         hstack_pop(hs);
       }
     }
+    hstack_pop_fragment(hs, fragment);
     return res;
   }
   else {
     // we set up the handler, now call the action 
     lh_value res = action(arg);
     assert(hs==&__hstack);
-    assert(hs->count > 0);
-    h = hstack_top(hs);  // re-load our handler since the handler stack could have been reallocated
+    assert(hs->top != NULL);
+    h = (effhandler*)hstack_top(hs);  // re-load our handler since the handler stack could have been reallocated
     #ifndef NDEBUG
-    assert(hdef == h->kind.eff.hdef);
-    assert(base == h->kind.eff.stackbase);
+    assert(hdef == h->hdef);
+    assert(base == h->stackbase);
     #endif
     // pop our handler
-    lh_resultfun* resfun = h->kind.eff.hdef->resultfun;
-    lh_value local = h->kind.eff.local;
+    lh_resultfun* resfun = h->hdef->resultfun;
+    lh_value local = h->local;
     hstack_pop(hs);
-    hstack_pop_fragment(hs, fragment);
     if (resfun != NULL) {
       res = resfun(local, res);
     }
+    hstack_pop_fragment(hs, fragment);
     return res;
   }
 }
@@ -1284,7 +1361,7 @@ lh_value handle_upto(hstack* hs, void* base, const lh_handlerdef* def,
   lh_value local, lh_value(*action)(lh_value), lh_value arg)
 {
   // allocate handler frame on the stack so it will be part of a captured continuation
-  handler* h = hstack_push_effect(hs, def, base, local);
+  effhandler* h = hstack_push_effect(hs, def, base, local);
   fragment* fragment = NULL;
   lh_value res = handle_with(hs, h, action, arg, &fragment);
   // after returning, check if there is a fragment frame we should jump to..
@@ -1321,7 +1398,7 @@ static lh_value __noinline yieldop(lh_optag optag, lh_value arg)
   count_t   skipped;
   lh_value  local;
   const lh_operation* op;
-  handler* h = hstack_find(hs, optag, &op, &local, &skipped);
+  effhandler* h = hstack_find(hs, optag, &op, &local, &skipped);
 
   // No resume (i.e. like `throw`)
   if (op->opkind <= LH_OP_NORESUME) {
@@ -1336,7 +1413,7 @@ static lh_value __noinline yieldop(lh_optag optag, lh_value arg)
     // push a skip frame
     if (op->opkind != LH_OP_TAIL_NOOP) {
       hidx = hstack_indexof(hs, h);
-      hstack_push_skip(hs,skipped+1);
+      hstack_push_skip(hs,skipped);
     }
     // setup up a stack allocated tail resumption
     tailresume r;
@@ -1349,11 +1426,12 @@ static lh_value __noinline yieldop(lh_optag optag, lh_value arg)
     // pop our skip handler
     if (op->opkind != LH_OP_TAIL_NOOP) {
       hstack_pop_skip(hs);
-      h = hstack_at(hs, hidx);
+      h = (effhandler*)hstack_at(hs, hidx);
+      assert(is_effhandler(h));
     }
     // if we returned from a `lh_tail_resume` we just return its result
     if (r.resumed) {
-      h->kind.eff.local = r.local;
+      h->local = r.local;
       return res;
     }
     // otherwise no resume was called; yield back to the handler with the result.
