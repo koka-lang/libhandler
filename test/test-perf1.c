@@ -47,7 +47,7 @@ double end_clock(clockval start) {
 
 
 static int __noinline work(int i) {
-  return (int)(sin((float)i));
+  return (int)(100.0*sin((float)i));
 }
 
 static int counter_native(int i) {
