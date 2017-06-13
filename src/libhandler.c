@@ -66,7 +66,7 @@
 #  define __nothrow     __declspec(nothrow)
 # endif
 # define __returnstwice
-# define __noopt       
+# define __noopt        /*no optimization*/
 #else
 // assume gcc or clang 
 // __thread is already defined
@@ -1399,11 +1399,7 @@ static __noinline lh_value handle_with(
 }
 
 // `handle_upto` installs a handler on the stack with a given stack `base`. 
-static __noinline 
-#if defined(__GNUC__) && defined(LH_ABI_x86) && false
-__noopt
-#endif
-lh_value handle_upto(hstack* hs, void* base, const lh_handlerdef* def,
+static __noinline lh_value handle_upto(hstack* hs, void* base, const lh_handlerdef* def,
   lh_value local, lh_value(*action)(lh_value), lh_value arg)
 {
   // allocate handler frame on the stack so it will be part of a captured continuation

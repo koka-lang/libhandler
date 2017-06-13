@@ -72,7 +72,7 @@ bench: init staticlib benchmain
 testmain: $(TESTMAIN)
 
 $(TESTMAIN): $(TESTSRCS) $(HLIB)
-	$(CC) $(LINKFLAGOUT)$@ $(TESTSRCS) $(CCFLAGS) $(HLIB)
+	$(CC) $(CCFLAGS)  $(LINKFLAGOUT)$@ $(TESTSRCS) $(HLIB)
 
 # -------------------------------------
 # build benchmark
@@ -81,7 +81,7 @@ $(TESTMAIN): $(TESTSRCS) $(HLIB)
 benchmain: $(BENCHMAIN)
 
 $(BENCHMAIN): $(BENCHSRCS) $(HLIB)
-	$(CC) $(LINKFLAGOUT)$@ $(BENCHSRCS) $(CCFLAGS) $(HLIB)
+	$(CC) $(CCFLAGS)  $(LINKFLAGOUT)$@  $(BENCHSRCS) $(HLIB)
 
 
 # -------------------------------------
@@ -91,14 +91,14 @@ $(BENCHMAIN): $(BENCHSRCS) $(HLIB)
 staticlib: $(HLIB)
 
 $(HLIB): $(OBJS)
-	$(AR) $(ARFLAGS) $(ARFLAGOUT)$@ $(OBJS) 
+	$(AR) $(ARFLAGS)  $(ARFLAGOUT)$@ $(OBJS) 
 
 $(OUTDIR)/%$(OBJ): src/%.c
-	$(CC) $(CCFLAGS) $(CCFLAGOUT)$@ -c $< 
+	$(CC) $(CCFLAGS)  $(CCFLAGOUT)$@ -c $< 
 	# -g -fverbose-asm -Wa,-aln=$@.s
 
 $(OUTDIR)/%$(OBJ): src/%$(ASM)
-	$(CC) $(ASMFLAGS) $(ASMFLAGOUT)$@ -c $< 
+	$(CC) $(ASMFLAGS)  $(ASMFLAGOUT)$@ -c $< 
 
 
 
