@@ -76,7 +76,7 @@ static void run()
   blist_print("final result amb/multi-state foo", res3); printf("\n");
 }
 
-void tests_general() {
+void test_general() {
   test("general resume", run, 
     "final result multi-state/amb foo: [false,false,true,true,false]\n"
     "final result amb/multi-state foo: [false,false]\n"

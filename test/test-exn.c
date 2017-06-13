@@ -62,7 +62,7 @@ static void run() {
 }
 
 
-void tests_exn()
+void test_exn()
 {
   test("exceptions", run,
     "final result 'id': 42\n"

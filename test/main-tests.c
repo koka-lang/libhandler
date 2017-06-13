@@ -7,34 +7,18 @@
 #include "libhandler.h"
 #include "tests.h"
 
-#ifdef NDEBUG
-//  #define BENCHMARK
-#endif
 
 /*-----------------------------------------------------------------
   testing
 -----------------------------------------------------------------*/
 int __cdecl main(void) {
-  #ifndef BENCHMARK
-  tests_exn();
-  tests_state();
-  tests_amb();
-  tests_dynamic();
-  tests_raise();
-  tests_general();
-  tests_tailops();
+  test_exn();
+  test_state();
+  test_amb();
+  test_dynamic();
+  test_raise();
+  test_general();
+  test_tailops();
   tests_done();
-  #else
-  test_perf1();
-  #endif
-
-  lh_print_stats(stderr);
-#if defined(_MSC_VER) && !defined(__clang__)
-# if defined(_DEBUG)
-  _CrtDumpMemoryLeaks();
-# endif
-  char buf[128];
-  gets_s(buf, 127);
-#endif
   return 0;
 }

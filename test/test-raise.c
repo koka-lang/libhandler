@@ -56,7 +56,7 @@ static void run() {
 }
 
 
-void tests_raise() {
+void test_raise() {
   test("raise resource freeing", run, 
     "exception raised: raise inside state/amb from 'raising'\n"
     "final result exn/state/amb raising: []\n"

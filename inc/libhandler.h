@@ -34,8 +34,9 @@ typedef long long lh_value;
 #ifdef NDEBUG
 # define lh_value_ptr(p)      ((lh_value)((intptr_t)(p)))
 #else
-lh_value lh_value_ptr(const void* p); // checks if no pointers to the stack are passed in an lh_value
+# define lh_value_ptr(p)      lh_check_value_ptr(p)
 #endif
+lh_value lh_check_value_ptr(const void* p); // checks if no pointers to the stack are passed in an lh_value
 
 #define lh_int_value(v)       ((int)v)
 #define lh_value_int(i)       ((lh_value)(i))

@@ -7,13 +7,27 @@ static char* output = NULL;
 static int total = 0;
 static int success = 0;
 
+
+void tests_check_memory() {
+  #if defined(_MSC_VER) && !defined(__clang__)
+  # if defined(_DEBUG)
+    _CrtDumpMemoryLeaks();
+  # endif
+    char buf[128];
+    gets_s(buf, 127);
+  #endif
+}
+
 void tests_done() {
   printf("\ntests total     : %i\n      successful: %i\n", total, success);
   if (success != total)
     printf("FAILED %i tests\n", total - success);
   else
     printf("all tests were successful.\n");
+  lh_print_stats(stderr);
+  tests_check_memory();  
 }
+
 
 void test_start(const char* name) {
   printf("----------------\ntesting %s\n----------------\n", name);

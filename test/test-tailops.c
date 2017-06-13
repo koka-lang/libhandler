@@ -51,7 +51,7 @@ static void run() {
   test_printf("test res1: %li\n", lh_long_value(res1));
 }
 
-void tests_tailops() {
+void test_tailops() {
   test("tail ops", run,
     "tail-raise called: 42\n"
     "exception raised: an error message from 'id_raise'\n"

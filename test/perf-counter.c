@@ -5,46 +5,14 @@ terms of the Apache License, Version 2.0. A copy of the License can be
 found in the file "license.txt" at the root of this distribution.
 -----------------------------------------------------------------------------*/
 #include "libhandler.h"
-#include "tests.h"
-#include <time.h>
+#include "perf.h"
 #include <math.h>
 
-#if defined(_MSC_VER) && !defined(__clang__) && !defined(__GNUC__)
-# define __noinline     __declspec(noinline)
-#else
-# define __noinline     __attribute__((noinline))
-#endif
-
-#ifdef _WIN32
-#include <windows.h>
-typedef LARGE_INTEGER clockval;
-static clockval freq = { { 0, 0 } };
-
-void start_clock(clockval* cv) {
-  QueryPerformanceCounter(cv);
-}
-double end_clock(clockval start) {
-  clockval end;
-  QueryPerformanceCounter(&end);
-  if (freq.QuadPart <= 0) QueryPerformanceFrequency(&freq);
-  return (double)(end.QuadPart - start.QuadPart) / (double)(freq.QuadPart);
-}
-#else
-typedef clock_t clockval;
-
-void start_clock(clockval* cv) {
-  *cv = clock();
-}
-double end_clock(clockval start) {
-  clockval end = clock();
-  return (double)(end - start) / (double)CLOCKS_PER_SEC;
-}
-#endif 
+static const int N = 10000000;
 
 /*-----------------------------------------------------------------
 
 -----------------------------------------------------------------*/
-
 
 static int __noinline work(int i) {
   return (int)(100.0*sin((float)i));
@@ -81,23 +49,22 @@ static int counter_eff(int n) {
 }
 
 
-void test_perf1() {
-  int n = 10000000;
-  clockval cv;
+void perf_counter() {
+  int n = N;
   
-  start_clock(&cv);
+  double t0 = start_clock();
   int sum1 = counter_native(n);
-  double t1 = end_clock(cv);
+  double t1 = end_clock(t0);
 
   dowork = true;
-  start_clock(&cv);
+  t0 = start_clock();
   int sum3 = counter_eff(n);
-  double t3 = end_clock(cv);
+  double t3 = end_clock(t0);
 
   dowork = false;
-  start_clock(&cv);
+  t0 = start_clock();
   int sum2 = counter_eff(n);
-  double t2 = end_clock(cv);
+  double t2 = end_clock(t0);
 
   double opsec = (double)(2 * n) / t2;
   printf("native:  %6fs, %i\n", t1, sum1);

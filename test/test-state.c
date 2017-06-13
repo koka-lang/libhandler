@@ -100,7 +100,7 @@ static void run() {
 }
 
 
-void tests_state()
+void test_state()
 {
   test("state", run,
     "final result counter: 42\n"

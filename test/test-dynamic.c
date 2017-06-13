@@ -209,7 +209,7 @@ static void run() {
 
 }
 
-void tests_dynamic() {
+void test_dynamic() {
   test("dynamic", run, 
     "test dyn1: 42\n"
     "test dyn2: 42\n"

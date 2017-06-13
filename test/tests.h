@@ -20,6 +20,7 @@ found in the file "license.txt" at the root of this distribution.
 -----------------------------------------------------------------*/
 typedef void fun0();
 
+void tests_check_memory();
 void tests_done();
 void test(const char* name, fun0* f, const char* expected);
 void test_printf(const char* fmt, ...);
@@ -49,7 +50,7 @@ void trace_printf(const char* fmt, ...);
 LH_DECLARE_EFFECT1(exn, raise)
 LH_DECLARE_VOIDOP1(exn, raise, lh_string)
 
-void tests_exn();
+void test_exn();
 lh_value id(lh_value);
 lh_value id_raise(lh_value);
 
@@ -60,7 +61,7 @@ LH_DECLARE_EFFECT2(state, get, put)
 LH_DECLARE_OP0(state, get, int)
 LH_DECLARE_OP1(state, put, int, int)
 
-void tests_state();
+void test_state();
 
 /*-----------------------------------------------------------------
   Amb
@@ -68,7 +69,7 @@ void tests_state();
 LH_DECLARE_EFFECT1(amb, flip)
 LH_DECLARE_OP0(amb, flip, bool)
 
-void tests_amb();
+void test_amb();
 
 bool xor();
 bool foo();
@@ -84,13 +85,11 @@ lh_value exn_handle(lh_value(*action)(lh_value), lh_value arg);
   Other
 -----------------------------------------------------------------*/
 
-void tests_dynamic();
+void test_dynamic();
 //void tests2();
-void tests_raise();
-void tests_general();
-void tests_tailops();
-
-void test_perf1();
+void test_raise();
+void test_general();
+void test_tailops();
 
 
 /*-----------------------------------------------------------------

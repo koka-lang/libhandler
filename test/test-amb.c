@@ -192,7 +192,7 @@ static void run() {
 }
 
 
-void tests_amb()
+void test_amb()
 {
   test("amb", run, 
     "final result amb xor: [false,true,true,false]\n"

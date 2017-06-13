@@ -15,9 +15,13 @@ OUTDIR 		 = $(CONFIGDIR)/$(VARIANT)
 INCLUDES   = -Iinc -I$(CONFIGDIR)
 
 ifeq ($(VARIANT),release)
+CCFLAGS    = $(CCFLAGSOPT) -DNDEBUG $(INCLUDES)
+else
+ifeq ($(VARIANT),testopt)
 CCFLAGS    = $(CCFLAGSOPT) $(INCLUDES)
 else
 CCFLAGS    = $(CCFLAGSDEBUG) $(INCLUDES)
+endif
 endif
 
 # -------------------------------------
@@ -26,10 +30,12 @@ endif
 
 SRCFILES = libhandler.c
 
-TESTFILES= main.c tests.c \
-					 tests-exn.c tests-state.c tests-amb.c tests-dynamic.c tests-raise.c tests-general.c \
-					 tests-tailops.c \
-					 test-perf1.c
+TESTFILES= main-tests.c tests.c \
+					 test-exn.c test-state.c test-amb.c test-dynamic.c test-raise.c test-general.c \
+					 test-tailops.c 
+
+BENCHFILES=main-perf.c perf.c tests.c test-state.c \
+					 perf-counter.c
 
 
 SRCS     = $(patsubst %,src/%,$(SRCFILES)) $(patsubst %,src/%,$(ASMFILES))
@@ -37,7 +43,10 @@ OBJS  	 = $(patsubst %.c,$(OUTDIR)/%$(OBJ), $(SRCFILES)) $(patsubst %$(ASM),$(OU
 HLIB     = $(OUTDIR)/libhandler$(LIB)
 
 TESTSRCS = $(patsubst %,test/%,$(TESTFILES)) 
-TESTMAIN = $(OUTDIR)/testlib$(EXE)
+TESTMAIN = $(OUTDIR)/libh-tests$(EXE)
+
+BENCHSRCS= $(patsubst %,test/%,$(BENCHFILES))
+BENCHMAIN= $(OUTDIR)/libh-bench$(EXE)
 
 # -------------------------------------
 # Main targets
@@ -50,6 +59,11 @@ tests: init staticlib testmain
 		@echo "run tests"
 		$(TESTMAIN)
 
+bench: init staticlib benchmain
+	  @echo ""
+		@echo "run benchmark"
+		$(BENCHMAIN)
+
 
 # -------------------------------------
 # build tests
@@ -59,6 +73,16 @@ testmain: $(TESTMAIN)
 
 $(TESTMAIN): $(TESTSRCS) $(HLIB)
 	$(CC) $(LINKFLAGOUT)$@ $(TESTSRCS) $(CCFLAGS) $(HLIB)
+
+# -------------------------------------
+# build benchmark
+# -------------------------------------
+
+benchmain: $(BENCHMAIN)
+
+$(BENCHMAIN): $(BENCHSRCS) $(HLIB)
+	$(CC) $(LINKFLAGOUT)$@ $(BENCHSRCS) $(CCFLAGS) $(HLIB)
+
 
 # -------------------------------------
 # build the static library
@@ -99,10 +123,13 @@ help:
 	@echo ""
 	@echo "Variants:"
 	@echo "  debug       : Build a debug version (default)"
+	@echo "  testopt     : Build an optimized version but with assertions"
 	@echo "  release     : Build an optimized release version"
 	@echo ""
 	@echo "Targets:"
 	@echo "  main        : Build a static library (default)"
+	@echo "  tests       : Run tests"
+	@echo "  bench       : Run benchmarks, use 'VARIANT=release'"	
 	@echo "  clean       : Clean output directory"
 	@echo "  depend      : Generate dependencies"
 	@echo ""
@@ -120,9 +147,9 @@ help:
 # we therefore use [sed] to append the directory name
 depend:
 	$(CCDEPEND) $(INCLUDES) src/*.c > $(CONFIGDIR)/temp.depend
-	sed -e "s|\(.*\.o\)|${OUTDIR}/\1|g" $(CONFIGDIR)/temp.depend > $(CONFIGDIR)/makefile.depend
+	sed -e "s|\(.*\.o\)|$(CONFIGDIR)/\$$(VARIANT)/\1|g" $(CONFIGDIR)/temp.depend > $(CONFIGDIR)/makefile.depend
 	$(CCDEPEND) $(INCLUDES) test/*.c > $(CONFIGDIR)/temp.depend
-	sed -e "s|\(.*\.o\)|${OUTDIR}/\1|g" $(CONFIGDIR)/temp.depend >> $(CONFIGDIR)/makefile.depend
+	sed -e "s|\(.*\.o\)|$(CONFIGDIR)/\$$(VARIANT)/\1|g" $(CONFIGDIR)/temp.depend >> $(CONFIGDIR)/makefile.depend
 	$(RM) $(CONFIGDIR)/temp.depend
 
 include $(CONFIGDIR)/makefile.depend
