@@ -10,6 +10,9 @@ code {
 
 # Overview 
 
+Warning: this library is still under active development and the 
+API can change a lot.
+
 `libhandler` implements algebraic effect handlers in C. It works by
 capturing stacks in safe and portable manner. Algebraic effects 
 handlers can for example be used to program asynchronous code in 
@@ -64,12 +67,14 @@ Configuration options:
 
 Make targets:
 
-* `VARIANT=<debug|release>`
-  : Specify the build variant.
+* `VARIANT=<debug|testopt|release>`
+  : Specify the build variant. 'testopt' builds optimized but with assertions enabled.
 * `staticlib`
   : Build a static library.
 * `tests`
   : Build and run tests.
+* `bench`
+  : Build and run benchmarks.
 * `clean`
   : Clean all outputs.
 
@@ -103,7 +108,7 @@ Successful configurations on Windows using `msys2` have been:
 - `clang-x86_64-pc-windows`\
    Using `./configure --cc=/c/programs/llvm/bin/clang`.
 - `clang-x86-pc-windows`  (32-bit)\
-   Using `./configure --cc=/c/programs/llvm/bin/clang --cc-opts=-m32`.
+   Using `./configure --cc=/c/programs/llvm/bin/clang --cc-opts=-m32 --asm-opts=-m32`.
 
 Using the Visual Studio IDE:
 
