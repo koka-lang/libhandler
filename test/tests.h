@@ -59,8 +59,9 @@ lh_value id_raise(lh_value);
 -----------------------------------------------------------------*/
 LH_DECLARE_EFFECT2(state, get, put)
 LH_DECLARE_OP0(state, get, int)
-LH_DECLARE_OP1(state, put, int, int)
+LH_DECLARE_VOIDOP1(state, put, int)
 
+lh_value state_counter(lh_value arg);
 void test_state();
 
 /*-----------------------------------------------------------------
@@ -68,6 +69,7 @@ void test_state();
 -----------------------------------------------------------------*/
 LH_DECLARE_EFFECT1(amb, flip)
 LH_DECLARE_OP0(amb, flip, bool)
+
 
 void test_amb();
 
@@ -77,6 +79,7 @@ bool foo();
 lh_value wrap_xor(lh_value v);
 lh_value wrap_foo(lh_value v);
 
+lh_value handle_amb_foo(lh_value arg);
 lh_value amb_handle(lh_value(*action)(lh_value), lh_value arg);
 lh_value state_handle(lh_value(*action)(lh_value), int state0, lh_value arg);
 lh_value exn_handle(lh_value(*action)(lh_value), lh_value arg);
@@ -91,6 +94,7 @@ void test_raise();
 void test_general();
 void test_tailops();
 
+void test_state_alloc();
 
 /*-----------------------------------------------------------------
   List of lh_value's; Declared in tests_amb

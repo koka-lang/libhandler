@@ -26,6 +26,7 @@
   <ItemGroup>
     <ClCompile Include="..\..\test\main-tests.c" />
     <ClCompile Include="..\..\test\perf.c" />
+    <ClCompile Include="..\..\test\test-state-alloc.c" />
     <ClCompile Include="..\..\test\test-tailops.c" />
     <ClCompile Include="..\..\test\test-exn.c" />
     <ClCompile Include="..\..\test\test-state.c" />

@@ -129,31 +129,6 @@ lh_value amb_handle(lh_value(*action)(lh_value), lh_value arg) {
 }
 
 
-//
-//void onread(uv_req req) {
-//  resumecont rc = (resumecont)req.data;
-//  lh_final_resume(rc, req);
-//}
-//
-//lh_value async_readfilev(resumecont rc, lh_value args) {
-//  yieldargs* y = lh_yieldargs_value(args); 
-//  uv_req req = malloc(sizeof(uv_req));
-//  req.data = rc;
-//  real_async_readfile(lh_ptr_value(y->args[0]), lh_int_value(y->args[1]), onread);
-//  return lh_value_null;
-//}
-//
-//const char* async_readfile(const char* fname, int mode, int* err) {
-//  uv_req* req = lh_ptr_value( lh_yieldN(lh_op_async, lh_value_ptr(fname), lh_value_int(mode)) );
-//  *err = req.error;
-//  const char* res = req.content;
-//  free(req);
-//  return res;
-//}
-//
-
-
-
 /*-----------------------------------------------------------------
   convenience wrappers
 -----------------------------------------------------------------*/
@@ -162,7 +137,7 @@ static blist handle_amb_xor() {
   return lh_blist_value(amb_handle(wrap_xor, lh_value_null));
 }
 
-static lh_value handle_amb_foo(lh_value arg) {
+lh_value handle_amb_foo(lh_value arg) {
   return amb_handle(wrap_foo, arg);
 }
 

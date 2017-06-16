@@ -86,12 +86,6 @@
 #endif 
 
 
-// ENOTSUP is not always defined
-#ifndef ENOTSUP
-# define ENOTSUP ENOSYS
-#endif
-
-
 /* Select the right definition of setjmp/longjmp;
 
    We need a _fast_ and _plain_ version where `setjmp` just saves the register 
@@ -226,17 +220,18 @@ typedef struct _tailresume {
 //    to automatically release the resumption function when the scope is exited.
 // 4. a "skip" handler: used to skip a number of handler frames for tail call resumptions.
 struct _handler {
-  lh_effect   effect;               // The effect that is handled (fragment, skip, and scoped handlers have their own effect)
-  count       prev;                 // the handler below on the stack is `prev` bytes before this one
+  lh_effect   effect;        // The effect that is handled (fragment, skip, and scoped handlers have their own effect)
+  count       prev;          // the handler below on the stack is `prev` bytes before this one
 };
 
 // Every handler type starts with a handler field (for safe upcasting)
 #define to_handler(h) (&(h)->handler)
 
-// The special handlers are identified by these effects.
-LH_DEFINE_EFFECT0(__fragment)
-LH_DEFINE_EFFECT0(__scoped)
-LH_DEFINE_EFFECT0(__skip)
+// The special handlers are identified by these effects. These should not clash with real effects.
+static const lh_effect effect_fragment    = (lh_effect)1;
+static const lh_effect effect_scoped      = (lh_effect)2;
+static const lh_effect effect_skip        = (lh_effect)3;
+static const lh_effect effect_custom_max  = (lh_effect)4; // must be highest entry
 
 
 // Regular effect handler.
@@ -248,7 +243,7 @@ typedef struct _effecthandler {
   const lh_operation*  arg_op;      // the yielded operation is passed here
   resume*              arg_resume;  // the resumption function for the yielded operation
   void*                stackbase;   // pointer to the c-stack just below the handler
-  lh_value             local;       
+  lh_value             local;   
 } effecthandler;
 
 // A skip handler.
@@ -564,14 +559,18 @@ static __noinline void fragment_free_(fragment* f) {
   stats.rcont_released_size += (long)f->cstack.size;
   #endif
   cstack_free(&f->cstack);
-  f->refcount = -1; // for debugging
   checked_free(f);
 }
 
 static void _fragment_release(fragment* f) {
   assert(f->refcount > 0);
-  f->refcount--;
-  if (f->refcount == 0) fragment_free_(f);
+  if (f->refcount > 1) {
+    f->refcount--;
+  }
+  else if (f->refcount == 1) {
+    f->refcount = -1; // refcount is sticky on negative so can safely call release more than once
+    fragment_free_(f);
+  }
 }
 
 // Release a fragment
@@ -590,7 +589,7 @@ static fragment* fragment_acquire(fragment* f) {
   assert(f != NULL);
   if (f != NULL) {
     assert(f->refcount > 0);
-    f->refcount++;
+    if (f->refcount >= 0) f->refcount++;
   }
   return f;
 }
@@ -604,21 +603,26 @@ static void hstack_free(ref hstack* hs);
 
 // release a resumptions; returns `true` if it was released
 static __noinline void _resume_free(resume* r) {
+  assert(r->refcount == -1);
   #ifdef _STATS
   stats.rcont_released++;
   stats.rcont_released_size += (long)r->cstack.size + (long)r->hstack.size;
   #endif
   cstack_free(&r->cstack);
   hstack_free(&r->hstack);
-  r->refcount = -1; // for debugging
   checked_free(r);
 }
 
 static void _resume_release(resume* r) {
   assert(r->lhresume.rkind == FullResume);
   assert(r->refcount > 0);
-  r->refcount--;
-  if (r->refcount == 0) _resume_free(r);
+  if (r->refcount > 1) {
+    r->refcount--;
+  }
+  else if (r->refcount == 1) {
+    r->refcount = -1; // sticky on negative so can call release more than once
+    _resume_free(r);    
+  }
 }
 
 // Release a resumption
@@ -638,7 +642,7 @@ static resume* resume_acquire(resume* r) {
   if (r != NULL) {
     assert(r->lhresume.rkind==FullResume);
     assert(r->refcount > 0);
-    r->refcount++;
+    if (r->refcount >= 0) r->refcount++;
   }
   return r;
 }
@@ -649,26 +653,26 @@ static resume* resume_acquire(resume* r) {
 -----------------------------------------------------------------*/
 
 static bool is_skiphandler(const handler* h) {
-  return (h->effect == LH_EFFECT(__skip));
+  return (h->effect == effect_skip);
 }
 
 static bool is_fragmenthandler(const handler* h) {
-  return (h->effect == LH_EFFECT(__fragment));
+  return (h->effect == effect_fragment);
 }
 
 static bool is_scopedhandler(const handler* h) {
-  return (h->effect == LH_EFFECT(__scoped));
+  return (h->effect == effect_scoped);
+}
+
+static bool is_effecthandler(const handler* h) {
+  return (h->effect > effect_custom_max);
 }
 
 #ifndef NDEBUG
-static bool is_effecthandler(const handler* h) {
-  return (!is_fragmenthandler(h) && !is_scopedhandler(h) && !is_skiphandler(h));
-}
-
 static count handler_size(const lh_effect effect) {
-  if (effect == LH_EFFECT(__skip)) return sizeof(skiphandler);
-  else if (effect == LH_EFFECT(__fragment)) return sizeof(fragmenthandler);
-  else if (effect == LH_EFFECT(__scoped)) return sizeof(scopedhandler);
+  if (effect == effect_skip) return sizeof(skiphandler);
+  else if (effect == effect_fragment) return sizeof(fragmenthandler);
+  else if (effect == effect_scoped) return sizeof(scopedhandler);
   else return sizeof(effecthandler);
 }
 #endif
@@ -685,6 +689,27 @@ static handler* _handler_prev_skip(const skiphandler* sh) {
   return (handler*)((byte*)sh - sh->toskip);
 }
 
+static void handler_release(handler* h) {
+  if (is_fragmenthandler(h)) {
+    fragment_release_at(&((fragmenthandler*)h)->fragment);
+  }
+  else if (is_scopedhandler(h)) {
+    resume_release_at(&((scopedhandler*)h)->resume);
+  }
+  else if (is_skiphandler(h)) {
+    /* nothing */
+  }
+  else {
+    assert(is_effecthandler(h));
+    effecthandler* eh = (effecthandler*)h;
+    lh_releasefun* f = eh->hdef->local_release;
+    if (f != NULL) {
+      f(eh->local);
+    }
+    eh->local = lh_value_null;
+  }
+}
+
 
 // Increase the reference count of handler fields
 static handler* handler_acquire(handler* h) {
@@ -694,17 +719,18 @@ static handler* handler_acquire(handler* h) {
   else if (is_scopedhandler(h)) {
     resume_acquire(((scopedhandler*)h)->resume);
   }
+  else if (is_skiphandler(h)) {
+    /* nothing */
+  }
+  else {
+    assert(is_effecthandler(h));
+    effecthandler* eh = (effecthandler*)h;
+    lh_acquirefun* f = eh->hdef->local_acquire;
+    if (f != NULL) {
+      eh->local = f(eh->local);
+    }
+  }
   return h;
-}
-
-// Decrease the reference count of handler fields
-static void handler_release(ref handler* h) {
-  if (is_fragmenthandler(h)) {
-    fragment_release_at(&((fragmenthandler*)h)->fragment);
-  }
-  else if (is_scopedhandler(h)) {
-    resume_release_at(&((scopedhandler*)h)->resume);
-  }
 }
 
 
@@ -846,9 +872,9 @@ static void hstack_free(ref hstack* hs) {
 
 
 // Pop a handler frame, decreasing its reference counts.
-static void hstack_pop(ref hstack* hs) {
+static void hstack_pop(ref hstack* hs, bool do_release) {
   assert(!hstack_empty(hs));
-  handler_release(hstack_top(hs));
+  if (do_release) { handler_release(hstack_top(hs)); }
   hs->count = ptrdiff(hs->top, hs->hframes);
   hs->top = _handler_prev(hs->top);
 }
@@ -867,7 +893,7 @@ static fragment* hstack_pop_fragment(hstack* hs) {
     handler* h = hstack_top(hs);
     if (is_fragmenthandler(h)) {
       fragment* fragment = fragment_acquire(((fragmenthandler*)h)->fragment);
-      hstack_pop(hs);
+      hstack_pop(hs, true);
       return fragment;
     }
   }
@@ -912,21 +938,21 @@ static effecthandler* hstack_push_effect(ref hstack* hs, const lh_handlerdef* hd
 
 // Push a skip handler
 static skiphandler* hstack_push_skip(ref hstack* hs, count toskip) {
-  skiphandler* h = (skiphandler*)_hstack_push(hs, LH_EFFECT(__skip), sizeof(skiphandler));
+  skiphandler* h = (skiphandler*)_hstack_push(hs, effect_skip, sizeof(skiphandler));
   h->toskip = toskip;
   return h;
 }
 
 // Push a fragment handler
 static fragmenthandler* hstack_push_fragment(ref hstack* hs, fragment* fragment) {
-  fragmenthandler* h = (fragmenthandler*)_hstack_push(hs, LH_EFFECT(__fragment), sizeof(fragmenthandler));
+  fragmenthandler* h = (fragmenthandler*)_hstack_push(hs, effect_fragment, sizeof(fragmenthandler));
   h->fragment = fragment;
   return h;
 }
 
 // Push a scoped handler
 static scopedhandler* hstack_push_scoped(ref hstack* hs, resume* resume) {
-  scopedhandler* h = (scopedhandler*)_hstack_push(hs, LH_EFFECT(__scoped), sizeof(scopedhandler));
+  scopedhandler* h = (scopedhandler*)_hstack_push(hs, effect_scoped, sizeof(scopedhandler));
   h->resume = resume;
   return h;
 }
@@ -1066,7 +1092,7 @@ static void cstack_extendfrom(ref cstack* cs, ref cstack* ds, bool will_free_ds)
 
 // Pop the stack up to the given handler `h` (which should reside in `hs`)
 // Return a stack object in `cs` (if not `NULL) that should be restored later on.
-static void hstack_pop_upto(ref hstack* hs, ref handler* h, out cstack* cs) 
+static void hstack_pop_upto(ref hstack* hs, ref handler* h, bool do_release, out cstack* cs) 
 {
   if (cs != NULL) cstack_init(cs);
   assert(!hstack_empty(hs));
@@ -1086,11 +1112,12 @@ static void hstack_pop_upto(ref hstack* hs, ref handler* h, out cstack* cs)
         }
       }
       else if (is_skiphandler(cur)) {
+        // todo: if 'do_release' is false, we could skip right up to handler
         skip_upto = hstack_prev_skip(hs,(skiphandler*)cur);
         assert(valid_handler(hs, skip_upto));
       }
     }
-    hstack_pop(hs);
+    hstack_pop(hs, do_release);
     cur = hstack_top(hs);
   }
   assert(cur == h);
@@ -1237,10 +1264,11 @@ static void capture_hstack(hstack* hs, hstack* to, effecthandler* h ) {
 
 // Return to a handler by unwinding the handler stack.
 static void __noinline __noreturn yield_to_handler(hstack* hs, effecthandler* h,
-  resume* resume, const lh_operation* op, lh_value oparg)
+  resume* resume, const lh_operation* op, lh_value oparg, bool do_release)
 {
   cstack cs;
-  hstack_pop_upto(hs, to_handler(h), &cs);
+  cstack_init(&cs);
+  hstack_pop_upto(hs, to_handler(h), do_release, &cs);
   h->arg = oparg;
   h->arg_op = op;
   h->arg_resume = resume;
@@ -1324,7 +1352,7 @@ static __noinline lh_value capture_resume_yield(hstack* hs, effecthandler* h, co
     #endif
     assert(h->hdef == ((effecthandler*)(r->hstack.hframes))->hdef); // same handler?
     // and yield to the handler
-    yield_to_handler(hs, h, r, op, oparg);
+    yield_to_handler(hs, h, r, op, oparg, true);
   }
 }
 
@@ -1361,7 +1389,7 @@ static __noinline lh_value handle_with(
     resume*   resume = h->arg_resume;
     const lh_operation* op = h->arg_op;
     assert(op == NULL || op->optag->effect == h->handler.effect);
-    hstack_pop(hs);
+    hstack_pop(hs,true);
     if (op != NULL && op->opfun != NULL) {
       // push a scoped frame if necessary
       if (op->opkind==LH_OP_SCOPED) {
@@ -1373,7 +1401,7 @@ static __noinline lh_value handle_with(
       // pop our scoped frame (potentially releasing the resumption)
       if (op->opkind==LH_OP_SCOPED) {
         assert(hs==&__hstack);
-        hstack_pop(hs);
+        hstack_pop(hs,true);
       }
     }
     return res;
@@ -1390,7 +1418,7 @@ static __noinline lh_value handle_with(
     // pop our handler
     lh_resultfun* resfun = h->hdef->resultfun;
     lh_value local = h->local;
-    hstack_pop(hs);
+    hstack_pop(hs,true);
     if (resfun != NULL) {
       res = resfun(local, res);
     }
@@ -1444,7 +1472,7 @@ static lh_value __noinline yieldop(lh_optag optag, lh_value arg)
 
   // No resume (i.e. like `throw`)
   if (op->opkind <= LH_OP_NORESUME) {
-    yield_to_handler(hs, h, NULL, op, arg);
+    yield_to_handler(hs, h, NULL, op, arg, op->opkind != LH_OP_NORESUMEX /* release? */);
   }
   
   // Tail resumptions
@@ -1478,7 +1506,7 @@ static lh_value __noinline yieldop(lh_optag optag, lh_value arg)
     }
     // otherwise no resume was called; yield back to the handler with the result.
     else {
-      yield_to_handler(hs, h, NULL, NULL, res);
+      yield_to_handler(hs, h, NULL, NULL, res, true);
     }
   }
 

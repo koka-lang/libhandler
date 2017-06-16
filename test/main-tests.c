@@ -19,6 +19,7 @@ int __cdecl main(void) {
   test_raise();
   test_general();
   test_tailops();
+  test_state_alloc();
   tests_done();
   return 0;
 }

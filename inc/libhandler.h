@@ -11,10 +11,11 @@
 
 #ifdef __cplusplus
 extern "C" {
-  #endif
+#endif
   
-#include <stdint.h> // intptr_t
-#include <stdio.h>  // FILE*
+#include <stdbool.h>  // bool
+#include <stdint.h>   // intptr_t
+#include <stdio.h>    // FILE*
 
 
 /*-----------------------------------------------------------------
@@ -88,11 +89,11 @@ typedef lh_value(lh_actionfun)(lh_value);
 // A `lh_resultfun` is called when a handled action is done.
 typedef lh_value(lh_resultfun)(lh_value local, lh_value arg);
 
-// A copy function copies the local state in a handler when required.
-typedef void* lh_copyfun(const void* local);
+// An acquire function copies the local state in a handler when required.
+typedef lh_value lh_acquirefun(lh_value local);
 
-// A free function releases the local state in a handler when required.
-typedef void lh_freefun(void* local);
+// A release function releases the local state in a handler when required.
+typedef void lh_releasefun(lh_value local);
 
 // A fatal function is called on fatal errors.
 typedef void lh_fatalfun(int err, const char* msg);
@@ -100,6 +101,7 @@ typedef void lh_fatalfun(int err, const char* msg);
 // Function definitions if using custom allocators
 typedef void* lh_mallocfun(size_t size);
 typedef void* lh_reallocfun(void* p, size_t size);
+typedef void* lh_freefun(void* p);
 
 // Operation functions are called when that operation is `yield`ed to. 
 typedef lh_value(lh_opfun)(lh_resume r, lh_value local, lh_value arg);
@@ -133,8 +135,8 @@ typedef struct _lh_operation {
 // `operations`: the definitions of all handled operations ending with an operation with `lh_opfun` `NULL`. Can be NULL to handle no operations;
 typedef struct _lh_handlerdef {
   lh_effect           effect;
-  lh_freefun*         freelocal;
-  lh_copyfun*         copylocal;
+  lh_acquirefun*      local_acquire;
+  lh_releasefun*      local_release;
   lh_resultfun*       resultfun;
   const lh_operation* operations;
 } lh_handlerdef;

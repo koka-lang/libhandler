@@ -14,7 +14,7 @@ found in the file "license.txt" at the root of this distribution.
 LH_DEFINE_EFFECT2(state, get, put)
 
 LH_DEFINE_OP0(state, get, int)
-LH_DEFINE_OP1(state, put, int, int)
+LH_DEFINE_VOIDOP1(state, put, int)
 
 
 
@@ -22,7 +22,7 @@ LH_DEFINE_OP1(state, put, int, int)
   Example programs
 -----------------------------------------------------------------*/
 
-lh_value counter(lh_value arg) {
+lh_value state_counter(lh_value arg) {
   unreferenced(arg);
   int i;
   while ((i = state_get()) > 0) {
@@ -50,7 +50,7 @@ static lh_value _state_get(lh_resume rc, lh_value local, lh_value arg) {
 
 static lh_value _state_put(lh_resume rc, lh_value local, lh_value arg) {
   //trace_printf("state put: %i, %li\n", *((int*)local), (long)(arg));
-  return lh_tail_resume(rc, arg, local);
+  return lh_tail_resume(rc, arg, lh_value_null);
 }
 
 static const lh_operation _state_ops[] = {
@@ -95,7 +95,7 @@ lh_value state_handle(lh_value(*action)(lh_value), int state0, lh_value arg) {
 testing
 -----------------------------------------------------------------*/
 static void run() {
-  lh_value res1 = state_handle(counter,2,lh_value_null);
+  lh_value res1 = state_handle(state_counter,2,lh_value_null);
   test_printf("final result counter: %i\n", lh_int_value(res1));
 }
 
