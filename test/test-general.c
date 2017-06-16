@@ -48,10 +48,6 @@ lh_value multi_state_handle(lh_value(*action)(lh_value), lh_value arg) {
 
 
 
-static lh_value handle_amb_foo(lh_value arg) {
-  return amb_handle(wrap_foo, arg);
-}
-
 static lh_value handle_state_foo(lh_value arg) {
   return multi_state_handle(wrap_foo, arg);
 }

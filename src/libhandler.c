@@ -228,9 +228,9 @@ struct _handler {
 #define to_handler(h) (&(h)->handler)
 
 // The special handlers are identified by these effects. These should not clash with real effects.
-LH_DEFINE_EFFECT0(__fragment);
-LH_DEFINE_EFFECT0(__scoped);
-LH_DEFINE_EFFECT0(__skip);
+LH_DEFINE_EFFECT0(__fragment)
+LH_DEFINE_EFFECT0(__scoped)
+LH_DEFINE_EFFECT0(__skip)
 
 // Regular effect handler.
 typedef struct _effecthandler {
