@@ -111,15 +111,15 @@ static lh_value _amb_result(lh_value local, lh_value arg) {
 
 static lh_value _amb_flip(lh_resume rc, lh_value local, lh_value arg) {
   unreferenced(arg);
-  blist xs = lh_blist_value(lh_scoped_resume(rc, local, lh_value_bool(false)));
-  blist ys = lh_blist_value(lh_scoped_resume(rc, local, lh_value_bool(true)));
+  blist xs = lh_blist_value(lh_call_resume(rc, local, lh_value_bool(false)));
+  blist ys = lh_blist_value(lh_release_resume(rc, local, lh_value_bool(true)));
   blist_appendto(xs, ys);
   blist_trace_print("amb flip: result", blist_copy(xs));
   return lh_value_blist(xs);
 }
 
 static const lh_operation _amb_ops[] = {
-  { LH_OP_SCOPED, LH_OPTAG(amb,flip), &_amb_flip },
+  { LH_OP_GENERAL, LH_OPTAG(amb,flip), &_amb_flip },
   { LH_OP_NULL, lh_op_null, NULL }
 };
 static const lh_handlerdef amb_def = { LH_EFFECT(amb), NULL, NULL, &_amb_result, _amb_ops };

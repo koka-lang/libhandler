@@ -1,4 +1,4 @@
-/* ----------------------------------------------------------------------------
+  /* ----------------------------------------------------------------------------
   Copyright (c) 2016,2017, Microsoft Research, Daan Leijen
   This is free software; you can redistribute it and/or modify it under the
   terms of the Apache License, Version 2.0. A copy of the License can be
@@ -228,11 +228,9 @@ struct _handler {
 #define to_handler(h) (&(h)->handler)
 
 // The special handlers are identified by these effects. These should not clash with real effects.
-static const lh_effect effect_fragment    = (lh_effect)1;
-static const lh_effect effect_scoped      = (lh_effect)2;
-static const lh_effect effect_skip        = (lh_effect)3;
-static const lh_effect effect_custom_max  = (lh_effect)4; // must be highest entry
-
+LH_DEFINE_EFFECT0(__fragment);
+LH_DEFINE_EFFECT0(__scoped);
+LH_DEFINE_EFFECT0(__skip);
 
 // Regular effect handler.
 typedef struct _effecthandler {
@@ -419,6 +417,10 @@ const char* lh_optag_name(lh_optag optag) {
   return (optag == NULL ? "<null>" : optag->effect[optag->opidx+1]);
 }
 
+static bool op_is_release(const lh_operation* op) {
+  return (op->opkind != LH_OP_NORESUMEX);
+}
+
 /*-----------------------------------------------------------------
    Maintain statistics
 -----------------------------------------------------------------*/
@@ -599,7 +601,7 @@ static fragment* fragment_acquire(fragment* f) {
   Resumptions
 -----------------------------------------------------------------*/
 // Forward
-static void hstack_free(ref hstack* hs);
+static void hstack_free(ref hstack* hs, bool do_release);
 
 // release a resumptions; returns `true` if it was released
 static __noinline void _resume_free(resume* r) {
@@ -609,7 +611,7 @@ static __noinline void _resume_free(resume* r) {
   stats.rcont_released_size += (long)r->cstack.size + (long)r->hstack.size;
   #endif
   cstack_free(&r->cstack);
-  hstack_free(&r->hstack);
+  hstack_free(&r->hstack,true);
   checked_free(r);
 }
 
@@ -653,26 +655,26 @@ static resume* resume_acquire(resume* r) {
 -----------------------------------------------------------------*/
 
 static bool is_skiphandler(const handler* h) {
-  return (h->effect == effect_skip);
+  return (h->effect == LH_EFFECT(__skip));
 }
 
 static bool is_fragmenthandler(const handler* h) {
-  return (h->effect == effect_fragment);
+  return (h->effect == LH_EFFECT(__fragment));
 }
 
 static bool is_scopedhandler(const handler* h) {
-  return (h->effect == effect_scoped);
+  return (h->effect == LH_EFFECT(__scoped));
 }
 
-static bool is_effecthandler(const handler* h) {
-  return (h->effect > effect_custom_max);
-}
 
 #ifndef NDEBUG
+static bool is_effecthandler(const handler* h) {
+  return (!is_skiphandler(h) && !is_fragmenthandler(h) && !is_scopedhandler(h));
+}
 static count handler_size(const lh_effect effect) {
-  if (effect == effect_skip) return sizeof(skiphandler);
-  else if (effect == effect_fragment) return sizeof(fragmenthandler);
-  else if (effect == effect_scoped) return sizeof(scopedhandler);
+  if (effect == LH_EFFECT(__skip)) return sizeof(skiphandler);
+  else if (effect == LH_EFFECT(__fragment)) return sizeof(fragmenthandler);
+  else if (effect == LH_EFFECT(__scoped)) return sizeof(scopedhandler);
   else return sizeof(effecthandler);
 }
 #endif
@@ -845,12 +847,11 @@ static handler* hstack_prev_skip(hstack* hs, skiphandler* h) {
   return prev;
 }
 
-
 // Release the handler frames of an `hstack`
-static void hstack_free(ref hstack* hs) {
+static void hstack_free(ref hstack* hs, bool do_release) {
   assert(hs != NULL);
   if (hs->hframes != NULL) {
-    if (!hstack_empty(hs)) {
+    if (do_release && !hstack_empty(hs)) {
       handler* h = hstack_top(hs);
       do {
         handler_release(h);
@@ -859,8 +860,7 @@ static void hstack_free(ref hstack* hs) {
       while (h != NULL);
     }
     checked_free(hs->hframes);
-    hs->size = 0;
-    hs->hframes = NULL;
+    hstack_init(hs);
   }
 }
 
@@ -938,27 +938,29 @@ static effecthandler* hstack_push_effect(ref hstack* hs, const lh_handlerdef* hd
 
 // Push a skip handler
 static skiphandler* hstack_push_skip(ref hstack* hs, count toskip) {
-  skiphandler* h = (skiphandler*)_hstack_push(hs, effect_skip, sizeof(skiphandler));
+  skiphandler* h = (skiphandler*)_hstack_push(hs, LH_EFFECT(__skip), sizeof(skiphandler));
   h->toskip = toskip;
   return h;
 }
 
 // Push a fragment handler
 static fragmenthandler* hstack_push_fragment(ref hstack* hs, fragment* fragment) {
-  fragmenthandler* h = (fragmenthandler*)_hstack_push(hs, effect_fragment, sizeof(fragmenthandler));
+  fragmenthandler* h = (fragmenthandler*)_hstack_push(hs, LH_EFFECT(__fragment), sizeof(fragmenthandler));
   h->fragment = fragment;
   return h;
 }
 
 // Push a scoped handler
 static scopedhandler* hstack_push_scoped(ref hstack* hs, resume* resume) {
-  scopedhandler* h = (scopedhandler*)_hstack_push(hs, effect_scoped, sizeof(scopedhandler));
+  scopedhandler* h = (scopedhandler*)_hstack_push(hs, LH_EFFECT(__scoped), sizeof(scopedhandler));
   h->resume = resume;
   return h;
 }
 
 
-static void _hstack_append_movefrom(ref hstack* hs, ref hstack* topush, const handler* from) {
+// Move handlers from one stack to another keeping reference counts as is.
+// Include `from` in the moved handlers. Returns a pointer to the new `from` in `hs`.
+static handler* hstack_append_movefrom(ref hstack* hs, ref hstack* topush, const handler* from) {
   assert(hstack_contains(topush, from));
   count  needed = hstack_indexof(topush, from);
   handler* bot = hstack_ensure_space(hs, needed);
@@ -966,19 +968,22 @@ static void _hstack_append_movefrom(ref hstack* hs, ref hstack* topush, const ha
   bot->prev = hstack_topsize(hs);
   hs->count += needed;
   hs->top = hstack_at(hs,hstack_topsize(topush));
+  return bot;
 }
 
 // Copy handlers from one stack to another increasing reference counts as appropiate.
-// Include `from` in the copied handlers.
-static void hstack_append_copyfrom(ref hstack* hs, ref hstack* tocopy, handler* from) {
+// Include `from` in the copied handlers but will not acquire it!!
+// Returns a pointer to the new `from` in `hs`.
+static handler* hstack_append_copyfrom(ref hstack* hs, ref hstack* tocopy, handler* from ) {
   assert(hstack_contains(tocopy,from));
-  _hstack_append_movefrom(hs, tocopy, from);
-  handler* h = hstack_top(tocopy);
-  do {
+  handler* bot = hstack_append_movefrom(hs, tocopy, from);
+  handler* h = hstack_top(hs);
+  while(h > bot) {
     handler_acquire(h);    
-    h = hstack_prev(tocopy,h);
+    h = hstack_prev(hs,h);
   } 
-  while (h != NULL && h >= from);
+  assert(h==bot);
+  return bot;
 }
 
 
@@ -1108,7 +1113,7 @@ static void hstack_pop_upto(ref hstack* hs, ref handler* h, bool do_release, out
         // special "fragment" handler; remember to restore the stack
         fragment* f = ((fragmenthandler*)cur)->fragment;
         if (f->cstack.frames != NULL) {
-          cstack_extendfrom(cs, &f->cstack, f->refcount == 1);
+          cstack_extendfrom(cs, &f->cstack, do_release && f->refcount == 1);
         }
       }
       else if (is_skiphandler(cur)) {
@@ -1148,7 +1153,7 @@ static bool lh_init(hstack* hs) {
 
 static __noinline void lh_done(hstack* hs) {
   assert(hs == &__hstack && hs->size>0 && hs->count==0 && (byte*)hs->top==&hs->hframes[0]);
-  hstack_free(hs);
+  hstack_free(hs,true);
 }
 
 
@@ -1177,12 +1182,8 @@ static __noinline __noreturn __noopt void _jumpto_stack(
    Set `freecframes` to `true` to release the cstack after jumping.
 */
 static __noinline __noreturn void jumpto(
-  cstack* cs, hstack* hs, lh_jmp_buf* entry, bool freecframes )
+  cstack* cs, lh_jmp_buf* entry, bool freecframes )
 {
-  // push on handler chain 
-  if (hs != NULL) {
-    hstack_append_copyfrom(&__hstack, hs, hstack_bottom(hs));
-  }
   if (cs->frames == NULL) {
     // if no stack, just jump back down the stack; 
     // sanity: check if the entry is really below us!
@@ -1210,21 +1211,34 @@ static __noinline __noreturn void jumpto(
   }
 }
 
-// jump to a continuation a result 
+
+// jump to a fragment
+static __noinline __noreturn void jumpto_fragment(fragment* f, lh_value res)
+{
+  assert(f->refcount >= 1);
+  f->res = res; // set the argument in the cont slot  
+  jumpto(&f->cstack, &f->entry, false);
+}
+
+// jump to a resumption
 static __noinline __noreturn void jumpto_resume( resume* r, lh_value local, lh_value arg )
 {
   handler* h = hstack_bottom(&r->hstack);
   assert(is_effecthandler(h));
-  ((effecthandler*)h)->local = local; // write directly so it gets restored with the new local
-  r->arg = arg; // set the argument in the cont slot  
-  jumpto(&r->cstack, &r->hstack, &r->entry, false);
-}
-
-// jump to a continuation a result 
-static __noinline __noreturn void jumpto_fragment(fragment* f, lh_value res)
-{
-  f->res = res; // set the argument in the cont slot  
-  jumpto(&f->cstack, NULL, &f->entry, false);
+  if (r->refcount == 1) {
+    h = hstack_append_movefrom(&__hstack, &r->hstack, hstack_bottom(&r->hstack));
+    hstack_free(&r->hstack, false /* no release */); // zero out the hstack in the resume since we moved it
+  }
+  else {
+    h = hstack_append_copyfrom(&__hstack, &r->hstack, hstack_bottom(&r->hstack)); // does not acquire h
+  }
+  assert(is_effecthandler(h));
+  ((effecthandler*)h)->local = local; // write new local directly into the hstack
+  if (r->refcount==1) {
+    handler_acquire(h); // acquire now that the new local is in there (as it may alias the original)
+  }
+  r->arg = arg;         // set the argument in the cont slot  
+  jumpto(&r->cstack, &r->entry, false);
 }
 
 
@@ -1253,9 +1267,15 @@ static void capture_cstack(cstack* cs, const void* bottom, const void* top)
 }
 
 // Capture part of a handler stack (includeing h).
-static void capture_hstack(hstack* hs, hstack* to, effecthandler* h ) {
+static void capture_hstack(hstack* hs, hstack* to, effecthandler* h, bool copy) {
   hstack_init(to);
-  hstack_append_copyfrom(to, hs, to_handler(h));  
+  if (copy) {
+    handler* toh = hstack_append_copyfrom(to, hs, to_handler(h));
+    handler_acquire(toh);
+  }
+  else {
+    hstack_append_movefrom(to, hs, to_handler(h));
+  }
 }
 
 /*-----------------------------------------------------------------
@@ -1272,7 +1292,7 @@ static void __noinline __noreturn yield_to_handler(hstack* hs, effecthandler* h,
   h->arg = oparg;
   h->arg_op = op;
   h->arg_resume = resume;
-  jumpto(&cs, NULL, &h->entry, true);
+  jumpto(&cs, &h->entry, true);
 }
 
 /*-----------------------------------------------------------------
@@ -1345,14 +1365,14 @@ static __noinline lh_value capture_resume_yield(hstack* hs, effecthandler* h, co
     void* top = get_stack_top();
     capture_cstack(&r->cstack, h->stackbase, top);
     // capture hstack
-    capture_hstack(hs, &r->hstack, h);
+    capture_hstack(hs, &r->hstack, h, false );
     #ifdef _STATS
     if (r->cstack.frames == NULL) stats.rcont_captured_empty++;
     stats.rcont_captured_size += (long)r->cstack.size + (long)r->hstack.size;
     #endif
     assert(h->hdef == ((effecthandler*)(r->hstack.hframes))->hdef); // same handler?
     // and yield to the handler
-    yield_to_handler(hs, h, r, op, oparg, true);
+    yield_to_handler(hs, h, r, op, oparg, false /* we moved the frames to the resumption */ );
   }
 }
 
@@ -1389,19 +1409,19 @@ static __noinline lh_value handle_with(
     resume*   resume = h->arg_resume;
     const lh_operation* op = h->arg_op;
     assert(op == NULL || op->optag->effect == h->handler.effect);
-    hstack_pop(hs,true);
+    hstack_pop(hs, !op_is_release(op)); // no release if moved into resumption
     if (op != NULL && op->opfun != NULL) {
       // push a scoped frame if necessary
-      if (op->opkind==LH_OP_SCOPED) {
+      if (op->opkind>=LH_OP_SCOPED) {
         hstack_push_scoped(hs,resume);
       }
       assert((void*)&resume->lhresume == (void*)resume);
       // and call the operation handler
       res = op->opfun(&resume->lhresume, local, res);
       // pop our scoped frame (potentially releasing the resumption)
-      if (op->opkind==LH_OP_SCOPED) {
+      if (op->opkind>=LH_OP_SCOPED) {
         assert(hs==&__hstack);
-        hstack_pop(hs,true);
+        hstack_pop(hs,op->opkind==LH_OP_SCOPED);
       }
     }
     return res;
@@ -1472,7 +1492,7 @@ static lh_value __noinline yieldop(lh_optag optag, lh_value arg)
 
   // No resume (i.e. like `throw`)
   if (op->opkind <= LH_OP_NORESUME) {
-    yield_to_handler(hs, h, NULL, op, arg, op->opkind != LH_OP_NORESUMEX /* release? */);
+    yield_to_handler(hs, h, NULL, op, arg, op_is_release(op) );
   }
   
   // Tail resumptions
