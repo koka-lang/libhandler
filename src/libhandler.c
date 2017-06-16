@@ -418,6 +418,7 @@ const char* lh_optag_name(lh_optag optag) {
 }
 
 static bool op_is_release(const lh_operation* op) {
+  assert(op!=NULL);
   return (op->opkind != LH_OP_NORESUMEX);
 }
 
@@ -1409,7 +1410,7 @@ static __noinline lh_value handle_with(
     resume*   resume = h->arg_resume;
     const lh_operation* op = h->arg_op;
     assert(op == NULL || op->optag->effect == h->handler.effect);
-    hstack_pop(hs, !op_is_release(op)); // no release if moved into resumption
+    hstack_pop(hs, ((op==NULL) || !op_is_release(op)) ); // no release if moved into resumption
     if (op != NULL && op->opfun != NULL) {
       // push a scoped frame if necessary
       if (op->opkind>=LH_OP_SCOPED) {
