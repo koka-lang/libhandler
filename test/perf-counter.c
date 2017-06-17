@@ -15,7 +15,7 @@ static const int N = 10000000;
 -----------------------------------------------------------------*/
 
 static int __noinline work(int i) {
-  return (int)(100.0*sin((float)i));
+  return (int)(100.0*sinf((float)i));
 }
 
 static int counter_native(int i) {

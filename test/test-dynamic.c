@@ -6,7 +6,14 @@ found in the file "license.txt" at the root of this distribution.
 -----------------------------------------------------------------------------*/
 #include "libhandler.h"
 #include "tests.h"
-#include <malloc.h>
+
+#ifdef HAS__ALLOCA        // msvc runtime
+# include <malloc.h>  
+# define lh_alloca _alloca
+#else 
+# include <alloca.h>
+# define lh_alloca alloca
+#endif
 
 LH_DEFINE_EFFECT1(A,showA)
 LH_DEFINE_EFFECT1(B,showB)

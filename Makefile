@@ -81,7 +81,7 @@ $(TESTMAIN): $(TESTSRCS) $(HLIB)
 benchmain: $(BENCHMAIN)
 
 $(BENCHMAIN): $(BENCHSRCS) $(HLIB)
-	$(CC) $(CCFLAGS)  $(LINKFLAGOUT)$@  $(BENCHSRCS) $(HLIB)
+	$(CC) $(CCFLAGS) $(LINKFLAGOUT)$@  $(BENCHSRCS) $(HLIB) -lm
 
 
 # -------------------------------------
