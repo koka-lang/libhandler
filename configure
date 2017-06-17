@@ -159,6 +159,7 @@ asm=".s"
 config="$ccname-$host"
 ccflagopt="-O3"
 ccflagdebug="-g"
+ccflag99=""
 ccdepend="$cc -MM "
 
 # note: expr regex has "^" implied as starting character
@@ -195,7 +196,8 @@ case "$ccname" in
     obj=".obj"
     asm=".asm";;
   gcc*)   
-    ccflags="-Wall -std=c99 -pedantic $ccflags"
+    ccflags="-Wall $ccflags"
+    ccflag99="-std=c99 -pedantic"
     asmflags="-Wall $asmflags";;
   clang*)
     ccflags="-Wall $ccflags"
@@ -347,6 +349,7 @@ echo "CCNAME=$ccname" >> makefile.inc
 echo "CCFLAGSOPT=$ccflags $ccflagopt" >> makefile.inc
 echo "CCFLAGSDEBUG=$ccflags $ccflagdebug" >> makefile.inc
 echo "CCFLAGOUT=$ccflagout" >> makefile.inc
+echo "CCFLAG99=$ccflag99"   >> makefile.inc
 echo "CCDEPEND=$ccdepend" >> makefile.inc
 echo "ASMFILES=$asmfiles" >> makefile.inc
 echo "ASMFLAGS=$asmflags" >> makefile.inc

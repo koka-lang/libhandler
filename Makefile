@@ -94,7 +94,7 @@ $(HLIB): $(OBJS)
 	$(AR) $(ARFLAGS)  $(ARFLAGOUT)$@ $(OBJS) 
 
 $(OUTDIR)/%$(OBJ): src/%.c
-	$(CC) $(CCFLAGS)  $(CCFLAGOUT)$@ -c $< 
+	$(CC) $(CCFLAGS) $(CCFLAG99) $(CCFLAGOUT)$@ -c $< 
 	# -g -fverbose-asm -Wa,-aln=$@.s
 
 $(OUTDIR)/%$(OBJ): src/%$(ASM)
