@@ -1,0 +1,9 @@
+ide/msvc/*.db
+ide/msvc/*.opendb
+ide/msvc/.vs
+ide/msvc/Debug
+ide/msvc/x64
+config/hasgot.?
+config/tst.exe
+config/tst
+out/

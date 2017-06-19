@@ -1,0 +1,400 @@
+#!/bin/bash
+# Copyright 2017, Microsoft Research, Daan Leijen
+echo "--- Configuring build ---"
+
+configure_options=$*
+target_type=unknown
+target_abi=""
+target_os=""
+cc=gcc
+ccoption=''
+ccflags=''
+asmflags=''
+verbose=no
+
+
+# Parse command-line arguments
+
+
+
+while : ; do
+  ac_option="$1"
+  case "$ac_option" in
+  *=*)  ac_optarg="${ac_option#*=}";;
+  *)    ac_optarg="yes" ;;
+  esac
+  case "$ac_option" in
+    "") break;;
+    -target*|--target*)
+        target_type=$ac_optarg ;;
+    -host*|--host*)
+        target_type=$ac_optarg ;;
+    -cc-opts*|--cc-opts*)
+        ccflags=$ac_optarg;;
+    -asm-opts*|--asm-opts*)
+        asmflags=$ac_optarg;;
+    -cc*|--cc*)
+        ccoption=$ac_optarg;;
+    -verbose|--verbose)
+        verbose="yes";;
+    -m*|--m*|-abi*|--abi*)
+        target_abi=$ac_optarg;;
+    -h|--help|-\?|help|\?)
+        echo "./configure [options]"
+        echo "  --cc=<ccomp>                   set the c-compiler (for example 'clang')"
+        echo "  --cc-opts=<options>            set extra c-compiler options (for example '-m32')"
+        echo "  --asm-opts=<options>           set extra assembler options (for example '-m32')"
+        echo "  --abi=<abi>                    set ABI (for example: 'x86' or 'amd64')"
+        echo "  --target=<arch>-<vendor>-<os>  set the target (for example 'x64-pc-windows')"
+        echo "  --verbose                      be verbose"
+        exit 0;;
+    *) echo "warning: unknown option \"$1\"." 1>&2
+  esac
+  shift
+done
+echo "use '--help' for help on configuation options."
+export verbose
+
+
+
+# Generate the files
+
+cd config
+
+echo
+echo "--- Check system ---"
+
+
+# Do we have a c compiler?
+
+if test -z "$ccoption"; then
+  if sh ./searchpath gcc; then
+    cc="gcc"
+  elif sh ./searchpath clang; then
+    cc="clang"
+  elif sh ./searchpath cl; then
+    cc="cl"
+  else
+    cc="cc"
+  fi
+else
+  cc="$ccoption"
+fi
+
+ccname="$(basename $cc)"
+
+# Determine the system type
+if test "$target_type" = "unknown"; then	
+	# check for 32bit compilation on x64 platform.
+	cctarget=`$cc $ccflags -v 2>&1 | grep -o '^[Tt]arget: *[^ ]*'`
+  cctarget=`expr "X$cctarget" : '[^ ]* *\(.*\)'`
+  cctrest=`expr "X$cctarget" : '[^-]*-\([^-]*-[^-]*\)'`
+	if test "$cctarget" = ""; then
+	  host_os=`uname -o`
+	  if host_os="Msys"; then 
+	    host_arch=`uname -m`
+	    target_type="$host_arch-pc-windows";
+	  elif target_type=`./config.guess`; then 
+	    :; 
+	  else
+	    echo "Cannot guess target type"
+	    echo "You must specify one with the --target option"
+	    echo "For example: --target=x64-pc-windows"
+	    exit 2
+	  fi   
+	else
+    echo "Compiler target: $cctarget"
+    case "$cctarget" in
+      mingw32)
+        echo "Target is 32-bit x86"
+        target_type="x86-pc-windows";;
+      i[3456]86-*)
+        echo "Target is 32-bit x86"
+        target_type="x86-$cctrest";;
+      x86_64-*)  
+        target_type="x86_64-$cctrest";;
+      *)  
+        echo "The compiler targets $cctarget"
+        target_type="$cctarget";;
+    esac
+	fi
+fi
+if target=`./config.sub $target_type`; then :; else
+  echo "Please specify the correct target type with the --target option"
+  exit 2
+fi
+
+
+# Configure the c compiler for the runtime system
+
+link=$cc
+linkflags=""
+linkflagout="-o "
+ar="ar"
+arflags="rcs"
+arflagout=""
+ccflagout="-o "
+asmflagout="-o "
+ostype="unix"
+exe=""
+dll=".dll"
+lib=".a"
+obj=".o"
+asm=".s"
+ccflagopt="-O3"
+ccflagdebug="-g"
+ccflag99=""
+ccdepend="$cc -MM "
+
+# note: expr regex has "^" implied as starting character
+target_arch=${target%%-*}
+target_os=${target#*-}
+
+case "$target" in
+  *-*-mingw*|*-*-win*|*-*-msys*)
+    exe=".exe"
+    dll=".dll"
+    ostype="windows";;
+esac
+
+if test "$target_abi" = ""; then
+  case "$target_arch,$ostype" in
+    x86_64,windows)
+      echo "Modify target ABI from x86_64 to x64 (as used on Windows)"
+      target_abi="x64";;
+    x86_64,*)
+      echo "Modify target ABI from x86_64 to amd64 (used on Linux, etc)"
+      target_abi="amd64";;
+    i[3456]86,*)
+      target_abi="x86";;  
+    *,*)
+      target_abi="$target_arch";;
+  esac  
+fi
+
+case $target_abi in
+  x32) ccflags="$ccflags -mx32";;
+esac
+
+# Set final target configuration
+target="$target_abi-$target_os"
+config="$ccname-$target"
+
+echo ""
+echo "Configure for target: $ccname, $target"
+echo ""
+
+case "$ccname" in
+  clang-cl)
+    ccflags="-W3 $ccflags"
+    ccflagopt="-GS- $ccflagopt"  # fiber-safe optimize
+    ccflagdebug="-Z7"
+    ccdepend="clang -MM "
+    ar="llvm-lib"
+    arflags=""
+    arflagout="-OUT:"
+    ccflagout="-Fo"
+    asmflagout="-Fo"
+    linkflagout="-Fe"
+    lib=".lib"
+    obj=".obj"
+    asm=".s";;
+  cl)
+    cclinkflags="-nologo"
+    ccflags="-nologo -W3 -Za $ccflags"
+    ccflagopt="-O2 -GS- -GT"  # fiber-safe optimize
+    ccflagdebug="-Zi"
+    ar="lib"
+    arflags=""
+    arflagout="-OUT:"
+    ccflagout="-Fo"
+    asmflagout="-Fo"
+    linkflagout="-Fe"
+    lib=".lib"
+    obj=".obj"
+    asm=".asm";;
+  gcc*)   
+    ccflags="-Wall $ccflags"
+    ccflag99="-std=c99 -pedantic"
+    asmflags="-Wall $asmflags";;
+  clang*)
+    ccflags="-Wall $ccflags"
+    asmflags="-Wall $asmflags";;
+  *)
+    echo "warning: unknown c-compiler '$ccname' -- command options might be wrong";;        
+esac
+
+
+# Configure compiler to use in further tests
+
+ccomp=$cc
+cclibs=""
+ccout="$linkflagout"
+export cc ccflags ccout cclibs verbose exe
+
+# Check C c-compiler
+sh ./runtest c99.c
+case $? in
+  0) echo "The C compiler is C99-compliant.";;
+  1) echo "The C compiler '$cc' is not C99 compliant."
+     echo "A C99 compliant compiler might be required to build (due to line-comments etc).";;
+  *) echo "Unable to compile the test program."
+     echo "Make sure the C compiler '$cc' is properly installed."
+     env verbose="yes" sh ./runtest c99.c
+     exit 2;;
+esac
+
+
+# Set up cenv.h
+echo "// Generated by 'configure': C environment constants" > cenv.h
+
+echo "#define LH_TARGET \"$target\""     >> cenv.h
+echo "#define LH_CCNAME \"$ccname\""     >> cenv.h
+echo "#define LH_ABI_$target_abi"        >> cenv.h
+
+asmsetjmp="asm/setjmp_$target_abi$asm"
+asmfiles=""
+
+if test -f "../src/$asmsetjmp"; then
+  echo "Assembly setjmp found for this ABI: '$asmsetjmp'"
+  asmfiles="$asmsetjmp"
+  echo "#define HAS_ASMSETJMP" >> cenv.h
+  jmpbufsz=`grep -o '[0-9][0-9]*: *sizeof ' ../src/$asmsetjmp`
+  #echo "grep found: $jmpbufsz"
+  jmpbufsz=`expr "X$jmpbufsz" : 'X\([0-9]*\)'`
+  echo "#define ASM_JMPBUF_SIZE $jmpbufsz" >> cenv.h
+  echo "Jump buffer size: $jmpbufsz";
+elif sh ./runtest has_sigsetjmp.c; then
+  echo "POSIX sigsetjmp found."
+  echo "#define HAS_SIGSETJMP" >> cenv.h;
+elif sh ./runtest has__setjmp.c; then
+  echo "BSD-style _setjmp found."
+  echo "#define HAS__SETJMP" >> cenv.h;
+elif sh ./runtest has_setjmp.c; then
+  echo "Regular setjmp found; this may be not most efficient."
+  echo "Consider adding an assembly definition as: src/$asmsetjmp."
+  echo "#define HAS_SETJMP" >> cenv.h;
+else
+  echo "Cannot find 'setjmp'! Cannot support this platform."
+  echo "Consider adding an assembly definition as: src/$asmsetjmp."  
+  exit 2;
+fi
+
+function has_function {
+  def="$1"
+  name="$2"
+  shift
+  shift
+  if sh ./hasgot $* $name; then
+    echo "Function $name: found"
+    echo "#define $def" >> cenv.h;
+  else
+    echo "Function $name: not found"
+    echo "// #define $def" >> cenv.h;
+  fi
+};
+
+has_function HAS_STRNCAT_S strncat_s -i string.h
+
+if sh ./hasgot -i alloca.h "alloca(10)"; then
+  echo "Function alloca: found"
+  echo "#define HAS_ALLOCA_H" >> cenv.h;
+elif sh ./hasgot -i malloc.h "_alloca(10)"; then
+  echo "Function _alloca: found"
+  echo "#define HAS__ALLOCA" >> cenv.h;
+else
+  echo "Cannot find stack allocation function 'alloca'!"
+  echo "// #define HAS_ALLOCA_H" >> cenv.h;
+fi
+
+function has_header {
+  def="$1"
+  header="$2"
+  shift
+  shift
+  if sh ./hasgot $* -i $header; then
+    echo "Header $header: found"
+    echo "#define $def" >> cenv.h;
+  else
+    echo "Header $header: not found"
+    echo "// #define $def" >> cenv.h;
+  fi
+};
+
+has_header HAS_STDBOOL_H stdbool.h
+
+
+
+# Generate makefile
+
+echo "# Generated by 'configure': Makefile variables" > makefile.inc
+
+echo "CONFIG=$config" >> makefile.inc
+echo "ABI=$target_abi"  >> makefile.inc
+echo "OSTYPE=$ostype" >> makefile.inc
+echo >> makefile.inc
+
+echo "CC=$cc" >> makefile.inc
+echo "CCNAME=$ccname" >> makefile.inc
+echo "CCFLAGSOPT=$ccflags $ccflagopt" >> makefile.inc
+echo "CCFLAGSDEBUG=$ccflags $ccflagdebug" >> makefile.inc
+echo "CCFLAGOUT=$ccflagout" >> makefile.inc
+echo "CCFLAG99=$ccflag99"   >> makefile.inc
+echo "CCDEPEND=$ccdepend" >> makefile.inc
+echo "ASMFILES=$asmfiles" >> makefile.inc
+echo "ASMFLAGS=$asmflags" >> makefile.inc
+echo "ASMFLAGOUT=$asmflagout" >> makefile.inc
+echo "AR=$ar" >> makefile.inc
+echo "ARFLAGS=$arflags" >> makefile.inc
+echo "ARFLAGOUT=$arflagout" >> makefile.inc
+echo "LINK=$link" >> makefile.inc
+echo "LINKFLAGS=$linkflags" >> makefile.inc
+echo "LINKFLAGOUT=$linkflagout" >> makefile.inc
+
+echo >> makefile.inc
+
+echo "EXE=$exe" >> makefile.inc
+echo "DLL=$dll" >> makefile.inc
+echo "OBJ=$obj" >> makefile.inc
+echo "LIB=$lib" >> makefile.inc
+echo "ASM=$asm" >> makefile.inc
+echo "CP=cp" >> makefile.inc
+echo "CD=cd" >> makefile.inc
+echo "RM=rm -f" >> makefile.inc
+echo "MKDIR=mkdir -p" >> makefile.inc
+
+# clean up and go to root dir again
+
+# rm -f tst$exe hasgot.c *$obj
+cd ..
+
+# initialize out directory
+rm -rf "out/$config"
+mkdir -p "out/$config"
+echo "# run 'make depend' to generate dependencies" > out/$config/makefile.depend
+mv config/cenv.h out/$config/cenv.h
+mv config/makefile.inc out/$config/makefile.inc
+echo "include out/$config/makefile.inc" > out/makefile.config
+
+
+# Print a summary
+
+echo
+echo "--- Configuration summary ---"
+echo "System:"
+echo "  target      : $target_abi-$target_os"
+echo "Build:"
+echo "  c compiler  : $cc $ccflags"
+echo "  assembler   : $cc $asmflags"
+echo "  linker      : $link $cclinkflags"
+echo
+echo "Use the following commands to build:"
+echo "> make depend"
+echo "> make"
+echo 
+echo "To run tests:"
+echo "> make tests"
+echo 
+echo "Test release version:"
+echo "> make tests VARIANT=release"
+echo

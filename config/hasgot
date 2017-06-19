@@ -1,0 +1,29 @@
+#!/bin/sh
+opts="$ccflags"
+libs="$cclibs"
+args=$*
+rm -f hasgot.c
+touch hasgot.c
+while : ; do
+  case "$1" in
+    -i) echo "#include <$2>" >> hasgot.c; shift;;
+    -t) echo "$2 the_$2;" >> hasgot.c; shift;;
+    -l*|-L*) libs="$libs $1";;
+    -*) opts="$opts $1";;
+     *) break;;
+  esac
+  shift
+done
+
+(
+#for f in $*; do echo "  void $f(void);"; done
+ echo "int main() {"
+ for f in $*; do echo "  (void)($f);"; done
+ echo "return 0; }") >> hasgot.c
+
+if test "$verbose" = yes; then
+  echo "hasgot $args: $cc $opts -o tst hasgot.c $libs" >&2
+  exec $cc $opts ${ccout}tst$exe hasgot.c $libs
+else
+  exec $cc $opts ${ccout}tst$exe hasgot.c $libs > /dev/null 2>&1
+fi
