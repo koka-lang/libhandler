@@ -61,7 +61,7 @@ Configuration options:
   : Specify extra c-compiler flags to use (e.g. `-m64`).
 * `--asm-opts=<options>`
   : Specify extra assembler flags to use (e.g. `-m64`).
-* `--host=<arch>-<vendor>-<os>`
+* `--target=<arch>-<vendor>-<os>`
   : Specify the platform as architecture (`x86`,`x86-64`,`amd64`),
     vendor (`pc`), and operating system (`windows`,`linux`,etc).
 * `--abi=<abi>`
@@ -113,6 +113,13 @@ There are three ways to build on Windows:
    
    After this you can run `configure` and `make` as described above.
 
+Successful configurations `bash` on Windows have been:
+
+- `gcc-amd64-pc-linux-gnu`\
+  Using just `./configure`
+- `clang-amd64-pc-linux-gnu`\
+  Use `sudo apt install clang` followed by `./configure --cc=clang`
+
 Successful configurations on Windows using `msys2` have been:
 
 - `gcc-x86_64-w64-mingw32`\
@@ -130,15 +137,6 @@ Using the Visual Studio IDE:
    Selecting 64-bit build.
 - `cl-x86-pc-windows`
    Selecting 32-bit build.
-
-Using 32-bit `mingw32` on windows (for `bash`) with  32-bit `clang` installed on
-a regular command prompt:
-
-- `gcc-x86-pc-windows`\
-   Configure with `bash ./configure` and make in the windows shell
-- `clang-x86-pc-windows`\
-   Configure with
-  `bash ./configure --cc=clang` and make in the windows shell
 
 [msvc]: https://www.microsoft.com/en-us/download/details.aspx?id=48146
 [winlinux]: https://msdn.microsoft.com/en-us/commandline/wsl/install_guide

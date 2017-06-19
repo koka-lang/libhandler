@@ -7,7 +7,7 @@
 include out/makefile.config
 
 ifndef $(VARIANT)
-VARIANT= debug
+VARIANT=debug
 endif
 
 CONFIGDIR  = out/$(CONFIG)
@@ -16,12 +16,12 @@ INCLUDES   = -Iinc -I$(CONFIGDIR)
 
 ifeq ($(VARIANT),release)
 CCFLAGS    = $(CCFLAGSOPT) -DNDEBUG $(INCLUDES)
-else
-ifeq ($(VARIANT),testopt)
+else ifeq ($(VARIANT),testopt)
 CCFLAGS    = $(CCFLAGSOPT) $(INCLUDES)
-else
+else ifeq ($(VARIANT),debug)
 CCFLAGS    = $(CCFLAGSDEBUG) $(INCLUDES)
-endif
+else
+VARIANTUNKNOWN=1
 endif
 
 # -------------------------------------
@@ -115,6 +115,7 @@ clean:
 init:
 	@echo "use 'make help' for help"
 	@echo "build variant: $(VARIANT), configuration: $(CONFIG)"
+	@if test "$(VARIANTUNKNOWN)" = "1"; then echo ""; echo "Error: unknown build variant: $(VARIANT)"; echo "Use one of 'debug', 'release', or 'testopt'"; false; fi
 	@if test -d "$(OUTDIR)/asm"; then :; else $(MKDIR) "$(OUTDIR)/asm"; fi
 
 help:
@@ -145,7 +146,7 @@ help:
 # instead of
 #  core/evaluator.o: ..
 # we therefore use [sed] to append the directory name
-depend:
+depend: init
 	$(CCDEPEND) $(INCLUDES) src/*.c > $(CONFIGDIR)/temp.depend
 	sed -e "s|\(.*\.o\)|$(CONFIGDIR)/\$$(VARIANT)/\1|g" $(CONFIGDIR)/temp.depend > $(CONFIGDIR)/makefile.depend
 	$(CCDEPEND) $(INCLUDES) test/*.c > $(CONFIGDIR)/temp.depend

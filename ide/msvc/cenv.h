@@ -1,19 +1,19 @@
 // C environment definition for Microsoft Visual C++
 #define LH_CCNAME "cl"
 #ifdef _M_X64
-# define LH_HOST "x64-pc-windows"
+# define LH_TARGET "x64-pc-windows"
 # define LH_ABI_x64
 # define ASM_JMPBUF_SIZE 256
 #elif _M_IX86
-# define LH_HOST "x86-pc-windows"
+# define LH_TARGET "x86-pc-windows"
 # define LH_ABI_x86
 # define ASM_JMPBUF_SIZE 32
 #elif _M_ARM64
-# define LH_HOST "arm64-pc-windows"
+# define LH_TARGET "arm64-pc-windows"
 # define LH_ABI_arm64
 # define ASM_JMPBUF_SIZE 256
 #elif _M_ARM
-# define LH_HOST "arm-pc-windows"
+# define LH_TARGET "arm-pc-windows"
 # define LH_ABI_arm
 # define ASM_JMPBUF_SIZE 112
 #endif
