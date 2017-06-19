@@ -85,6 +85,13 @@
 # endif
 #endif 
 
+#ifdef __cplusplus
+# define __auto
+# define __externc extern "C"
+#else
+# define __auto auto
+# define __externc
+#endif
 
 /* Select the right definition of setjmp/longjmp;
 
@@ -97,8 +104,8 @@
 #if defined(HAS_ASMSETJMP)
 // define the lh_jmp_buf in terms of `void*` elements to have natural alignment
 typedef void* lh_jmp_buf[ASM_JMPBUF_SIZE/sizeof(void*)];
-__nothrow __returnstwice int  _lh_setjmp(lh_jmp_buf buf);
-__nothrow __noreturn     void _lh_longjmp(lh_jmp_buf buf, int arg);
+__externc __nothrow __returnstwice int  _lh_setjmp(lh_jmp_buf buf);
+__externc __nothrow __noreturn     void _lh_longjmp(lh_jmp_buf buf, int arg);
 
 #elif defined(HAS__SETJMP)
 # define lh_jmp_buf   jmp_buf
@@ -155,15 +162,15 @@ typedef struct _handler handler;
 // and copied freely.
 typedef struct _hstack {
   handler*           top;       // top of the handlers `hframes <= top < hframes+count` 
-  count              count;     // number of bytes in use in `hframes`
-  count              size;      // size in bytes
+  ptrdiff_t          count;     // number of bytes in use in `hframes`
+  ptrdiff_t          size;      // size in bytes
   byte*              hframes;   // array of handlers (0 is bottom frame)
 } hstack;
 
 // A captured C stack
 typedef struct _cstack {           
   const void*        base;      // The `base` is the lowest/smallest adress of where the stack is captured
-  count              size;      // The byte size of the captured stack
+  ptrdiff_t          size;      // The byte size of the captured stack
   byte*              frames;    // The captured stack data (allocated in the heap)
 } cstack;
 
@@ -350,7 +357,7 @@ static void checked_free(void* p) {
 
 // approximate the top of the stack -- conservatively upward
 static __noinline __noopt void* get_stack_top() {
-  auto byte* top = (byte*)&top;
+  __auto byte* top = (byte*)&top;
   return top;
 }
 
@@ -362,7 +369,7 @@ static const void* stackbottom = NULL;
 
 // infer the direction in which the stack grows and the size of a stack frame 
 static __noinline __noopt void infer_stackdir() {
-  auto void* mark = (void*)&mark;
+  __auto void* mark = (void*)&mark;
   void* top = get_stack_top();
   stackup = (mark < top);
   stackbottom = mark;
@@ -529,8 +536,8 @@ static void cstack_free(ref cstack* cs) {
 
 
 // Return the lowest address to a c-stack regardless if the stack grows up or down
-static const void* cstack_base(const cstack* cs) {
-  return cs->base;
+static const byte* cstack_base(const cstack* cs) {
+  return (const byte*)cs->base;
 }
 
 // Return the top of the c-stack
@@ -824,7 +831,7 @@ static count hstack_topsize(const hstack* hs) {
 static void hstack_realloc_(ref hstack* hs, count needed) {
   count newsize = hstack_goodsize(needed);
   count topsize = hstack_topsize(hs);
-  hs->hframes = checked_realloc(hs->hframes, newsize);
+  hs->hframes = (byte*)checked_realloc(hs->hframes, newsize);
   hs->size = newsize;
   hs->top = hstack_at(hs, topsize);
   #ifdef _STATS
@@ -1055,7 +1062,7 @@ static void cstack_extendfrom(ref cstack* cs, ref cstack* ds, bool will_free_ds)
       }
       else {
         // otherwise copy the c-stack from ds
-        cs->frames = checked_malloc(ds->size);
+        cs->frames = (byte*)checked_malloc(ds->size);
         memcpy(cs->frames, ds->frames, ds->size);
         cs->base = ds->base;
         cs->size = ds->size;
@@ -1069,7 +1076,7 @@ static void cstack_extendfrom(ref cstack* cs, ref cstack* ds, bool will_free_ds)
     // check if we need to reallocate; no need if `ds` fits right in.
     if (csb != newbase || cs->size != newsize) {
       // reallocate..
-      byte* newframes = checked_malloc(newsize);
+      byte* newframes = (byte*)checked_malloc(newsize);
       // if non-overlapping, copy the current stack first into the gap
       // (there is never a gap at the ends as `cs` or `ds` either start or end the `newframes`).
       if ((dsb > csb + cs->size) || (dsb + ds->size < csb)) {
@@ -1173,7 +1180,7 @@ static __noinline void lh_done(hstack* hs) {
 // smart compilers (i.e. clang) will not optimize away the `alloca` in `jumpto`.
 static __noinline __noreturn __noopt void _jumpto_stack(
   byte* cframes, ptrdiff_t size, byte* base, lh_jmp_buf* entry, bool freecframes,
-  char* no_opt)
+  byte* no_opt)
 {
   if (no_opt != NULL) no_opt[0] = 0;
   // copy the saved stack onto our stack
@@ -1206,9 +1213,9 @@ static __noinline __noreturn void jumpto(
     extra += 0x200; // ensure a little more for the `_jumpto_stack` stack frame
                     // clang tends to optimize out a bare `alloca` call so we need to 
                     //  ensure it sees it as live; we store it in a local and pass that to `_jumpto_stack`
-    char* no_opt = NULL;
+    byte* no_opt = NULL;
     if (extra > 0) {
-      no_opt = lh_alloca(extra); // allocate room on the stack; in here the new stack will get copied.
+      no_opt = (byte*)lh_alloca(extra); // allocate room on the stack; in here the new stack will get copied.
     }
     // since we allocated more, the execution of `_jumpto_stack` will be in a stack frame 
     // that will not get overwritten itself when copying the new stack
@@ -1266,7 +1273,7 @@ static void capture_cstack(cstack* cs, const void* bottom, const void* top)
     // copy the stack 
     cs->base = (bottom <= top ? bottom : top); // always lowest address
     cs->size = size;
-    cs->frames = checked_malloc(size);
+    cs->frames = (byte*)checked_malloc(size);
     memcpy(cs->frames, cs->base, size);
   }
 }
@@ -1308,7 +1315,7 @@ static void __noinline __noreturn yield_to_handler(hstack* hs, effecthandler* h,
 // and push it in a fragment handler so the resume will return here later on.
 static __noinline lh_value capture_resume_call(hstack* hs, resume* r, lh_value resumelocal, lh_value resumearg) {
   // initialize continuation
-  fragment* f = checked_malloc(sizeof(fragment));
+  fragment* f = (fragment*)checked_malloc(sizeof(fragment));
   f->refcount = 1;
   f->res = lh_value_null; 
   #ifdef _STATS
@@ -1345,7 +1352,7 @@ static __noinline lh_value capture_resume_call(hstack* hs, resume* r, lh_value r
 static __noinline lh_value capture_resume_yield(hstack* hs, effecthandler* h, const lh_operation* op, lh_value oparg )
 {
   // initialize continuation
-  resume* r = checked_malloc(sizeof(resume));
+  resume* r = (resume*)checked_malloc(sizeof(resume));
   r->lhresume.rkind = FullResume;
   r->refcount = 1;
   r->arg = lh_value_null;
@@ -1471,7 +1478,7 @@ static __noinline lh_value handle_upto(hstack* hs, void* base, const lh_handlerd
 // `handle` installs a new handler on the stack and calls the given `action` with argument `arg`.
 lh_value lh_handle( const lh_handlerdef* def, lh_value local, lh_actionfun* action, lh_value arg)
 {
-  auto void* base = (void*)&base; // get_stack_top(); 
+  __auto void* base = (void*)&base; // get_stack_top(); 
   hstack* hs = &__hstack;
   bool init = lh_init(hs);
   lh_value res = handle_upto(hs, base, def, local, action, arg);
@@ -1567,7 +1574,7 @@ lh_value lh_yieldN(lh_optag optag, int argcount, ...) {
     va_start(ap, argcount);
     // note: we need to use 'malloc' as we cannot pass arguments to an operation as a stack address
     // todo: perhaps we need to reserve more space in the handler to pass arguments?
-    yieldargs* yargs = checked_malloc(sizeof(yieldargs) + ((argcount - 1) * sizeof(lh_value)));
+    yieldargs* yargs = (yieldargs*)checked_malloc(sizeof(yieldargs) + ((argcount - 1) * sizeof(lh_value)));
     yargs->argcount = argcount;
     for (int i = 0; i < argcount; i++) {
       yargs->args[i] = va_arg(ap, lh_value);

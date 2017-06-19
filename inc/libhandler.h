@@ -8,10 +8,6 @@
 #ifndef __libhandler_h 
 #define __libhandler_h
 
-
-#ifdef __cplusplus
-extern "C" {
-#endif
   
 #include <stdbool.h>  // bool
 #include <stdint.h>   // intptr_t
@@ -228,11 +224,6 @@ void lh_register_malloc(lh_mallocfun* malloc, lh_reallocfun* realloc, lh_freefun
   Operation tags 
 -----------------------------------------------------------------*/
 
-// The _any_ operation tag can be used to register an operation handler
-// in a `handlerdef` that matches on any operation that yields.
-lh_optag lh_op_any;
-
-
 #define lh_effect_null ((lh_effect)NULL)
 
 // The _null_ operation tag is used for the final operation struct in a list of operations.
@@ -319,8 +310,5 @@ const char* lh_effect_name(lh_effect effect);
 #define LH_WRAP_VOIDFUN1(fun,argtype) \
   lh_value wrap_##fun(lh_value arg) { fun(lh_##argtype##_value(arg)); return lh_value_null; }
 
-#ifdef __cplusplus
-}
-#endif
 
 #endif // __libhandler_h

@@ -68,11 +68,11 @@ static void output_cat(const char* s) {
   if (n == 0) return;
   size_t m = (output==NULL ? 0 : strlen(output)) + n;
   if (output == NULL) {
-    output = malloc(m + 1);
+    output = (char*)malloc(m + 1);
     output[0] = 0;
   }
   else {
-    output = realloc(output, m + 1);
+    output = (char*)realloc(output, m + 1);
   }
 #ifdef HAS_STRNCAT_S  
   strncat_s(output, m + 1, s, n);
