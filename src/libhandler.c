@@ -1103,13 +1103,15 @@ static void hstack_pop_upto(ref hstack* hs, ref handler* h, bool do_release, out
   if (cs != NULL) cstack_init(cs);
   assert(!hstack_empty(hs));
   handler* cur = hstack_top(hs);
-  handler* skip_upto = NULL;
+//  handler* skip_upto = NULL;
   while( cur > h ) {
+    /*
     if (skip_upto != NULL) {
       if (cur==skip_upto) skip_upto = NULL;
       else if (cur < skip_upto) fatal(EFAULT, "handler stack is invalid");
     }
     else {
+    */
       if (is_fragmenthandler(cur)) {
         // special "fragment" handler; remember to restore the stack
         fragment* f = ((fragmenthandler*)cur)->fragment;
@@ -1117,12 +1119,14 @@ static void hstack_pop_upto(ref hstack* hs, ref handler* h, bool do_release, out
           cstack_extendfrom(cs, &f->cstack, do_release && f->refcount == 1);
         }
       }
+    /*
       else if (is_skiphandler(cur)) {
         // todo: if 'do_release' is false, we could skip right up to handler
         skip_upto = hstack_prev_skip(hs,(skiphandler*)cur);
         assert(valid_handler(hs, skip_upto));
       }
     }
+    */
     hstack_pop(hs, do_release);
     cur = hstack_top(hs);
   }
