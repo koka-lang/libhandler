@@ -12,7 +12,7 @@
 -----------------------------------------------------------------*/
 int main(void) 
 {
-  printf("benchmark: " LH_CCNAME ", " LH_HOST "\n");
+  printf("benchmark: " LH_CCNAME ", " LH_TARGET "\n");
   perf_counter();  
 
   lh_print_stats(stderr);

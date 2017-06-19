@@ -27,8 +27,6 @@ static int counter_native(int i) {
   return sum;
 }
 
-static bool dowork = false;
-
 static int counter_nowork() {
   int i;
   int sum = 0;

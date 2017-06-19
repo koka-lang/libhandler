@@ -11,7 +11,7 @@ code {
 # Overview 
 
 Warning: this library is still under active development and the 
-API can change a lot.
+API may change.
 
 `libhandler` implements algebraic effect handlers in C. It works by
 capturing stacks in safe and portable manner. Algebraic effects 
@@ -36,8 +36,9 @@ assumptions regarding stacks and `setjmp` implementations. On new
 platforms please test carefully. Currently tested platforms include:
 
 - (`gcc`,`clang`,`cl`)`-x86-pc-windows`  (32 bit)
-- (`gcc`,`clang`,`cl`)`-x86_64-pc-windows`  (64 bit)
+- (`gcc`,`clang`,`cl`)`-x64-pc-windows`  (64 bit)
 - (`gcc`,`clang`)`-amd64-pc-linux`  (64 bit)
+- `gcc-x64-w64-mingw32` (64 bit)
 
 ## Unix/MacOSX
 
@@ -122,18 +123,18 @@ Successful configurations `bash` on Windows have been:
 
 Successful configurations on Windows using `msys2` have been:
 
-- `gcc-x86_64-w64-mingw32`\
+- `gcc-x64-w64-mingw32`\
    Using just `./configure`
 - `gcc-x86-w64-mingw32`\
    Using the `mingw32` shell with `mingw-w64-i686-toolchain` installed.   
-- `clang-x86_64-pc-windows`\
+- `clang-x64-pc-windows`\
    Using `./configure --cc=/c/programs/llvm/bin/clang`.
 - `clang-x86-pc-windows`  (32-bit)\
    Using `./configure --cc=/c/programs/llvm/bin/clang --cc-opts=-m32 --asm-opts=-m32`.
 
 Using the Visual Studio IDE:
 
-- `cl-x86_64-pc-windows`
+- `cl-x64-pc-windows`
    Selecting 64-bit build.
 - `cl-x86-pc-windows`
    Selecting 32-bit build.
