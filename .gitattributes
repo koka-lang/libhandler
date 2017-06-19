@@ -1,0 +1,2 @@
+# default behavior is to always use unix style line endings
+* text eol=lf
