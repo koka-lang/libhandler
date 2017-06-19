@@ -19,12 +19,14 @@ handlers can for example be used to program asynchronous code in
 straightline manner and we hope to use it to make programming with
 `libuv` more convenient.
 
-For a primer on algebraic effects, see the 
-relevant section in the [koka book].
+This library is described in detail in the accompanying [technical
+report][tr]. For a primer on algebraic effects, see the 
+relevant section in the [koka book]. 
 
 Enjoy!\
 -- Daan.
 
+[tr]: https://www.microsoft.com/en-us/research/publication/implementing-algebraic-effects-c
 [koka book]: https://bit.do/kokabook
 
 # Building
