@@ -155,14 +155,14 @@ static lh_value showA_handle_test1(lh_value arg) {
 }
 
 static lh_value showA_handle_test2(lh_value arg) {
-  char* p = alloca(0x1000);
+  char* p = (char*)alloca(0x1000);
   p[0] = 0;
   return showA_handle(test1, arg);
 }
 
 static lh_value test_resume(lh_value rc) {
   trace_printf("resuming..\n");
-  return lh_release_resume(lh_ptr_value(rc), lh_value_null, lh_value_null);
+  return lh_release_resume((lh_resume)lh_ptr_value(rc), lh_value_null, lh_value_null);
 }
 
 // test dynamic capture & handling
@@ -184,9 +184,9 @@ static lh_value test_dyn2() {
 // now a is resumed under showB_handle_test1 which allocates first a lot, so it is
 // swapped out; however, the resumption calls a B operation so should swap back to here.
 static lh_value test_resume1(lh_value rc) {
-  char* p = alloca(0x1000);
+  char* p = (char*)alloca(0x1000);
   p[0] = 0;
-  return lh_release_resume(lh_ptr_value(rc), lh_value_null, lh_value_null);  
+  return lh_release_resume((lh_resume)lh_ptr_value(rc), lh_value_null, lh_value_null);  
 }
 
 static lh_value test_dyn3() {

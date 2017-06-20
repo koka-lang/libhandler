@@ -37,6 +37,10 @@
       be jumped to.
 -----------------------------------------------------------------------------*/
 
+#ifdef __cplusplus
+#include <exception>
+#endif
+
 #include "libhandler.h"
 #include "cenv.h"     // configure generated
 
@@ -181,6 +185,9 @@ typedef struct _fragment {
   cstack             cstack;    // the captured c stack 
   count              refcount;  // fragments are allocated on the heap and reference counted.
   volatile lh_value  res;       // when jumped to, a result is passed through `res`
+  #ifdef __cplusplus
+  std::exception_ptr eptr;      // possible exception to rethrow when resuming the fragment
+  #endif
 } fragment;
 
 // Operation handlers receive an `lh_resume*`; the kind determines what it points to.
@@ -243,6 +250,7 @@ LH_DEFINE_EFFECT0(__skip)
 typedef struct _effecthandler {
   handler              handler;
   lh_jmp_buf           entry;       // used to jump back to a handler 
+  count                id;          // uniquely identifies the handler (cannot always use pointer due to reallocation)
   const lh_handlerdef* hdef;        // operation definitions
   volatile lh_value    arg;         // the yield argument is passed here
   const lh_operation*  arg_op;      // the yielded operation is passed here
@@ -274,6 +282,27 @@ typedef struct _scopedhandler {
 // thread local `__hstack` is the 'shadow' handler stack
 __thread hstack __hstack = { NULL, 0, 0, NULL };
 
+
+#ifdef __cplusplus
+class lh_unwind_exception : public std::exception {
+public:
+  const effecthandler*  handler;
+  lh_opfun*             opfun;
+  lh_value              res;
+  //lh_unwind_exception() : handler(NULL), opfun(NULL), res(lh_value_null) {  }
+  lh_unwind_exception(const effecthandler* h,lh_opfun* o, lh_value r) : handler(h), opfun(o), res(r) {  }
+  lh_unwind_exception(const lh_unwind_exception& e) : handler(e.handler), opfun(e.opfun), res(e.res) {  }
+  lh_unwind_exception& operator=(const lh_unwind_exception& e) {
+    handler = e.handler;
+    opfun = e.opfun;
+    res = e.res;
+    return *this;
+  }
+  virtual const char* what() const throw() {
+    return "libhandler: unwinding the stack; do not catch this exception!";
+  }
+};
+#endif
 
 /*-----------------------------------------------------------------
   Fatal errors
@@ -567,6 +596,9 @@ static __noinline void fragment_free_(fragment* f) {
   #ifdef _STATS
   stats.rcont_released++;
   stats.rcont_released_size += (long)f->cstack.size;
+  #endif
+  #ifdef __cplusplus
+  f->eptr = std::exception_ptr();
   #endif
   cstack_free(&f->cstack);
   checked_free(f);
@@ -934,7 +966,9 @@ static handler* _hstack_push(ref hstack* hs, lh_effect effect, count size) {
 // Push an effect handler
 static effecthandler* hstack_push_effect(ref hstack* hs, const lh_handlerdef* hdef, void* stackbase, lh_value local)
 {
+  static count id = 1000;
   effecthandler* h = (effecthandler*)_hstack_push(hs, hdef->effect, sizeof(effecthandler));
+  h->id = id++;
   h->hdef = hdef;
   h->stackbase = stackbase;
   h->local = local;
@@ -1203,7 +1237,7 @@ static __noinline __noreturn void jumpto(
     if (cs->base != NULL && stack_isbelow(top,cstack_top(cs))) {
       fatal(EFAULT,"Trying to jump up the stack to a scope that was already exited!");
     }
-    // long jump back up direcly, no need to restore stacks
+    // long jump back down direcly, no need to restore stacks
     _lh_longjmp(*entry, 1);
   }
   else {
@@ -1232,9 +1266,19 @@ static __noinline __noreturn void jumpto_fragment(fragment* f, lh_value res)
   jumpto(&f->cstack, &f->entry, false);
 }
 
+#ifdef __cplusplus
+static __noinline __noreturn void jumpto_fragment_exn(fragment* f, std::exception_ptr eptr) {
+  assert(f->refcount >= 1);
+  f->res = lh_value_null;     // set the argument in the cont slot  
+  f->eptr = eptr;   // and the possible exception
+  jumpto(&f->cstack, &f->entry, false);
+}
+#endif
+
 // jump to a resumption
 static __noinline __noreturn void jumpto_resume( resume* r, lh_value local, lh_value arg )
 {
+  // first restore the hstack and set the new local
   handler* h = hstack_bottom(&r->hstack);
   assert(is_effecthandler(h));
   if (r->refcount == 1) {
@@ -1249,6 +1293,7 @@ static __noinline __noreturn void jumpto_resume( resume* r, lh_value local, lh_v
   if (r->refcount==1) {
     handler_acquire(h); // acquire now that the new local is in there (as it may alias the original)
   }
+  // and then restore the cstack and jump
   r->arg = arg;         // set the argument in the cont slot  
   jumpto(&r->cstack, &r->entry, false);
 }
@@ -1307,6 +1352,12 @@ static void __noinline __noreturn yield_to_handler(hstack* hs, effecthandler* h,
   jumpto(&cs, &h->entry, true);
 }
 
+#ifdef __cplusplus
+static void __noinline __noreturn yield_to_handler_unwind(effecthandler* h, const lh_operation* op, lh_value oparg)  {
+  throw lh_unwind_exception(h, op->opfun, oparg);
+}
+#endif
+
 /*-----------------------------------------------------------------
   Captured resume & yield  
 -----------------------------------------------------------------*/
@@ -1318,6 +1369,9 @@ static __noinline lh_value capture_resume_call(hstack* hs, resume* r, lh_value r
   fragment* f = (fragment*)checked_malloc(sizeof(fragment));
   f->refcount = 1;
   f->res = lh_value_null; 
+  #ifdef __cplusplus
+  memset(&f->eptr,0,sizeof(std::exception_ptr));
+  #endif
   #ifdef _STATS
   stats.rcont_captured_fragment++;
   #endif    
@@ -1325,11 +1379,20 @@ static __noinline lh_value capture_resume_call(hstack* hs, resume* r, lh_value r
   if (_lh_setjmp(f->entry) != 0) {
     // longjmp back from the resume
     lh_value res = f->res; // get result
+    #ifdef __cplusplus
+    std::exception_ptr eptr;
+    std::swap(eptr,f->eptr);  // get possible exception
+    #endif
     #ifdef _STATS
     stats.rcont_resumed_fragment++;
     #endif
     // release our fragment
     fragment_release(f);
+    #ifdef __cplusplus
+    if (eptr) {
+      std::rethrow_exception(eptr);
+    }
+    #endif
     // return the result of the resume call     
     return res;
   }
@@ -1393,11 +1456,28 @@ static __noinline lh_value capture_resume_yield(hstack* hs, effecthandler* h, co
 /*-----------------------------------------------------------------
    Handle
 -----------------------------------------------------------------*/
+#ifdef __cplusplus
+class raii_hstack_pop {
+private:
+  hstack* hs;
+  bool    do_release;
+public:
+  raii_hstack_pop(hstack* hs, bool do_release) {
+    this->hs = hs;
+    this->do_release = do_release;
+  }
+  ~raii_hstack_pop() {
+    hstack_pop(hs, do_release);
+  }
+};
+#endif
+
 // Start a handler 
 static __noinline lh_value handle_with(
-    hstack* hs, effecthandler* h, lh_value(*action)(lh_value), lh_value arg )
+  hstack* hs, effecthandler* h, lh_value(*action)(lh_value), lh_value arg )
 {
   // set the handler entry point 
+  const count id = h->id;
   #ifndef NDEBUG
   const lh_handlerdef* hdef = h->hdef;
   void* base = h->stackbase;
@@ -1413,6 +1493,7 @@ static __noinline lh_value handle_with(
     h = (effecthandler*)(hstack_top(hs));  // re-load our handler
     assert(is_effecthandler(to_handler(h)));
     #ifndef NDEBUG
+    assert(id == h->id);
     assert(hdef == h->hdef);
     assert(base == h->stackbase);
     #endif
@@ -1424,33 +1505,57 @@ static __noinline lh_value handle_with(
     hstack_pop(hs, ((op==NULL) || !op_is_release(op)) ); // no release if moved into resumption
     if (op != NULL && op->opfun != NULL) {
       // push a scoped frame if necessary
-      if (op->opkind>=LH_OP_SCOPED) {
-        hstack_push_scoped(hs,resume);
-      }
-      assert((void*)&resume->lhresume == (void*)resume);
-      // and call the operation handler
-      res = op->opfun(&resume->lhresume, local, res);
-      // pop our scoped frame (potentially releasing the resumption)
-      if (op->opkind>=LH_OP_SCOPED) {
+      if (op->opkind >= LH_OP_SCOPED) {
+        hstack_push_scoped(hs, resume);  
+        #ifdef __cplusplus
+          raii_hstack_pop do_pop(hs, op->opkind==LH_OP_SCOPED);
+        #endif
+        assert((void*)&resume->lhresume == (void*)resume);
+        res = op->opfun(&resume->lhresume, local, res);
         assert(hs==&__hstack);
-        hstack_pop(hs,op->opkind==LH_OP_SCOPED);
+        #ifndef __cplusplus
+          hstack_pop(hs,op->opkind==LH_OP_SCOPED);
+        #endif
+      }
+      else {
+        // and call the operation handler
+        res = op->opfun(&resume->lhresume, local, res);
       }
     }
     return res;
   }
   else {
     // we set up the handler, now call the action 
-    lh_value res = action(arg);
-    assert(hs==&__hstack);
-    h = (effecthandler*)hstack_top(hs);  // re-load our handler since the handler stack could have been reallocated
-    #ifndef NDEBUG
-    assert(hdef == h->hdef);
-    assert(base == h->stackbase);
+    lh_value res;
+    lh_resultfun* resfun = NULL;
+    lh_value local = lh_value_null;
+    #ifdef __cplusplus
+      try { 
+        raii_hstack_pop do_pop(hs, true);
     #endif
-    // pop our handler
-    lh_resultfun* resfun = h->hdef->resultfun;
-    lh_value local = h->local;
-    hstack_pop(hs,true);
+        res = action(arg); 
+        assert(hs == &__hstack);
+        h = (effecthandler*)hstack_top(hs);  // re-load our handler since the handler stack could have been reallocated
+        #ifndef NDEBUG
+        assert(id == h->id);
+        assert(hdef == h->hdef);
+        assert(base == h->stackbase);
+        #endif
+        // pop our handler
+        resfun = h->hdef->resultfun;
+        local  = h->local;
+    #ifndef __cplusplus
+        hstack_pop(hs, true);
+    #else
+      }
+      catch (const lh_unwind_exception& e) { 
+        if (e.handler==NULL || e.handler->id != id) throw; // rethrow to other handler
+        res = e.res;
+        if (e.opfun != NULL) {
+          res = e.opfun(NULL, e.handler->local, res); // LH_OP_NORESUME
+        }
+      }
+    #endif
     if (resfun != NULL) {
       res = resfun(local, res);
     }
@@ -1464,7 +1569,21 @@ static __noinline lh_value handle_upto(hstack* hs, void* base, const lh_handlerd
 {
   // allocate handler frame on the stack so it will be part of a captured continuation
   effecthandler* h = hstack_push_effect(hs, def, base, local);
-  lh_value res = handle_with(hs, h, action, arg);
+  lh_value res;
+  #ifdef __cplusplus
+  try {
+  #endif
+    res = handle_with(hs, h, action, arg);
+  #ifdef __cplusplus
+  }
+  catch (...) {
+    fragment* fragment = hstack_pop_fragment(hs);
+    if (fragment != NULL) {
+      jumpto_fragment_exn(fragment, std::current_exception());
+    }
+    throw;
+  }
+  #endif
   fragment* fragment = hstack_pop_fragment(hs);
   // after returning, check if there is a fragment frame we should jump to..
   if (fragment != NULL) {
@@ -1504,33 +1623,45 @@ static lh_value __noinline yieldop(lh_optag optag, lh_value arg)
 
   // No resume (i.e. like `throw`)
   if (op->opkind <= LH_OP_NORESUME) {
+    #ifdef __cplusplus
+    if (op->opkind != LH_OP_NORESUMEX) {
+      yield_to_handler_unwind(h, op, arg);
+    }
+    #endif
     yield_to_handler(hs, h, NULL, op, arg, op_is_release(op) );
   }
   
   // Tail resumptions
   else if (op->opkind <= LH_OP_TAIL) {
-    // OP_TAIL_NOOP: will not call operations so no need for a skip frame
-    // call the operation function and return directly (as it promised to tail resume)
-    count  hidx = 0;
-    // push a skip frame
-    if (op->opkind != LH_OP_TAIL_NOOP) {
-      hidx = hstack_indexof(hs, to_handler(h));
-      hstack_push_skip(hs,skipped);
-    }
     // setup up a stack allocated tail resumption
     tailresume r;
     r.lhresume.rkind = TailResume;
     r.local = local;
     r.resumed = false;
     assert((void*)(&r.lhresume) == (void*)&r);
-    // call the operation handler directly for a tail resumption
-    lh_value res = op->opfun(&r.lhresume, local, arg);
-    // pop our skip handler
+    lh_value res;
     if (op->opkind != LH_OP_TAIL_NOOP) {
-      hstack_pop_skip(hs);
+      // push a skip frame
+      hstack_push_skip(hs, skipped);
+      count hidx = hstack_indexof(hs, to_handler(h));
+      #ifdef __cplusplus
+      assert(is_skiphandler(hstack_top(hs)));
+      raii_hstack_pop do_pop(hs, true);
+      #endif
+      // call the operation handler directly for a tail resumption
+      res = op->opfun(&r.lhresume, local, arg);
       h = (effecthandler*)hstack_at(hs, hidx);
       assert(is_effecthandler(to_handler(h)));
+      #ifndef __cplusplus
+      hstack_pop_skip(hs);
+      #endif
     }
+    // OP_TAIL_NOOP: will not call operations so no need for a skip frame
+    // call the operation function and return directly (as it promised to tail resume)
+    else {
+      res = op->opfun(&r.lhresume, local, arg);
+    }
+    
     // if we returned from a `lh_tail_resume` we just return its result
     if (r.resumed) {
       h->local = r.local;
@@ -1538,7 +1669,11 @@ static lh_value __noinline yieldop(lh_optag optag, lh_value arg)
     }
     // otherwise no resume was called; yield back to the handler with the result.
     else {
+      #ifdef __cplusplus
+      yield_to_handler_unwind(h, op, res);
+      #else
       yield_to_handler(hs, h, NULL, NULL, res, true);
+      #endif
     }
   }
 

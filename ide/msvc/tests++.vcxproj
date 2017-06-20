@@ -134,9 +134,19 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="..\..\test\main-tests.cpp" />
+    <ClCompile Include="..\..\test\test-amb.c" />
+    <ClCompile Include="..\..\test\test-destructor.cpp" />
+    <ClCompile Include="..\..\test\test-dynamic.c" />
+    <ClCompile Include="..\..\test\test-exn.c" />
+    <ClCompile Include="..\..\test\test-general.c" />
+    <ClCompile Include="..\..\test\test-raise.c" />
+    <ClCompile Include="..\..\test\test-state-alloc.c" />
+    <ClCompile Include="..\..\test\test-state.c" />
+    <ClCompile Include="..\..\test\test-tailops.c" />
     <ClCompile Include="..\..\test\tests.c" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\..\test\tests++.h" />
     <ClInclude Include="..\..\test\tests.h" />
   </ItemGroup>
   <ItemGroup>

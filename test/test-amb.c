@@ -20,7 +20,7 @@ LH_DEFINE_OP0(amb, flip, bool)
 -----------------------------------------------------------------*/
 
 blist blist_cons(bool b, blist tail) {
-  blist res = malloc(sizeof(struct _bnode));
+  blist res = (blist)malloc(sizeof(struct _bnode));
   res->next = tail;
   res->value = b;
   return res;
@@ -94,8 +94,8 @@ bool foo() {
   }
 }
 
-LH_WRAP_FUN0(xor,int)
-LH_WRAP_FUN0(foo,int)
+LH_WRAP_FUN0(xor,bool)
+LH_WRAP_FUN0(foo,bool)
 
 
 /*-----------------------------------------------------------------

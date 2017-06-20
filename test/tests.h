@@ -38,11 +38,6 @@ void trace_printf(const char* fmt, ...);
 # include <crtdbg.h>
 #endif
 
-#ifdef _MSC_VER
-# pragma warning(disable:4204 4221)
-#endif
-
-
 
 /*-----------------------------------------------------------------
   Exn
@@ -89,12 +84,11 @@ lh_value exn_handle(lh_value(*action)(lh_value), lh_value arg);
 -----------------------------------------------------------------*/
 
 void test_dynamic();
-//void tests2();
 void test_raise();
 void test_general();
 void test_tailops();
-
 void test_state_alloc();
+
 
 /*-----------------------------------------------------------------
   List of lh_value's; Declared in tests_amb
