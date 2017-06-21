@@ -74,7 +74,7 @@ void blist_trace_print(const char* msg, blist xs) {
 Example programs
 -----------------------------------------------------------------*/
 
-bool xor() {
+bool xxor() {
   bool p = amb_flip();
   bool q = amb_flip();
   bool res = ((p || q) && (!(p && q)));
@@ -87,14 +87,14 @@ bool foo() {
   int i = state_get();
   state_put(i + 1);
   if (i > 0 && p) {
-    return xor();
+    return xxor();
   }
   else {
     return false;
   }
 }
 
-LH_WRAP_FUN0(xor,bool)
+LH_WRAP_FUN0(xxor,bool)
 LH_WRAP_FUN0(foo,bool)
 
 
@@ -134,7 +134,7 @@ lh_value amb_handle(lh_value(*action)(lh_value), lh_value arg) {
 -----------------------------------------------------------------*/
 
 static blist handle_amb_xor() {
-  return lh_blist_value(amb_handle(wrap_xor, lh_value_null));
+  return lh_blist_value(amb_handle(wrap_xxor, lh_value_null));
 }
 
 lh_value handle_amb_foo(lh_value arg) {

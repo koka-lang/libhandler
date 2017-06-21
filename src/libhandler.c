@@ -39,6 +39,7 @@
 
 #ifdef __cplusplus
 #include <exception>
+#include <algorithm>
 #endif
 
 #include "libhandler.h"

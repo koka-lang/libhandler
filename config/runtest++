@@ -1,0 +1,8 @@
+#!/bin/sh
+if test "$verbose" = yes; then
+  echo "runtest++: $cxx $cxxflags ${ccout}tst$exe $* $cclibs" 
+	$cxx $cxxflags ${ccout}tst$exe $* $cclibs 
+else
+  $cxx $cxxflags ${ccout}tst$exe $* $cclibs > /dev/null 2> /dev/null || exit 100
+fi
+exec ./tst$exe

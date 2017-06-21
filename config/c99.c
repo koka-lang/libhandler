@@ -9,6 +9,6 @@ int main()
 #else
   fprintf(stderr,"detected __STD_VERSION__: %ld\n", 0__STDC_VERSION__ );
 #endif
-  return 0;
+  return 1;
 #endif
 }

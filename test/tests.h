@@ -68,10 +68,10 @@ LH_DECLARE_OP0(amb, flip, bool)
 
 void test_amb();
 
-bool xor();
+bool xxor();
 bool foo();
 
-lh_value wrap_xor(lh_value v);
+lh_value wrap_xxor(lh_value v);
 lh_value wrap_foo(lh_value v);
 
 lh_value handle_amb_foo(lh_value arg);
