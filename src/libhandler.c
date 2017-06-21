@@ -183,7 +183,7 @@ typedef struct _cstack {
 // A `fragment` is a captured C-stack and an `entry`.
 typedef struct _fragment {
   lh_jmp_buf         entry;     // jump powhere the fragment was captured
-  cstack             cstack;    // the captured c stack 
+  struct _cstack     cstack;    // the captured c stack 
   count              refcount;  // fragments are allocated on the heap and reference counted.
   volatile lh_value  res;       // when jumped to, a result is passed through `res`
   #ifdef __cplusplus
@@ -212,8 +212,8 @@ typedef struct _resume {
   struct _lh_resume  lhresume;    // contains the kind: always `FullResume` (must be first field, used for casts)
   count              refcount;    // resumptions are heap allocated
   lh_jmp_buf         entry;       // jump point where the resume was captured
-  cstack             cstack;      // captured cstack
-  hstack             hstack;      // captured hstack  always `size == count`
+  struct _cstack     cstack;      // captured cstack
+  struct _hstack     hstack;      // captured hstack  always `size == count`
   volatile lh_value  arg;         // the argument to `resume` is passed through `arg`.
 } resume;
 
@@ -249,7 +249,7 @@ LH_DEFINE_EFFECT0(__skip)
 
 // Regular effect handler.
 typedef struct _effecthandler {
-  handler              handler;
+  struct _handler      handler;
   lh_jmp_buf           entry;       // used to jump back to a handler 
   count                id;          // uniquely identifies the handler (cannot always use pointer due to reallocation)
   const lh_handlerdef* hdef;        // operation definitions
@@ -262,21 +262,21 @@ typedef struct _effecthandler {
 
 // A skip handler.
 typedef struct _skiphandler {
-  handler              handler;
+  struct _handler      handler;
   count                toskip;      // when looking for an operation handler, skip the next `toskip` bytes.
 } skiphandler;
 
 // A fragment handler just contains a `fragment`.
 typedef struct _fragmenthandler {
-  handler              handler;
-  fragment*            fragment;
+  struct _handler      handler;
+  struct _fragment*    fragment;
 } fragmenthandler;
 
 // A scoped handler keeps track of the resumption in the scope of
 // an operator so it can be released properly.
 typedef struct _scopedhandler {
-  handler              handler;
-  resume*              resume;
+  struct _handler      handler;
+  struct _resume*      resume;
 } scopedhandler;
 
 

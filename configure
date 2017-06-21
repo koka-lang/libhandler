@@ -24,6 +24,7 @@ while : ; do
   *=*)  ac_optarg="${ac_option#*=}";;
   *)    ac_optarg="yes" ;;
   esac
+  echo "optoin: $ac_option, arg: $ac_optarg"
   case "$ac_option" in
     "") break;;
     -target*|--target*)
@@ -36,8 +37,10 @@ while : ; do
         asmflags=$ac_optarg;;
     -cxx-opts*|--cxx-opts*)
         cxxflags=$ac_optarg;;
+    -cc*|--cc*)
+        ccoption=$ac_optarg;;
     -cxx*|--cxx*)
-        cxxflags=$ac_optarg;;
+        cxx=$ac_optarg;;
     -verbose|--verbose)
         verbose="yes";;
     -m*|--m*|-abi*|--abi*)
@@ -84,7 +87,7 @@ if test -z "$ccoption"; then
 else
   cc="$ccoption"
 fi
-
+echo "cc: $cc"
 ccname="$(basename $cc)"
 
 if test -z "$cxx"; then 
