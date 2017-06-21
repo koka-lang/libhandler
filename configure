@@ -237,7 +237,7 @@ case "$ccname" in
   clang*)
     ccflags="-Wall $ccflags"
     ccflag99="-std=c99"
-    cxxflags="-std=c++11 $ccflags"
+    cxxflags="-std=c++11 -fcxx-exceptions -fno-ms-compatibility $ccflags"
     asmflags="-Wall $asmflags";;
   *)
     echo "warning: unknown c-compiler '$ccname' -- command options might be wrong";;        
