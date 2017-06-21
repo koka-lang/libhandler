@@ -598,7 +598,7 @@ static __noinline void fragment_free_(fragment* f) {
   stats.rcont_released_size += (long)f->cstack.size;
   #endif
   #ifdef __cplusplus
-  f->eptr = std::exception_ptr();
+  f->eptr = NULL;
   #endif
   cstack_free(&f->cstack);
   checked_free(f);
@@ -1269,8 +1269,10 @@ static __noinline __noreturn void jumpto_fragment(fragment* f, lh_value res)
 #ifdef __cplusplus
 static __noinline __noreturn void jumpto_fragment_exn(fragment* f, std::exception_ptr eptr) {
   assert(f->refcount >= 1);
-  f->res = lh_value_null;     // set the argument in the cont slot  
-  f->eptr = eptr;   // and the possible exception
+  f->res = lh_value_null;   // set the argument in the cont slot  
+  std::swap(f->eptr, eptr); // and the possible exception
+                            // note: we need to swap since the destructor for `eptr`
+                            // never gets called due to the `jumpto`.
   jumpto(&f->cstack, &f->entry, false);
 }
 #endif
@@ -1460,13 +1462,17 @@ static __noinline lh_value capture_resume_yield(hstack* hs, effecthandler* h, co
 class raii_hstack_pop {
 private:
   hstack* hs;
-  bool    do_release;
+  lh_effect effect;
 public:
-  raii_hstack_pop(hstack* hs, bool do_release) {
+  bool    do_release;
+  raii_hstack_pop(hstack* hs, bool do_release, lh_effect effect) {
     this->hs = hs;
     this->do_release = do_release;
+    this->effect = effect;
   }
   ~raii_hstack_pop() {
+    assert(!hstack_empty(hs));
+    assert(hstack_top(hs)->effect == effect);
     hstack_pop(hs, do_release);
   }
 };
@@ -1508,12 +1514,15 @@ static __noinline lh_value handle_with(
       if (op->opkind >= LH_OP_SCOPED) {
         hstack_push_scoped(hs, resume);  
         #ifdef __cplusplus
-          raii_hstack_pop do_pop(hs, op->opkind==LH_OP_SCOPED);
+          raii_hstack_pop do_pop(hs, true, LH_EFFECT(__scoped));
         #endif
         assert((void*)&resume->lhresume == (void*)resume);
         res = op->opfun(&resume->lhresume, local, res);
         assert(hs==&__hstack);
-        #ifndef __cplusplus
+        #ifdef __cplusplus
+        // set now only now to not release; in case of an exception we always need to release (?)
+        if (op->opkind > LH_OP_SCOPED) do_pop.do_release = false;
+        #else
           hstack_pop(hs,op->opkind==LH_OP_SCOPED);
         #endif
       }
@@ -1531,7 +1540,7 @@ static __noinline lh_value handle_with(
     lh_value local = lh_value_null;
     #ifdef __cplusplus
       try { 
-        raii_hstack_pop do_pop(hs, true);
+        raii_hstack_pop do_pop(hs, true, h->hdef->effect);
     #endif
         res = action(arg); 
         assert(hs == &__hstack);
@@ -1581,7 +1590,7 @@ static __noinline lh_value handle_upto(hstack* hs, void* base, const lh_handlerd
     if (fragment != NULL) {
       jumpto_fragment_exn(fragment, std::current_exception());
     }
-    throw;
+    throw; // rethrow
   }
   #endif
   fragment* fragment = hstack_pop_fragment(hs);
@@ -1646,7 +1655,7 @@ static lh_value __noinline yieldop(lh_optag optag, lh_value arg)
       count hidx = hstack_indexof(hs, to_handler(h));
       #ifdef __cplusplus
       assert(is_skiphandler(hstack_top(hs)));
-      raii_hstack_pop do_pop(hs, true);
+      raii_hstack_pop do_pop(hs, true, LH_EFFECT(__skip));
       #endif
       // call the operation handler directly for a tail resumption
       res = op->opfun(&r.lhresume, local, arg);

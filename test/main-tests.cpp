@@ -19,15 +19,17 @@ int main(void) {
   test_exn();
   test_state();
   test_amb();
-  test_dynamic();
+  
+  test_dynamic();  
   test_raise();
+  
   test_general();
   test_tailops();
   test_state_alloc();
   
   // C++ specific tests with destructors, finalizers etc.
   test_destructor();
-
+  
   // Show stats
   tests_done();
   return 0;
