@@ -15,14 +15,14 @@ testing
 int main(void) {
   std::cout << "testing C++: " << LH_CCNAME << ", " << LH_TARGET << std::endl;
 
+  test_raise();
+  //test_dynamic();
+
   // regular C tests compiled as C++  
   test_exn();
   test_state();
   test_amb();
-  
-  test_dynamic();  
-  test_raise();
-  
+    
   test_general();
   test_tailops();
   test_state_alloc();

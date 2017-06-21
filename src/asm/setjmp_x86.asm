@@ -19,13 +19,26 @@
 ; 24: sse control word
 ; 28: fpu control word
 ; 30: unused
-; 32: sizeof jmp_buf
+; 32: registration node
+; 36: sizeof jmp_buf
 ; -------------------------------------------------------
 
 .386
 .XMM            
 .MODEL FLAT, C 
 .CODE 
+ASSUME FS:NOTHING
+
+_lh_getrn PROC
+  mov     eax, fs:[0]
+  ret
+_lh_getrn ENDP
+
+_lh_setrn PROC
+  mov     eax, [esp+4]
+  mov     fs:[0], eax
+  ret
+_lh_setrn ENDP
 
 ; called with jmp_buf at sp+4
 _lh_setjmp PROC
@@ -43,6 +56,9 @@ _lh_setjmp PROC
   
   stmxcsr [ecx+24]         ; save sse control word
   fnstcw  [ecx+28]         ; save fpu control word
+
+  mov     eax, fs:[0]      ; save registration node
+  mov     [ecx+32], eax
     
   xor     eax, eax         ; return zero
   ret
@@ -54,7 +70,10 @@ _lh_setjmp ENDP
 _lh_longjmp PROC
   mov     eax, [esp+8]        ; set eax to the return value (arg)
   mov     ecx, [esp+4]        ; ecx to jmp_buf
-    
+
+  mov     ebx, [ecx+32]       ; restore registration node
+  mov     fs:[0], ebx 
+
   mov     ebp, [ecx+ 0]       ; restore registers
   mov     ebx, [ecx+ 4]
   mov     edi, [ecx+ 8]
@@ -63,7 +82,7 @@ _lh_longjmp PROC
   ldmxcsr [ecx+24]            ; load sse control word
   fnclex                      ; clear fpu exception flags
   fldcw   [ecx+28]            ; restore fpu control word
-   
+  
   test    eax, eax            ; longjmp should never return 0
   jnz     ok
   inc     eax

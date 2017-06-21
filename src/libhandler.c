@@ -92,9 +92,11 @@
 
 #ifdef __cplusplus
 # define __auto
+# define __throws  noexcept(false)
 # define __externc extern "C"
 #else
 # define __auto auto
+# define __throws
 # define __externc
 #endif
 
@@ -110,7 +112,9 @@
 // define the lh_jmp_buf in terms of `void*` elements to have natural alignment
 typedef void* lh_jmp_buf[ASM_JMPBUF_SIZE/sizeof(void*)];
 __externc __nothrow __returnstwice int  _lh_setjmp(lh_jmp_buf buf);
-__externc __nothrow __noreturn     void _lh_longjmp(lh_jmp_buf buf, int arg);
+__externc __nothrow __noreturn     void _lh_longjmp(lh_jmp_buf buf, int arg) __throws;
+__externc long _lh_getrn();
+__externc void _lh_setrn(long rn);
 
 #elif defined(HAS__SETJMP)
 # define lh_jmp_buf   jmp_buf
@@ -1215,25 +1219,26 @@ static __noinline void lh_done(hstack* hs) {
 // smart compilers (i.e. clang) will not optimize away the `alloca` in `jumpto`.
 static __noinline __noreturn __noopt void _jumpto_stack(
   byte* cframes, ptrdiff_t size, byte* base, lh_jmp_buf* entry, bool freecframes,
-  byte* no_opt)
+  byte* no_opt, bool resuming )
 {
   if (no_opt != NULL) no_opt[0] = 0;
   // copy the saved stack onto our stack
   memcpy(base, cframes, size);        // this will not overwrite our stack frame 
   if (freecframes) { free(cframes); } // should be fine to call `free` (assuming it will not mess with the stack above its frame)
   // and jump 
-  _lh_longjmp( *entry, 1);
+  _lh_longjmp( *entry, size);
 }
 
 /* jump to `entry` while restoring cstack `cs` and pushing handlers `hs` onto the global handler stack.
    Set `freecframes` to `true` to release the cstack after jumping.
 */
 static __noinline __noreturn void jumpto(
-  cstack* cs, lh_jmp_buf* entry, bool freecframes )
+  cstack* cs, lh_jmp_buf* entry, bool freecframes, bool resuming ) __throws
 {
   if (cs->frames == NULL) {
     // if no stack, just jump back down the stack; 
     // sanity: check if the entry is really below us!
+    assert(!resuming);
     void* top = get_stack_top();
     if (cs->base != NULL && stack_isbelow(top,cstack_top(cs))) {
       fatal(EFAULT,"Trying to jump up the stack to a scope that was already exited!");
@@ -1254,27 +1259,28 @@ static __noinline __noreturn void jumpto(
     }
     // since we allocated more, the execution of `_jumpto_stack` will be in a stack frame 
     // that will not get overwritten itself when copying the new stack
-    _jumpto_stack(cs->frames, cs->size, (byte*)cstack_base(cs), entry, freecframes, no_opt);
+    _jumpto_stack(cs->frames, cs->size, (byte*)cstack_base(cs), entry, freecframes, no_opt,
+                   resuming );
   }
 }
 
 
 // jump to a fragment
-static __noinline __noreturn void jumpto_fragment(fragment* f, lh_value res)
+static __noinline __noreturn void jumpto_fragment(fragment* f, lh_value res) __throws
 {
   assert(f->refcount >= 1);
   f->res = res; // set the argument in the cont slot  
-  jumpto(&f->cstack, &f->entry, false);
+  jumpto(&f->cstack, &f->entry, false, false);
 }
 
 #ifdef __cplusplus
-static __noinline __noreturn void jumpto_fragment_exn(fragment* f, std::exception_ptr eptr) {
+static __noinline __noreturn void jumpto_fragment_exn(fragment* f, std::exception_ptr eptr) __throws {
   assert(f->refcount >= 1);
   f->res = lh_value_null;   // set the argument in the cont slot  
   std::swap(f->eptr, eptr); // and the possible exception
                             // note: we need to swap since the destructor for `eptr`
                             // never gets called due to the `jumpto`.
-  jumpto(&f->cstack, &f->entry, false);
+  jumpto(&f->cstack, &f->entry, false, false);
 }
 #endif
 
@@ -1298,7 +1304,7 @@ static __noinline __noreturn void jumpto_resume( resume* r, lh_value local, lh_v
   }
   // and then restore the cstack and jump
   r->arg = arg;         // set the argument in the cont slot  
-  jumpto(&r->cstack, &r->entry, false);
+  jumpto(&r->cstack, &r->entry, false, true );
 }
 
 
@@ -1352,7 +1358,7 @@ static void __noinline __noreturn yield_to_handler(hstack* hs, effecthandler* h,
   h->arg = oparg;
   h->arg_op = op;
   h->arg_resume = resume;
-  jumpto(&cs, &h->entry, true);
+  jumpto(&cs, &h->entry, true, false);
 }
 
 #ifdef __cplusplus
@@ -1367,7 +1373,8 @@ static void __noinline __noreturn yield_to_handler_unwind(effecthandler* h, cons
 
 // Call a `resume* r`. First capture a jump point and c-stack into a `fragment`
 // and push it in a fragment handler so the resume will return here later on.
-static __noinline lh_value capture_resume_call(hstack* hs, resume* r, lh_value resumelocal, lh_value resumearg) {
+static __noinline lh_value capture_resume_call(hstack* hs, resume* r, lh_value resumelocal, lh_value resumearg) __throws
+{
   // initialize continuation
   fragment* f = (fragment*)checked_malloc(sizeof(fragment));
   f->refcount = 1;

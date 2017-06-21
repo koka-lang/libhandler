@@ -91,6 +91,7 @@
       <SDLCheck>true</SDLCheck>
       <AdditionalIncludeDirectories>..\..\inc;.</AdditionalIncludeDirectories>
       <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>SyncCThrow</ExceptionHandling>
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -111,6 +112,7 @@
       <SDLCheck>true</SDLCheck>
       <AdditionalIncludeDirectories>..\..\inc;.</AdditionalIncludeDirectories>
       <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>SyncCThrow</ExceptionHandling>
     </ClCompile>
     <Link>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
