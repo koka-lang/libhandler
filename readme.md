@@ -40,9 +40,9 @@ platforms please test carefully. Currently tested platforms include:
 
 - (`gcc`,`clang`,`cl`)`-x86-pc-windows`  (32 bit)
 - (`gcc`,`clang`,`cl`)`-x64-pc-windows`  (64 bit)
-- (`gcc`,`clang`)`-amd64-pc-linux`  (64 bit)
-- `gcc-x64-w64-mingw32`   (64 bit, Ubuntu 16.04)
-- (`gcc`,`clang`)`-arm-linux-unknown` (32-bit, arm-v7 (raspberry pi 3, Rasbian/Debian Jessy))
+- (`gcc`,`clang`)`-amd64-pc-linux`  (64 bit, Ubuntu 16.04)
+- `gcc-x64-w64-mingw32`   (64 bit, Windows/MSys2)
+- (`gcc`,`clang`)`-arm-linux-unknown` (32-bit, ARMv7 (raspberry pi 3, Rasbian/Debian Jessie))
 
 
 ## Unix/MacOSX
