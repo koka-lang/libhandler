@@ -1,12 +1,12 @@
 /* ----------------------------------------------------------------------------
-// Copyright (c) 2016, Microsoft Research, Daan Leijen
+// Copyright (c) 2016, 2017 Microsoft Research, Daan Leijen
 // This is free software// you can redistribute it and/or modify it under the
 // terms of the Apache License, Version 2.0. A copy of the License can be
 // found in the file "license.txt" at the root of this distribution.
 // -----------------------------------------------------------------------------
 
 // -------------------------------------------------------
-// Code for ARM 32-bit *UNTESTED*
+// Code for ARM 32-bit with floating point (vfp)
 // See: https://en.wikipedia.org/wiki/Calling_convention#ARM_.28A32.29
 //
 // jump_buf layout, 

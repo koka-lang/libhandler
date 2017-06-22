@@ -29,6 +29,7 @@ Enjoy!\
 [tr]: https://www.microsoft.com/en-us/research/publication/implementing-algebraic-effects-c
 [koka book]: https://bit.do/kokabook
 
+
 # Building
 
 Building `libhandler` consists of generating a static C library that
@@ -40,7 +41,9 @@ platforms please test carefully. Currently tested platforms include:
 - (`gcc`,`clang`,`cl`)`-x86-pc-windows`  (32 bit)
 - (`gcc`,`clang`,`cl`)`-x64-pc-windows`  (64 bit)
 - (`gcc`,`clang`)`-amd64-pc-linux`  (64 bit)
-- `gcc-x64-w64-mingw32` (64 bit)
+- `gcc-x64-w64-mingw32`   (64 bit, Ubuntu 16.04)
+- `gcc-arm-linux-unknown` (32-bit, arm-v7 (raspberry pi 3, Rasbian/Debian Jessy))
+
 
 ## Unix/MacOSX
 
