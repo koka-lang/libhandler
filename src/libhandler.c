@@ -113,8 +113,10 @@
 typedef void* lh_jmp_buf[ASM_JMPBUF_SIZE/sizeof(void*)];
 __externc __nothrow __returnstwice int  _lh_setjmp(lh_jmp_buf buf);
 __externc __nothrow __noreturn     void _lh_longjmp(lh_jmp_buf buf, int arg) __throws;
-__externc long _lh_getrn();
-__externc void _lh_setrn(long rn);
+__externc __nothrow __noreturn     void _lh_longjmp_ex(lh_jmp_buf buf, long size, long baseexn) __throws;
+__externc long _lh_get_exn_top();
+__externc void _lh_set_exn_top(long rn);
+__externc long _lh_get_exn_under(const void* base);
 
 #elif defined(HAS__SETJMP)
 # define lh_jmp_buf   jmp_buf
@@ -1219,14 +1221,15 @@ static __noinline void lh_done(hstack* hs) {
 // smart compilers (i.e. clang) will not optimize away the `alloca` in `jumpto`.
 static __noinline __noreturn __noopt void _jumpto_stack(
   byte* cframes, ptrdiff_t size, byte* base, lh_jmp_buf* entry, bool freecframes,
-  byte* no_opt, bool resuming )
+  byte* no_opt, const void* cbottom )
 {
   if (no_opt != NULL) no_opt[0] = 0;
+  long exnbase = _lh_get_exn_under(cbottom);
   // copy the saved stack onto our stack
   memcpy(base, cframes, size);        // this will not overwrite our stack frame 
   if (freecframes) { free(cframes); } // should be fine to call `free` (assuming it will not mess with the stack above its frame)
   // and jump 
-  _lh_longjmp( *entry, size);
+  _lh_longjmp_ex( *entry, size, exnbase );
 }
 
 /* jump to `entry` while restoring cstack `cs` and pushing handlers `hs` onto the global handler stack.
@@ -1260,7 +1263,7 @@ static __noinline __noreturn void jumpto(
     // since we allocated more, the execution of `_jumpto_stack` will be in a stack frame 
     // that will not get overwritten itself when copying the new stack
     _jumpto_stack(cs->frames, cs->size, (byte*)cstack_base(cs), entry, freecframes, no_opt,
-                   resuming );
+                   cstack_bottom(cs) );
   }
 }
 
