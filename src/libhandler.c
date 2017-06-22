@@ -217,6 +217,7 @@ typedef struct _resume {
   struct _cstack     cstack;      // captured cstack
   struct _hstack     hstack;      // captured hstack  always `size == count`
   volatile lh_value  arg;         // the argument to `resume` is passed through `arg`.
+  count              resumptions; // how often was this resumption resumed?
 } resume;
 
 // An optimized resumption that can only used for tail-call resumptions (`lh_tail_resume`).
@@ -1285,6 +1286,7 @@ static __noinline __noreturn void jumpto_resume( resume* r, lh_value local, lh_v
   }
   // and then restore the cstack and jump
   r->arg = arg;         // set the argument in the cont slot  
+  r->resumptions++;     // increment resume count
   jumpto(&r->cstack, &r->entry, false, true );
 }
 
@@ -1377,7 +1379,24 @@ static void __noinline __noreturn yield_to_handler(hstack* hs, effecthandler* h,
 /*-----------------------------------------------------------------
   Captured resume & yield  
 -----------------------------------------------------------------*/
+#ifdef __cplusplus
+class lh_resume_unwind_exception : public std::exception {
+public:
+  const resume* r;
 
+  lh_resume_unwind_exception(const resume* _r) : r(_r) {  }
+  lh_resume_unwind_exception(const lh_resume_unwind_exception& e) : r(e.r) {  }
+
+  lh_resume_unwind_exception& operator=(const lh_resume_unwind_exception& e) {
+    r = e.r;
+    return *this;
+  }
+
+  virtual const char* what() const throw() {
+    return "libhandler: unwind stack to release a resumption; do not catch this exception!";
+  }
+};
+#endif
 // Call a `resume* r`. First capture a jump point and c-stack into a `fragment`
 // and push it in a fragment handler so the resume will return here later on.
 static __noinline lh_value capture_resume_call(hstack* hs, resume* r, lh_value resumelocal, lh_value resumearg) __throws
@@ -1435,6 +1454,7 @@ static __noinline lh_value capture_resume_yield(hstack* hs, effecthandler* h, co
   resume* r = (resume*)checked_malloc(sizeof(resume));
   r->lhresume.rkind = FullResume;
   r->refcount = 1;
+  r->resumptions = 0;
   r->arg = lh_value_null;
   #ifdef _STATS
   stats.rcont_captured_resume++;
@@ -1446,6 +1466,11 @@ static __noinline lh_value capture_resume_yield(hstack* hs, effecthandler* h, co
     lh_value res = r->arg;
     #ifdef _STATS
     stats.rcont_resumed_resume++;
+    #endif
+    #ifdef __cplusplus
+    if (r->resumptions <= 0) {
+      throw lh_resume_unwind_exception(r); // unwind for a resumption that was never resumed
+    }
     #endif
     // release our context
     resume_release(r);
@@ -1779,8 +1804,26 @@ lh_value lh_call_resume(lh_resume r, lh_value local, lh_value res) {
   return lh_release_resume_(resume_acquire(to_resume(r)), local, res);
 }
 
+static void _lh_release(resume* r) {
+  #ifdef __cplusplus
+  if (r->refcount == 1 && r->resumptions == 0) {
+    r->resumptions = -1; // so capture_resume_call will raise an exception
+    try {
+      lh_release_resume_(r, lh_value_null, lh_value_null);
+      assert(false); // we should never get here
+    }
+    catch (const lh_resume_unwind_exception& exn) {
+      if (exn.r != r) throw;
+      // done, we unwound the resumption
+      assert(r->refcount == 1 && r->resumptions == 0);
+    }
+  }
+  #endif
+  resume_release(r);
+}
+
 void lh_release(lh_resume r) {
-  if (r->rkind==FullResume) resume_release((resume*)r);
+  if (r->rkind == FullResume) _lh_release(to_resume(r));
 }
 
 lh_value lh_tail_resume(lh_resume r, lh_value local, lh_value res) {
