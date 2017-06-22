@@ -46,7 +46,7 @@ _lh_setjmp:
     /* store fp registers */
     vstmia  r0!, {d8-d15}
     /* return 0 */
-    mov.w   r0, #0
+    mov     r0, #0
     bx      lr
 
 /* called with r0=&jmp_buf, r1=return code */
