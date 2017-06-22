@@ -55,7 +55,7 @@ BENCHMAIN= $(OUTDIR)/libh-bench$(EXE)
 
 
 TESTFILESXX	=main-tests.cpp tests.c \
-						 test-destructor.cpp \
+						 test-destructor.cpp test-try.cpp \
 						 test-exn.c test-state.c test-amb.c test-dynamic.c test-raise.c test-general.c \
 						 test-tailops.c test-state-alloc.c
 

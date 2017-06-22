@@ -18,7 +18,7 @@ LH_DEFINE_OP0(a,foo,int)
 static lh_value test1(lh_value arg) {
   TestDestructor t("test1");
   int i = a_foo();
-  std::cout << "raise in the resume" << std::endl;
+  std::cout << "raise in the resume: " << i << std::endl;
   throw "exception from inside resume";
   return arg;
 }
