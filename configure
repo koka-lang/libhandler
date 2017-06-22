@@ -202,7 +202,7 @@ echo ""
 case "$ccname" in
   clang-cl)
     cxxflags="-TP -EHsc -W3 $ccflags"
-    ccflags="-TC -W3 $ccflags"
+    ccflags="-TC-W3 $ccflags"
     ccflagopt="-GS- $ccflagopt"  # fiber-safe optimize
     ccflagdebug="-Z7"
     ccdepend="clang -MM "
@@ -239,7 +239,7 @@ case "$ccname" in
     ar="${cc/%clang/llvm-ar}"
     ccflags="-Wall $ccflags"
     ccflag99="-std=c99"
-    cxxflags="-std=c++11 -fcxx-exceptions -Xclang -flto-visibility-public-std $ccflags" # -fno-ms-compatibility
+    cxxflags="-std=c++11 -fcxx-exceptions $ccflags" # -fno-ms-compatibility
     asmflags="-Wall $asmflags";;
   *)
     echo "warning: unknown c-compiler '$ccname' -- command options might be wrong";;        
