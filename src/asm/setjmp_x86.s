@@ -19,7 +19,8 @@
 // 24: sse control word (32 bits)
 // 28: fpu control word (16 bits)
 // 30: unused
-// 32: sizeof jmp_buf
+// 32: register node
+// 36: sizeof jmp_buf
 // ------------------------------------------------------- */
 
 .global _lh_setjmp
@@ -34,7 +35,7 @@
 __lh_setjmp:
 _lh_setjmp:
   movl    4 (%esp), %ecx   /* jmp_buf to ecx  */
-  movl    (%esp), %eax     /* eip: save the return address */
+  movl    0 (%esp), %eax   /* eip: save the return address */
   movl    %eax, 20 (%ecx)  
 
   leal    4 (%esp), %eax   /* save esp (minus return address) */
@@ -47,6 +48,9 @@ _lh_setjmp:
 
   stmxcsr 24 (%ecx)        /* save sse control word */
   fnstcw  28 (%ecx)        /* save fpu control word */
+
+  movl    0 (%fs), %eax    /* save registration node (exception handling frame top) */
+  movl    %eax, 32 (%ecx)
     
   xorl    %eax, %eax       /* return zero */
   ret
@@ -57,6 +61,9 @@ __lh_longjmp:
 _lh_longjmp:
   movl    8 (%esp), %eax      /* set eax to the return value (arg) */
   movl    4 (%esp), %ecx      /* set ecx to jmp_buf */
+
+  movl    32 (%ecx), %ebx     /* restore registration node (exception handling top) */
+  movl    %ebx, 0 (%fs)
   
   movl    0 (%ecx), %ebp      /* restore registers */
   movl    4 (%ecx), %ebx

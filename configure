@@ -201,11 +201,12 @@ echo ""
 
 case "$ccname" in
   clang-cl)
-    ccflags="-W3 $ccflags"
+    cxxflags="-TP -EHsc -W3 $ccflags"
+    ccflags="-TC -W3 $ccflags"
     ccflagopt="-GS- $ccflagopt"  # fiber-safe optimize
     ccflagdebug="-Z7"
     ccdepend="clang -MM "
-    ar="llvm-lib"
+    ar="${cc/%clang-cl/llvm-lib}"
     arflags=""
     arflagout="-OUT:"
     ccflagout="-Fo"
@@ -216,8 +217,8 @@ case "$ccname" in
     asm=".s";;
   cl)
     cclinkflags="-nologo"
-    ccflags="-Tc -nologo -W3 -Za $ccflags"
-    cxxflags="-Tp -nologo -W3 -Za $ccflags"
+    cxxflags="-TP -nologo -W3 -Za $ccflags"
+    ccflags="-TC -nologo -W3 -Za $ccflags"
     ccflagopt="-O2 -GS- -GT"  # fiber-safe optimize
     ccflagdebug="-Zi"
     ar="lib"
@@ -235,9 +236,10 @@ case "$ccname" in
     cxxflags="-std=c++11 $ccflags"
     asmflags="-Wall $asmflags";;
   clang*)
+    ar="${cc/%clang/llvm-ar}"
     ccflags="-Wall $ccflags"
     ccflag99="-std=c99"
-    cxxflags="-std=c++11 -fcxx-exceptions -fno-ms-compatibility $ccflags"
+    cxxflags="-std=c++11 -fcxx-exceptions -Xclang -flto-visibility-public-std $ccflags" # -fno-ms-compatibility
     asmflags="-Wall $asmflags";;
   *)
     echo "warning: unknown c-compiler '$ccname' -- command options might be wrong";;        

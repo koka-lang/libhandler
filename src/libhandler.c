@@ -1478,6 +1478,9 @@ public:
   }
   ~raii_hstack_pop() {
     assert(!hstack_empty(hs));
+    #ifndef NDEBUG
+    fprintf(stderr, "hstack_top effect: %s, vs. pop effect: %s\n", lh_effect_name(hstack_top(hs)->effect), lh_effect_name(effect));
+    #endif
     assert(hstack_top(hs)->effect == effect);
     hstack_pop(hs, do_release);
   }
