@@ -92,10 +92,10 @@
 
 #ifdef __cplusplus
 # define __auto
-# define __throws  noexcept(false)
-# define __externc extern "C"
+# define __throws   noexcept(false)
+# define __externc  extern "C"
 #else
-# define __auto auto
+# define __auto     auto
 # define __throws
 # define __externc
 #endif
@@ -113,10 +113,6 @@
 typedef void* lh_jmp_buf[ASM_JMPBUF_SIZE/sizeof(void*)];
 __externc __nothrow __returnstwice int  _lh_setjmp(lh_jmp_buf buf);
 __externc __nothrow __noreturn     void _lh_longjmp(lh_jmp_buf buf, int arg) __throws;
-__externc __nothrow __noreturn     void _lh_longjmp_ex(lh_jmp_buf buf, long size, long baseexn) __throws;
-__externc long _lh_get_exn_top();
-__externc void _lh_set_exn_top(long rn);
-__externc long _lh_get_exn_under(const void* base);
 
 #elif defined(HAS__SETJMP)
 # define lh_jmp_buf   jmp_buf
@@ -1224,19 +1220,18 @@ static __noinline __noreturn __noopt void _jumpto_stack(
   byte* no_opt, const void* cbottom )
 {
   if (no_opt != NULL) no_opt[0] = 0;
-  long exnbase = _lh_get_exn_under(cbottom);
   // copy the saved stack onto our stack
   memcpy(base, cframes, size);        // this will not overwrite our stack frame 
   if (freecframes) { free(cframes); } // should be fine to call `free` (assuming it will not mess with the stack above its frame)
   // and jump 
-  _lh_longjmp_ex( *entry, size, exnbase );
+  _lh_longjmp(*entry, 1); 
 }
 
 /* jump to `entry` while restoring cstack `cs` and pushing handlers `hs` onto the global handler stack.
    Set `freecframes` to `true` to release the cstack after jumping.
 */
 static __noinline __noreturn void jumpto(
-  cstack* cs, lh_jmp_buf* entry, bool freecframes, bool resuming ) __throws
+  cstack* cs, lh_jmp_buf* entry, bool freecframes, bool resuming ) 
 {
   if (cs->frames == NULL) {
     // if no stack, just jump back down the stack; 
@@ -1269,7 +1264,7 @@ static __noinline __noreturn void jumpto(
 
 
 // jump to a fragment
-static __noinline __noreturn void jumpto_fragment(fragment* f, lh_value res) __throws
+static __noinline __noreturn void jumpto_fragment(fragment* f, lh_value res) 
 {
   assert(f->refcount >= 1);
   f->res = res; // set the argument in the cont slot  
@@ -1277,7 +1272,7 @@ static __noinline __noreturn void jumpto_fragment(fragment* f, lh_value res) __t
 }
 
 #ifdef __cplusplus
-static __noinline __noreturn void jumpto_fragment_exn(fragment* f, std::exception_ptr eptr) __throws {
+static __noinline __noreturn void jumpto_fragment_exn(fragment* f, std::exception_ptr eptr) {
   assert(f->refcount >= 1);
   f->res = lh_value_null;   // set the argument in the cont slot  
   std::swap(f->eptr, eptr); // and the possible exception
@@ -1589,22 +1584,22 @@ static __noinline lh_value handle_upto(hstack* hs, void* base, const lh_handlerd
 {
   // allocate handler frame on the stack so it will be part of a captured continuation
   effecthandler* h = hstack_push_effect(hs, def, base, local);
+  fragment* fragment;
   lh_value res;
   #ifdef __cplusplus
   try {
   #endif
     res = handle_with(hs, h, action, arg);
+    fragment = hstack_pop_fragment(hs);
   #ifdef __cplusplus
   }
   catch (...) {
-    fragment* fragment = hstack_pop_fragment(hs);
-    if (fragment != NULL) {
-      jumpto_fragment_exn(fragment, std::current_exception());
-    }
-    throw; // rethrow
+    fragment = hstack_pop_fragment(hs);
+    if (fragment==NULL) throw;
+    fragment->eptr = std::current_exception();
+    res = lh_value_null;
   }
   #endif
-  fragment* fragment = hstack_pop_fragment(hs);
   // after returning, check if there is a fragment frame we should jump to..
   if (fragment != NULL) {
     jumpto_fragment(fragment, res);

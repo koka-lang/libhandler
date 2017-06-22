@@ -16,9 +16,9 @@ int main(void) {
   std::cout << "testing C++: " << LH_CCNAME << ", " << LH_TARGET << std::endl;
 
   test_raise();
-  //test_dynamic();
+  test_dynamic();
 
-  // regular C tests compiled as C++  
+  // regular c tests compiled as c++  
   test_exn();
   test_state();
   test_amb();
@@ -27,7 +27,7 @@ int main(void) {
   test_tailops();
   test_state_alloc();
   
-  // C++ specific tests with destructors, finalizers etc.
+  // c++ specific tests with destructors, finalizers etc.
   test_destructor();
   
   // Show stats
