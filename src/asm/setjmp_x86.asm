@@ -46,7 +46,7 @@ _lh_setjmp PROC
   stmxcsr [ecx+24]         ; save sse control word
   fnstcw  [ecx+28]         ; save fpu control word
 
-  mov     eax, fs:[0]      ; save registration node
+  mov     eax, fs:[0]      ; save registration node (exception handlers top)
   mov     [ecx+32], eax
     
   xor     eax, eax         ; return zero
@@ -60,7 +60,7 @@ _lh_longjmp PROC
   mov     eax, [esp+8]        ; set eax to the return value (arg)
   mov     ecx, [esp+4]        ; ecx to jmp_buf
   
-  mov     ebx, [ecx+32]       ; restore registration node
+  mov     ebx, [ecx+32]       ; restore registration node (exception handlers top)
   mov     fs:[0], ebx 
 
   mov     ebp, [ecx+ 0]       ; restore registers

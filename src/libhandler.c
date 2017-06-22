@@ -922,14 +922,6 @@ static void hstack_pop(ref hstack* hs, bool do_release) {
   hs->top = _handler_prev(hs->top);
 }
 
-// Pop a skip frame
-static void hstack_pop_skip(ref hstack* hs) {
-  assert(!hstack_empty(hs));
-  assert(is_skiphandler(hstack_top(hs)));
-  hs->count = ptrdiff(hs->top, hs->hframes);
-  hs->top = _handler_prev(hs->top);
-}
-
 // Pop a fragment frame
 static fragment* hstack_pop_fragment(hstack* hs) {
   if (!hstack_empty(hs)) {
@@ -1271,16 +1263,6 @@ static __noinline __noreturn void jumpto_fragment(fragment* f, lh_value res)
   jumpto(&f->cstack, &f->entry, false, false);
 }
 
-#ifdef __cplusplus
-static __noinline __noreturn void jumpto_fragment_exn(fragment* f, std::exception_ptr eptr) {
-  assert(f->refcount >= 1);
-  f->res = lh_value_null;   // set the argument in the cont slot  
-  std::swap(f->eptr, eptr); // and the possible exception
-                            // note: we need to swap since the destructor for `eptr`
-                            // never gets called due to the `jumpto`.
-  jumpto(&f->cstack, &f->entry, false, false);
-}
-#endif
 
 // jump to a resumption
 static __noinline __noreturn void jumpto_resume( resume* r, lh_value local, lh_value arg )
@@ -1478,9 +1460,9 @@ public:
   }
   ~raii_hstack_pop() {
     assert(!hstack_empty(hs));
-    #ifndef NDEBUG
-    fprintf(stderr, "hstack_top effect: %s, vs. pop effect: %s\n", lh_effect_name(hstack_top(hs)->effect), lh_effect_name(effect));
-    #endif
+    //#ifndef NDEBUG
+    //fprintf(stderr, "hstack_top effect: %s, vs. pop effect: %s\n", lh_effect_name(hstack_top(hs)->effect), lh_effect_name(effect));
+    //#endif
     assert(hstack_top(hs)->effect == effect);
     hstack_pop(hs, do_release);
   }
@@ -1617,9 +1599,24 @@ lh_value lh_handle( const lh_handlerdef* def, lh_value local, lh_actionfun* acti
 {
   __auto void* base = (void*)&base; // get_stack_top(); 
   hstack* hs = &__hstack;
-  bool init = lh_init(hs);
-  lh_value res = handle_upto(hs, base, def, local, action, arg);
-  if (init) lh_done(hs);
+  lh_value res;
+  if (lh_init(hs)) {
+    #ifdef __cplusplus
+    try {
+    #endif
+      res = handle_upto(hs, base, def, local, action, arg);
+    #ifdef __cplusplus
+    }
+    catch (...) {
+      lh_done(hs);
+      throw;
+    }
+    #endif
+    lh_done(hs);
+  }
+  else {
+    res = handle_upto(hs, base, def, local, action, arg);
+  }
   return res;
 }
 

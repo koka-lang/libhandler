@@ -104,7 +104,7 @@ typedef struct _bnode* blist;
 #define lh_value_blist(l)  lh_value_ptr(l)
 #define lh_blist_value(v)  ((blist)(lh_ptr_value(v)))
 
-
+extern blist blist_nil;
 blist blist_cons(bool b, blist tail);
 blist blist_single(bool b);
 blist blist_copy(blist xs);

@@ -11,13 +11,15 @@
 /*-----------------------------------------------------------------
   Define operations
 -----------------------------------------------------------------*/
-LH_DEFINE_EFFECT1(amb,flip)
+LH_DEFINE_EFFECT1(amb, flip)
 LH_DEFINE_OP0(amb, flip, bool)
 
 
 /*-----------------------------------------------------------------
   List of lh_value's
 -----------------------------------------------------------------*/
+
+blist blist_nil = NULL;
 
 blist blist_cons(bool b, blist tail) {
   blist res = (blist)malloc(sizeof(struct _bnode));

@@ -24,7 +24,7 @@ while : ; do
   *=*)  ac_optarg="${ac_option#*=}";;
   *)    ac_optarg="yes" ;;
   esac
-  echo "optoin: $ac_option, arg: $ac_optarg"
+  # echo "option: $ac_option, arg: $ac_optarg"
   case "$ac_option" in
     "") break;;
     -target*|--target*)
@@ -240,7 +240,7 @@ case "$ccname" in
     ar="${cc/clang/llvm-ar}"
     ccflags="-Wall $ccflags"
     ccflag99="-std=c99"
-    cxxflags="-std=c++11 -fcxx-exceptions $ccflags" # -fno-ms-compatibility
+    cxxflags="-std=c++11 $ccflags" 
     asmflags="-Wall $asmflags";;
   *)
     echo "warning: unknown c-compiler '$ccname' -- command options might be wrong";;        
