@@ -44,6 +44,8 @@ platforms please test carefully. Currently tested platforms include:
 - `gcc-x64-w64-mingw32`   (64 bit, Windows/MSys2)
 - (`gcc`,`clang`)`-arm-linux-unknown` (32-bit, ARMv7 (raspberry pi 3, Rasbian/Debian Jessie))
 
+C++ support is working but still under development.
+
 
 ## Unix/MacOSX
 
@@ -73,6 +75,10 @@ Configuration options:
 * `--abi=<abi>`
   : Specify the calling convention ABI. For example, on Linux
     the `x32` ABI may have to specified explicitly.
+* `--ar=<archiver>`
+  : Specify the archiver for creating a static libary.
+* `--cxx=<c++ compiler>`
+  : Specify the C++ compiler to use.
 
 Make targets:
 
@@ -86,6 +92,10 @@ Make targets:
   : Build and run benchmarks.
 * `clean`
   : Clean all outputs.
+* `staticlibxx`
+  : Build the library for C++ (with exception and destructor unwinding support).
+* `testsxx`
+  : Build and run tests for C++.
 
 
 ## Windows
