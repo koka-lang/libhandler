@@ -74,6 +74,16 @@ static lh_value a_handle2(lh_value(*action)(lh_value), lh_value arg) {
   return lh_handle(&_a_def2, lh_value_null, action, arg);
 }
 
+static lh_value a_handle_test2_(lh_resume r) {
+  // now resume again and catch the exception
+  try {
+    return lh_release_resume(r, lh_value_null, lh_value_int(42));
+  }
+  catch (const char* msg) {
+    test_printf("exception caught from resumption: %s\n", msg);
+    return lh_value_int(42);
+  }
+}
 
 static lh_value a_handle_test2() {
   lh_resume r;
@@ -85,14 +95,31 @@ static lh_value a_handle_test2() {
     test_printf("ouch!\n");
     return lh_value_int(0);
   }
-  // now resume again and catch the exception
-  try {
-    return lh_release_resume(r, lh_value_null, lh_value_int(42));
-  }
-  catch (const char* msg) {
-    test_printf("exception caught from resumption: %s\n", msg);
-    return lh_value_int(42);
-  }
+  // now resume again and catch the exception, make a call to ensure the stack is different too
+  return a_handle_test2_(r);
+}
+
+/*-----------------------------------------------------------------
+  test releasing a resumption without resuming
+-----------------------------------------------------------------*/
+
+static lh_value handle_a_foo3(lh_resume r, lh_value local, lh_value arg) {
+  lh_release(r);
+  return lh_value_int(42);
+}
+
+static const lh_operation _a_ops3[] = {
+  { LH_OP_GENERAL, LH_OPTAG(a,foo), &handle_a_foo3 },
+  { LH_OP_NULL, lh_op_null, NULL }
+};
+static const lh_handlerdef _a_def3 = { LH_EFFECT(a), NULL, NULL, NULL, _a_ops3 };
+
+static lh_value a_handle3(lh_value(*action)(lh_value), lh_value arg) {
+  return lh_handle(&_a_def3, lh_value_null, action, arg);
+}
+
+static lh_value a_handle_test3() {
+  return a_handle3(&test1, lh_value_int(42));
 }
 
 /*-----------------------------------------------------------------
@@ -104,6 +131,8 @@ static void run() {
   test_printf("test try1: %li\n", lh_long_value(res1));
   lh_value res2 = a_handle_test2();
   test_printf("test try2: %li\n", lh_long_value(res2));
+  lh_value res3 = a_handle_test3();
+  test_printf("test try3: %li\n", lh_long_value(res3));
 }
 
 void test_try() {
@@ -116,5 +145,7 @@ void test_try() {
     "destructor called: test1\n"
     "exception caught from resumption: exception from inside resume\n"
     "test try2: 42\n"
+    "destructor called: test1\n"
+    "test try3: 42\n"
   );
 }
