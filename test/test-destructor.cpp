@@ -7,8 +7,6 @@ found in the file "license.txt" at the root of this distribution.
 #include "libhandler.h"
 #include "tests++.h"
 
-#include <string>
-#include <iostream>
 
 static bool realexn = false;
 
@@ -17,20 +15,7 @@ static void raise(const char* s) {
   exn_raise(s);
 }
 
-class TestDestructor {
-private:
-  std::string* name;
 
-public:
-  TestDestructor(const std::string& s) {
-    name = new std::string(s);
-  }
-  ~TestDestructor() {
-    test_printf("destructor called: %s\n", (this->name!=NULL ? this->name->c_str() : NULL));
-    delete name;
-    name = NULL;
-  }
-};
 
 static lh_value test1(lh_value arg) {
   TestDestructor t("test1");
