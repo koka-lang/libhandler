@@ -6,11 +6,13 @@
 // -----------------------------------------------------------------------------
 
 // -------------------------------------------------------
-// Code for x86 (ia32) cdecl calling convention on win32.
-// Used on win32; also restores the exception handler chain at FS:[0]
-// see: https://en.wikipedia.org/wiki/X86_calling_conventions
+// Code for x86 (ia32) cdecl calling convention on Unix's.
+// Differs from the win32 x86 calling convention since it 
+// does not use fs:0 for exception handling. See: 
+// - <https://en.wikipedia.org/wiki/X86_calling_conventions>
+// - <https://www.uclibc.org/docs/psABI-i386.pdf> System V Application Binary Interface i386
 //
-// jump_buf layout, somewhat compatible with msvc
+// jump_buf layout:
 //  0: ebp
 //  4: ebx
 //  8: edi
@@ -20,8 +22,7 @@
 // 24: sse control word (32 bits)
 // 28: fpu control word (16 bits)
 // 30: unused
-// 32: register node
-// 36: sizeof jmp_buf
+// 32: sizeof jmp_buf
 // ------------------------------------------------------- */
 
 .global _lh_setjmp
@@ -50,9 +51,6 @@ _lh_setjmp:
   stmxcsr 24 (%ecx)        /* save sse control word */
   fnstcw  28 (%ecx)        /* save fpu control word */
 
-  movl    %fs:0, %eax      /* save registration node (exception handling frame top) */
-  movl    %eax, 32 (%ecx)
-    
   xorl    %eax, %eax       /* return zero */
   ret
 
@@ -62,10 +60,7 @@ __lh_longjmp:
 _lh_longjmp:
   movl    8 (%esp), %eax      /* set eax to the return value (arg) */
   movl    4 (%esp), %ecx      /* set ecx to jmp_buf */
-
-  movl    32 (%ecx), %ebx     /* restore registration node (exception handling frame top) */
-  movl    %ebx, %fs:0
-  
+ 
   movl    0 (%ecx), %ebp      /* restore registers */
   movl    4 (%ecx), %ebx
   movl    8 (%ecx), %edi

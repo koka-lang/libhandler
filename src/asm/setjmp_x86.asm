@@ -7,6 +7,7 @@
 
 ; -------------------------------------------------------
 ; Code for x86 (ia32) cdecl calling convention: Win32 (MSVC)
+; Used on win32; also restores the exception handler chain at FS:[0]
 ; see: https://en.wikipedia.org/wiki/X86_calling_conventions
 ;
 ; jump_buf layout, somewhat compatible with msvc

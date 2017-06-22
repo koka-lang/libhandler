@@ -7,8 +7,10 @@
 
 ; -------------------------------------------------------
 ; Code for x64 (x86_64) calling convention as used on Windows 
-; see: https://en.wikipedia.org/wiki/X86_calling_conventions
-; and: https://msdn.microsoft.com/en-us/library/ms235286.aspx
+; see: 
+; - https://en.wikipedia.org/wiki/X86_calling_conventions
+; - https://msdn.microsoft.com/en-us/library/ms235286.aspx
+; - http://www.agner.org/optimize/calling_conventions.pdf
 ;
 ; note: we use 'movdqu' instead of 'movdqa' since we cannot
 ;       guarantee proper alignment.

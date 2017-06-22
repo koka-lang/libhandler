@@ -8,8 +8,9 @@
 /*
 UNTESTED!!
 Code for amd64 calling convention on x86_64: Solaris, Linux, FreeBSD, OS X
-See: <https://en.wikipedia.org/wiki/X86_calling_conventions>
-And: <http://chamilo2.grenet.fr/inp/courses/ENSIMAG3MM1LDB/document/doc_abi_ia64.pdf>, page 21
+- <https://en.wikipedia.org/wiki/X86_calling_conventions>
+- <http://chamilo2.grenet.fr/inp/courses/ENSIMAG3MM1LDB/document/doc_abi_ia64.pdf>, page 21
+- <http://www.agner.org/optimize/calling_conventions.pdf>, page 10 
 
 jump_buf layout (compatible with FreeBSD):
    0: rip
@@ -49,7 +50,7 @@ _lh_setjmp:                 /* rdi: jmp_buf */
   xor     %rax, %rax         /* return 0 */
   ret
 
-_lh_longjmp:                  /* rdi: jmp_buf, esi: arg */
+_lh_longjmp:                  /* rdi: jmp_buf, rsi: arg */
   movq  %rsi, %rax            /* return arg to rax */
   
   movq   8 (%rdi), %rbx       /* restore registers */

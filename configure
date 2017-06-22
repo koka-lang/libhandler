@@ -181,8 +181,12 @@ if test "$target_abi" = ""; then
     x86_64,*)
       echo "Modify target ABI from x86_64 to amd64 (used on Linux, etc)"
       target_abi="amd64";;
-    i[3456]86,*)
+    i[3456]86,windows)
+      echo "Modify target ABI from $target_arch to x86 (as used on Win32)"
       target_abi="x86";;  
+    i[3456]86,*)
+      echo "Modify target ABI from $target_arch to amd32 (used on Linux, etc)"
+      target_abi="amd32";;  
     *,*)
       target_abi="$target_arch";;
   esac  
@@ -203,7 +207,7 @@ echo ""
 case "$ccname" in
   clang-cl)
     cxxflags="-TP -EHa -W3 $ccflags"
-    ccflags="-TC-W3 $ccflags"
+    ccflags="-TC -W3 $ccflags"
     ccflagopt="-O2"  # fiber-safe optimize
     ccflagdebug="-Z7"
     ccdepend="clang -MM "
@@ -246,6 +250,17 @@ case "$ccname" in
     echo "warning: unknown c-compiler '$ccname' -- command options might be wrong";;        
 esac
 
+case "$ccname,$ostype" in 
+  clang*,windows)
+    ccversion=`$cc -v 2>&1 | grep -o '^clang version [0-9]*'`
+    echo "$ccversion"
+    case "$ccversion" in 
+      "clang version [0-3]")
+        echo "warning: this clang version does not work correctly on windows 32-bit."
+        echo " please upgrade to version 4.0.0 or higher!"
+        echo "";;
+    esac;;
+esac
 
 # Configure compiler to use in further tests
 
@@ -254,7 +269,7 @@ cclibs=""
 ccout="$linkflagout"
 export cc ccflags ccout cclibs verbose exe cxx cxxflags
 
-# Check C c-compiler
+# Check C compiler
 sh ./runtest c99.c
 case $? in
   0) echo "The C compiler is C99 compliant.";;
@@ -266,7 +281,7 @@ case $? in
      exit 2;;
 esac
 
-# Check C c-compiler
+# Check C++ compiler
 sh ./runtest++ c++11.cpp
 case $? in
   0) echo "The C++ compiler is C++11 compliant.";;
