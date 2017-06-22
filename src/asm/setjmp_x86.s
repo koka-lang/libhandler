@@ -49,7 +49,7 @@ _lh_setjmp:
   stmxcsr 24 (%ecx)        /* save sse control word */
   fnstcw  28 (%ecx)        /* save fpu control word */
 
-  movl    0 (%fs), %eax    /* save registration node (exception handling frame top) */
+  movl    %fs:0, %eax    /* save registration node (exception handling frame top) */
   movl    %eax, 32 (%ecx)
     
   xorl    %eax, %eax       /* return zero */
@@ -63,7 +63,7 @@ _lh_longjmp:
   movl    4 (%esp), %ecx      /* set ecx to jmp_buf */
 
   movl    32 (%ecx), %ebx     /* restore registration node (exception handling top) */
-  movl    %ebx, 0 (%fs)
+  movl    %ebx, %fs:0
   
   movl    0 (%ecx), %ebp      /* restore registers */
   movl    4 (%ecx), %ebx

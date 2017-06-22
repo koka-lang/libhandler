@@ -201,9 +201,9 @@ echo ""
 
 case "$ccname" in
   clang-cl)
-    cxxflags="-TP -EHsc -W3 $ccflags"
+    cxxflags="-TP -EHa -W3 $ccflags"
     ccflags="-TC-W3 $ccflags"
-    ccflagopt="-GS- $ccflagopt"  # fiber-safe optimize
+    ccflagopt="-O2"  # fiber-safe optimize
     ccflagdebug="-Z7"
     ccdepend="clang -MM "
     ar="${cc/%clang-cl/llvm-lib}"
@@ -217,9 +217,9 @@ case "$ccname" in
     asm=".s";;
   cl)
     cclinkflags="-nologo"
-    cxxflags="-TP -nologo -W3 -Za $ccflags"
+    cxxflags="-TP -EHa -nologo -W3 -Za $ccflags"
     ccflags="-TC -nologo -W3 -Za $ccflags"
-    ccflagopt="-O2 -GS- -GT"  # fiber-safe optimize
+    ccflagopt="-O2"  # fiber-safe optimize
     ccflagdebug="-Zi"
     ar="lib"
     arflags=""
