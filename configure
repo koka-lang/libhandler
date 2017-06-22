@@ -7,6 +7,7 @@ target_type=unknown
 target_abi=""
 target_os=""
 cc=gcc
+ar=""
 ccoption=''
 ccflags=''
 asmflags=''
@@ -41,6 +42,8 @@ while : ; do
         ccoption=$ac_optarg;;
     -cxx*|--cxx*)
         cxx=$ac_optarg;;
+    -ar*|--ar*)
+        ar=$ac_optarg;;
     -verbose|--verbose)
         verbose="yes";;
     -m*|--m*|-abi*|--abi*)
@@ -49,6 +52,7 @@ while : ; do
         echo "./configure [options]"
         echo "  --cc=<ccomp>                   set the c-compiler (for example 'clang')"
         echo "  --cxx=<ccomp>                  set the c++-compiler (for example 'clang++')"
+        echo "  --ar=<libarch>                 set the library archiver"
         echo "  --cc-opts=<options>            set extra c-compiler options (for example '-m32')"
         echo "  --asm-opts=<options>           set extra assembler options (for example '-m32')"
         echo "  --abi=<abi>                    set ABI (for example: 'x86' or 'amd64')"
@@ -87,7 +91,6 @@ if test -z "$ccoption"; then
 else
   cc="$ccoption"
 fi
-echo "cc: $cc"
 ccname="$(basename $cc)"
 
 if test -z "$cxx"; then 
@@ -146,7 +149,6 @@ fi
 link=$cc
 linkflags=""
 linkflagout="-o "
-ar="ar"
 arflags="rcs"
 arflagout=""
 ccflagout="-o "
@@ -211,7 +213,9 @@ case "$ccname" in
     ccflagopt="-O2"  # fiber-safe optimize
     ccflagdebug="-Z7"
     ccdepend="clang -MM "
-    ar="${cc/%clang-cl/llvm-lib}"
+    if test -z "$ar"; then 
+      ar="${cc/%clang-cl/llvm-lib}"
+    fi
     arflags=""
     arflagout="-OUT:"
     ccflagout="-Fo"
@@ -226,7 +230,9 @@ case "$ccname" in
     ccflags="-TC -nologo -W3 -Za $ccflags"
     ccflagopt="-O2"  # fiber-safe optimize
     ccflagdebug="-Zi"
-    ar="lib"
+    if test -z "$ar"; then 
+      ar="lib"
+    fi
     arflags=""
     arflagout="-OUT:"
     ccflagout="-Fo"
@@ -241,7 +247,9 @@ case "$ccname" in
     cxxflags="-std=c++11 $ccflags"
     asmflags="-Wall $asmflags";;
   clang*)
-    ar="${cc/clang/llvm-ar}"
+    if test -z "$ar"; then 
+      ar="${cc/clang/llvm-ar}"
+    fi
     ccflags="-Wall $ccflags"
     ccflag99="-std=c99"
     cxxflags="-std=c++11 $ccflags" 
@@ -249,6 +257,10 @@ case "$ccname" in
   *)
     echo "warning: unknown c-compiler '$ccname' -- command options might be wrong";;        
 esac
+
+if test -z "$ar"; then 
+  ar="ar"
+fi
 
 case "$ccname,$ostype" in 
   clang*,windows)
@@ -261,6 +273,19 @@ case "$ccname,$ostype" in
         echo "";;
     esac;;
 esac
+
+if sh ./searchpath "$ar"; then
+  echo "found archiver: $ar"
+else
+  echo "warning: cannot find archiver: $ar"
+  if sh ./searchpath "ar"; then
+    echo " using default archiver 'ar' instead"
+    ar="ar"
+  else
+    echo "you can pass the archiver name using the --ar=<archiver> option."
+  fi
+fi
+
 
 # Configure compiler to use in further tests
 
@@ -441,6 +466,7 @@ echo "  c compiler  : $cc $ccflag99 $ccflags"
 echo "  c++ compiler: $cxx $cxxflags"
 echo "  assembler   : $cc $asmflags"
 echo "  linker      : $link $cclinkflags"
+echo "  archiver    : $ar $arflags"
 echo
 echo "Use the following commands to build:"
 echo "> make depend"
