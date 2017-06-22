@@ -1,4 +1,4 @@
-  /* ----------------------------------------------------------------------------
+/* ----------------------------------------------------------------------------
   Copyright (c) 2016,2017, Microsoft Research, Daan Leijen
   This is free software; you can redistribute it and/or modify it under the
   terms of the Apache License, Version 2.0. A copy of the License can be
@@ -1527,7 +1527,9 @@ static __noinline lh_value handle_with(
   hstack* hs, effecthandler* h, lh_value(*action)(lh_value), lh_value arg )
 {
   // set the handler entry point 
+  #if defined(__cplusplus) || !defined(NDEBUG)
   const count id = h->id;
+  #endif
   #ifndef NDEBUG
   const lh_handlerdef* hdef = h->hdef;
   void* base = h->stackbase;
