@@ -286,27 +286,6 @@ typedef struct _scopedhandler {
 __thread hstack __hstack = { NULL, 0, 0, NULL };
 
 
-#ifdef __cplusplus
-class lh_unwind_exception : public std::exception {
-public:
-  const effecthandler*  handler;
-  lh_opfun*             opfun;
-  lh_value              res;
-  //lh_unwind_exception() : handler(NULL), opfun(NULL), res(lh_value_null) {  }
-  lh_unwind_exception(const effecthandler* h,lh_opfun* o, lh_value r) : handler(h), opfun(o), res(r) {  }
-  lh_unwind_exception(const lh_unwind_exception& e) : handler(e.handler), opfun(e.opfun), res(e.res) {  }
-  lh_unwind_exception& operator=(const lh_unwind_exception& e) {
-    handler = e.handler;
-    opfun = e.opfun;
-    res = e.res;
-    return *this;
-  }
-  virtual const char* what() const throw() {
-    return "libhandler: unwinding the stack; do not catch this exception!";
-  }
-};
-#endif
-
 /*-----------------------------------------------------------------
   Fatal errors
 -----------------------------------------------------------------*/
@@ -1197,6 +1176,28 @@ static __noinline void lh_done(hstack* hs) {
   hstack_free(hs,true);
 }
 
+#ifdef __cplusplus
+class _raii_init {
+public:
+  bool init;
+  hstack* hs;
+
+  _raii_init(hstack* _hs) {
+    hs = _hs;
+    init = lh_init(hs);
+  }
+  ~_raii_init() {
+    if (init) lh_done(hs);
+  }
+};
+#define LH_INIT(hs)   { _raii_init __init(hs); 
+#define LH_DONE(hs)     assert(__init.hs == hs); }
+#else
+#define LH_INIT(hs)   { bool __init = lh_init(hs);
+#define LH_DONE(hs)   if (__init) lh_done(hs); }
+#endif
+
+
 
 /*-----------------------------------------------------------------
   Internal: Jump to a context
@@ -1328,6 +1329,37 @@ static void capture_hstack(hstack* hs, hstack* to, effecthandler* h, bool copy) 
     Yield to handler
 -----------------------------------------------------------------*/
 
+
+#ifdef __cplusplus
+// in some cases (like LH_OP_NORESUME) we need to unwind to the effect handler operation
+// while calling destructors. We do this using a special unwind exception.
+class lh_unwind_exception : public std::exception {
+public:
+  const effecthandler*  handler;
+  lh_opfun*             opfun;
+  lh_value              res;
+  
+  lh_unwind_exception(const effecthandler* h, lh_opfun* o, lh_value r) : handler(h), opfun(o), res(r) {  }
+  lh_unwind_exception(const lh_unwind_exception& e) : handler(e.handler), opfun(e.opfun), res(e.res) {  }
+  
+  lh_unwind_exception& operator=(const lh_unwind_exception& e) {
+    handler = e.handler;
+    opfun = e.opfun;
+    res = e.res;
+    return *this;
+  }
+  
+  virtual const char* what() const throw() {
+    return "libhandler: unwinding the stack; do not catch this exception!";
+  }
+};
+
+// Return to a handler by unwinding the handler stack and invoking any destructors.
+static void __noinline __noreturn yield_to_handler_unwind(effecthandler* h, const lh_operation* op, lh_value oparg)  {
+  throw lh_unwind_exception(h, op->opfun, oparg);
+}
+#endif
+
 // Return to a handler by unwinding the handler stack.
 static void __noinline __noreturn yield_to_handler(hstack* hs, effecthandler* h,
   resume* resume, const lh_operation* op, lh_value oparg, bool do_release)
@@ -1341,11 +1373,6 @@ static void __noinline __noreturn yield_to_handler(hstack* hs, effecthandler* h,
   jumpto(&cs, &h->entry, true, false);
 }
 
-#ifdef __cplusplus
-static void __noinline __noreturn yield_to_handler_unwind(effecthandler* h, const lh_operation* op, lh_value oparg)  {
-  throw lh_unwind_exception(h, op->opfun, oparg);
-}
-#endif
 
 /*-----------------------------------------------------------------
   Captured resume & yield  
@@ -1447,6 +1474,7 @@ static __noinline lh_value capture_resume_yield(hstack* hs, effecthandler* h, co
    Handle
 -----------------------------------------------------------------*/
 #ifdef __cplusplus
+// This class ensures a handler-stack will be properly unwound even when exceptions are raised.
 class raii_hstack_pop {
 private:
   hstack* hs;
@@ -1505,7 +1533,7 @@ static __noinline lh_value handle_with(
       if (op->opkind >= LH_OP_SCOPED) {
         hstack_push_scoped(hs, resume);  
         #ifdef __cplusplus
-          raii_hstack_pop do_pop(hs, true, LH_EFFECT(__scoped));
+        raii_hstack_pop do_pop(hs, true, LH_EFFECT(__scoped));
         #endif
         assert((void*)&resume->lhresume == (void*)resume);
         res = op->opfun(&resume->lhresume, local, res);
@@ -1514,7 +1542,7 @@ static __noinline lh_value handle_with(
         // set now only now to not release; in case of an exception we always need to release (?)
         if (op->opkind > LH_OP_SCOPED) do_pop.do_release = false;
         #else
-          hstack_pop(hs,op->opkind==LH_OP_SCOPED);
+        hstack_pop(hs,op->opkind==LH_OP_SCOPED);
         #endif
       }
       else {
@@ -1548,11 +1576,11 @@ static __noinline lh_value handle_with(
         hstack_pop(hs, true);
     #else
       }
-      catch (const lh_unwind_exception& e) { 
-        if (e.handler==NULL || e.handler->id != id) throw; // rethrow to other handler
-        res = e.res;
-        if (e.opfun != NULL) {
-          res = e.opfun(NULL, e.handler->local, res); // LH_OP_NORESUME
+      catch (const lh_unwind_exception& exn) { 
+        if (exn.handler==NULL || exn.handler->id != id) throw; // rethrow to other handler
+        res = exn.res;
+        if (exn.opfun != NULL) {
+          res = exn.opfun(NULL, exn.handler->local, res); // LH_OP_NORESUME
         }
       }
     #endif
@@ -1600,23 +1628,9 @@ lh_value lh_handle( const lh_handlerdef* def, lh_value local, lh_actionfun* acti
   __auto void* base = (void*)&base; // get_stack_top(); 
   hstack* hs = &__hstack;
   lh_value res;
-  if (lh_init(hs)) {
-    #ifdef __cplusplus
-    try {
-    #endif
-      res = handle_upto(hs, base, def, local, action, arg);
-    #ifdef __cplusplus
-    }
-    catch (...) {
-      lh_done(hs);
-      throw;
-    }
-    #endif
-    lh_done(hs);
-  }
-  else {
-    res = handle_upto(hs, base, def, local, action, arg);
-  }
+  LH_INIT(hs)
+  res = handle_upto(hs, base, def, local, action, arg);
+  LH_DONE(hs)
   return res;
 }
 
@@ -1640,7 +1654,7 @@ static lh_value __noinline yieldop(lh_optag optag, lh_value arg)
   if (op->opkind <= LH_OP_NORESUME) {
     #ifdef __cplusplus
     if (op->opkind != LH_OP_NORESUMEX) {
-      yield_to_handler_unwind(h, op, arg);
+      yield_to_handler_unwind(h, op, arg);  // unwind through destructors
     }
     #endif
     yield_to_handler(hs, h, NULL, op, arg, op_is_release(op) );
@@ -1660,7 +1674,6 @@ static lh_value __noinline yieldop(lh_optag optag, lh_value arg)
       hstack_push_skip(hs, skipped);
       count hidx = hstack_indexof(hs, to_handler(h));
       #ifdef __cplusplus
-      assert(is_skiphandler(hstack_top(hs)));
       raii_hstack_pop do_pop(hs, true, LH_EFFECT(__skip));
       #endif
       // call the operation handler directly for a tail resumption
@@ -1668,7 +1681,9 @@ static lh_value __noinline yieldop(lh_optag optag, lh_value arg)
       h = (effecthandler*)hstack_at(hs, hidx);
       assert(is_effecthandler(to_handler(h)));
       #ifndef __cplusplus
-      hstack_pop_skip(hs);
+      assert(!hstack_empty(hs));
+      assert(is_skiphandler(hstack_top(hs)));
+      hstack_pop(hs,false); // skip frames need no release
       #endif
     }
     // OP_TAIL_NOOP: will not call operations so no need for a skip frame
@@ -1685,7 +1700,7 @@ static lh_value __noinline yieldop(lh_optag optag, lh_value arg)
     // otherwise no resume was called; yield back to the handler with the result.
     else {
       #ifdef __cplusplus
-      yield_to_handler_unwind(h, op, res);
+      yield_to_handler_unwind(h, op, res);  // unwind through destructors on no-resume
       #else
       yield_to_handler(hs, h, NULL, NULL, res, true);
       #endif
@@ -1747,8 +1762,13 @@ static resume* to_resume(lh_resume r) {
   return (resume*)r;
 }
 
-static lh_value lh_release_resume_(resume* r, lh_value local, lh_value res) {
-  return capture_resume_call(&__hstack, r, local, res);
+static lh_value lh_release_resume_(resume* r, lh_value local, lh_value resarg) {
+  hstack* hs = &__hstack;
+  lh_value res;
+  LH_INIT(hs)
+  res = capture_resume_call(&__hstack, r, local, resarg);
+  LH_DONE(hs)
+  return res;
 }
 
 lh_value lh_release_resume(lh_resume r, lh_value local, lh_value res) {

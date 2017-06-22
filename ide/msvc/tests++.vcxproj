@@ -145,6 +145,7 @@
     <ClCompile Include="..\..\test\test-state-alloc.c" />
     <ClCompile Include="..\..\test\test-state.c" />
     <ClCompile Include="..\..\test\test-tailops.c" />
+    <ClCompile Include="..\..\test\test-try.cpp" />
     <ClCompile Include="..\..\test\tests.c" />
   </ItemGroup>
   <ItemGroup>
