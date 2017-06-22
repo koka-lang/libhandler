@@ -94,6 +94,7 @@ if test -z "$cxx"; then
   case "$ccname" in
     gcc) cxx=${cc/%gcc/g++};;
     clang) cxx=${cc/%clang/clang++};;
+    clang-) cxx=${cc/clang-/clang++-};;
     *) cxx="$cc";;
   esac
 fi
@@ -236,7 +237,7 @@ case "$ccname" in
     cxxflags="-std=c++11 $ccflags"
     asmflags="-Wall $asmflags";;
   clang*)
-    ar="${cc/%clang/llvm-ar}"
+    ar="${cc/clang/llvm-ar}"
     ccflags="-Wall $ccflags"
     ccflag99="-std=c99"
     cxxflags="-std=c++11 -fcxx-exceptions $ccflags" # -fno-ms-compatibility
