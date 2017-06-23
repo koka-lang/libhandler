@@ -1,6 +1,11 @@
 #!/bin/sh
 # Find a program in the path
 
+if test -f "$1"; then
+	echo "Found $1"
+	exit 0;
+fi
+
 IFS=':'
 for dir in $PATH; do
   if test -z "$dir"; then dir=.; fi
