@@ -38,11 +38,13 @@ as portable as possible but it depends on some platform specific
 assumptions regarding stacks and `setjmp` implementations. On new
 platforms please test carefully. Currently tested platforms include:
 
-- (`gcc`,`clang`,`cl`)`-x86-pc-windows`  (32 bit)
-- (`gcc`,`clang`,`cl`)`-x64-pc-windows`  (64 bit)
-- (`gcc`,`clang`)`-amd64-pc-linux`  (64 bit, Ubuntu 16.04)
-- `gcc-x64-w64-mingw32`   (64 bit, Windows/MSys2)
-- (`gcc`,`clang`)`-arm-linux-unknown` (32-bit, ARMv7 (raspberry pi 3, Rasbian/Debian Jessie))
+- (`gcc`,`clang`,`cl`)`-x86-pc-windows`  (32 bit, Windows)
+- (`gcc`,`clang`,`cl`)`-x64-pc-windows`  (64 bit, Windows)
+- (`gcc`,`clang`)`-amd64-pc-linux`       (64 bit, Ubuntu 16.04)
+
+- (`gcc`,`clang`)`-arm-linux` (32 bit, ARMv7 (raspberry pi 3, Raspbian/Debian Jessie))
+- `gcc-aarch64-linux`         (64 bit, ARMv8 (raspberry pi 3, Gentoo Linux))
+
 
 C++ support is working but still under development.
 
@@ -76,14 +78,17 @@ Configuration options:
   : Specify the calling convention ABI. For example, on Linux
     the `x32` ABI may have to specified explicitly.
 * `--ar=<archiver>`
-  : Specify the archiver for creating a static libary.
+  : Specify the archiver for creating a static libary (="ar").
 * `--cxx=<c++ compiler>`
-  : Specify the C++ compiler to use.
+  : Specify the C++ compiler to use (=$cc++).
+* `--link=<linker>`
+  : Specify the linker to use (=$cc).
 
 Make targets:
 
 * `VARIANT=<debug|testopt|release>`
   : Specify the build variant. 'testopt' builds optimized but with assertions enabled.
+
 * `staticlib`
   : Build a static library.
 * `tests`
