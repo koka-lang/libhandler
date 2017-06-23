@@ -6,7 +6,7 @@
 -----------------------------------------------------------------------------*/
 
 /*
-Code for ARM 64-bit  UNTESTED!
+Code for ARM 64-bit  
 See: https://en.wikipedia.org/wiki/Calling_convention#ARM_.28A64.29
 
 jump_buf layout:
@@ -51,8 +51,8 @@ _lh_setjmp:
     /* store fp control and status */
     mrs   x10, fpcr
     mrs   x11, fpsr
-    strp  x10, x11, [x0], #16
-    add   x0, #8                /* skip unused */
+    stp   x10, x11, [x0], #16
+    add   x0, x0, #8                /* skip unused */
     /* store float registers */
     stp   q8,  q9,  [x0], #32
     stp   q10, q11, [x0], #32
@@ -77,13 +77,13 @@ _lh_longjmp:
     ldp   x10, x11, [x0], #16
     msr   fpcr, x10
     msr   fpsr, x11
-    add   x0, #8                /* skip unused */
+    add   x0, x0, #8                /* skip unused */
     /* load float registers */
     ldp   q8,  q9,  [x0], #32
     ldp   q10, q11, [x0], #32
     ldp   q12, q13, [x0], #32
     ldp   q14, q15, [x0], #32
     /* never return zero */
-    cmp   x1, wzr
+    cmp   x1, #0
     csinc x0, x1, xzr, ne
     ret                         /* jump to lr */
