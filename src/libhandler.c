@@ -1212,26 +1212,25 @@ public:
 // smart compilers (i.e. clang) will not optimize away the `alloca` in `jumpto`.
 static __noinline __noreturn __noopt void _jumpto_stack(
   byte* cframes, ptrdiff_t size, byte* base, lh_jmp_buf* entry, bool freecframes,
-  byte* no_opt, const void* cbottom )
+  byte* no_opt )
 {
   if (no_opt != NULL) no_opt[0] = 0;
   // copy the saved stack onto our stack
   memcpy(base, cframes, size);        // this will not overwrite our stack frame 
   if (freecframes) { free(cframes); } // should be fine to call `free` (assuming it will not mess with the stack above its frame)
   // and jump 
-  _lh_longjmp(*entry, 1); 
+  _lh_longjmp(*entry, 1);
 }
 
 /* jump to `entry` while restoring cstack `cs` and pushing handlers `hs` onto the global handler stack.
    Set `freecframes` to `true` to release the cstack after jumping.
 */
 static __noinline __noreturn void jumpto(
-  cstack* cs, lh_jmp_buf* entry, bool freecframes, bool resuming ) 
+  cstack* cs, lh_jmp_buf* entry, bool freecframes ) 
 {
   if (cs->frames == NULL) {
     // if no stack, just jump back down the stack; 
     // sanity: check if the entry is really below us!
-    assert(!resuming);
     void* top = get_stack_top();
     if (cs->base != NULL && stack_isbelow(top,cstack_top(cs))) {
       fatal(EFAULT,"Trying to jump up the stack to a scope that was already exited!");
@@ -1252,8 +1251,7 @@ static __noinline __noreturn void jumpto(
     }
     // since we allocated more, the execution of `_jumpto_stack` will be in a stack frame 
     // that will not get overwritten itself when copying the new stack
-    _jumpto_stack(cs->frames, cs->size, (byte*)cstack_base(cs), entry, freecframes, no_opt,
-                   cstack_bottom(cs) );
+    _jumpto_stack(cs->frames, cs->size, (byte*)cstack_base(cs), entry, freecframes, no_opt );
   }
 }
 
@@ -1263,7 +1261,7 @@ static __noinline __noreturn void jumpto_fragment(fragment* f, lh_value res)
 {
   assert(f->refcount >= 1);
   f->res = res; // set the argument in the cont slot  
-  jumpto(&f->cstack, &f->entry, false, false);
+  jumpto(&f->cstack, &f->entry, false);
 }
 
 
@@ -1288,7 +1286,7 @@ static __noinline __noreturn void jumpto_resume( resume* r, lh_value local, lh_v
   // and then restore the cstack and jump
   r->arg = arg;         // set the argument in the cont slot  
   r->resumptions++;     // increment resume count
-  jumpto(&r->cstack, &r->entry, false, true );
+  jumpto(&r->cstack, &r->entry, false );
 }
 
 
@@ -1373,7 +1371,7 @@ static void __noinline __noreturn yield_to_handler(hstack* hs, effecthandler* h,
   h->arg = oparg;
   h->arg_op = op;
   h->arg_resume = resume;
-  jumpto(&cs, &h->entry, true, false);
+  jumpto(&cs, &h->entry, true);
 }
 
 
