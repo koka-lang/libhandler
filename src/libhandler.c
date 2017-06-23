@@ -195,7 +195,8 @@ typedef struct _fragment {
 
 // Operation handlers receive an `lh_resume*`; the kind determines what it points to.
 typedef enum _resumekind {
-  FullResume,       // `lh_resume` is a `resume`
+  GeneralResume,       // `lh_resume` is a `resume`
+  ScopedResume,     // `lh_resume` is a `resume` but automatically released once out of scope
   TailResume        // `lh_resume` is a `tailresume`
 } resumekind;
 
@@ -211,7 +212,7 @@ struct _lh_resume {
 
 // A first-class resumption
 typedef struct _resume {
-  struct _lh_resume  lhresume;    // contains the kind: always `FullResume` (must be first field, used for casts)
+  struct _lh_resume  lhresume;    // contains the kind: always `GeneralResume` or `ScopedResume` (must be first field, used for casts)
   count              refcount;    // resumptions are heap allocated
   lh_jmp_buf         entry;       // jump point where the resume was captured
   struct _cstack     cstack;      // captured cstack
@@ -639,7 +640,7 @@ static __noinline void _resume_free(resume* r) {
 }
 
 static void _resume_release(resume* r) {
-  assert(r->lhresume.rkind == FullResume);
+  assert(r->lhresume.rkind == GeneralResume || r->lhresume.rkind == ScopedResume);
   assert(r->refcount > 0);
   if (r->refcount > 1) {
     r->refcount--;
@@ -665,7 +666,7 @@ static void resume_release_at(ref resume** pr) {
 static resume* resume_acquire(resume* r) {
   assert(r!=NULL);
   if (r != NULL) {
-    assert(r->lhresume.rkind==FullResume);
+    assert(r->lhresume.rkind == GeneralResume || r->lhresume.rkind == ScopedResume);
     assert(r->refcount > 0);
     if (r->refcount >= 0) r->refcount++;
   }
@@ -1452,7 +1453,7 @@ static __noinline lh_value capture_resume_yield(hstack* hs, effecthandler* h, co
 {
   // initialize continuation
   resume* r = (resume*)checked_malloc(sizeof(resume));
-  r->lhresume.rkind = FullResume;
+  r->lhresume.rkind = (op->opkind<=LH_OP_SCOPED ? ScopedResume : GeneralResume);
   r->refcount = 1;
   r->resumptions = 0;
   r->arg = lh_value_null;
@@ -1752,30 +1753,46 @@ lh_value lh_yield(lh_optag optag, lh_value arg) {
   return yieldop(optag, arg);
 }
 
-// Empty yield args is allocated statically
-static const yieldargs yargs_null = { 0, { lh_value_null } };
+
+
+/*-----------------------------------------------------------------
+  Passing multiple arguments
+-----------------------------------------------------------------*/
+
+// Get a pointer to values passed by stack reference in an operation handler
+void* lh_cstack_ptr(lh_resume r, void* p) {
+  if (r->rkind == TailResume) return p;
+  assert(r->rkind == GeneralResume || r->rkind == ScopedResume);
+  cstack* cs = &((resume*)r)->cstack;
+  ptrdiff_t delta = ptrdiff(cs->frames, cs->base);
+  byte* q = (byte*)p + delta;
+  assert(q >= cs->frames && q < cs->frames + cs->size);
+  // paranoia: check that the new pointer is indeed in the captured stack
+  if (q >= cs->frames && q < cs->frames + cs->size) {
+    return q;
+  }
+  else {
+    return p;
+  }
+}
 
 // Yield N arguments to an operation
 lh_value lh_yieldN(lh_optag optag, int argcount, ...) {
   assert(argcount >= 0);
-  if (argcount <= 0) {
-    return lh_yield(optag, lh_value_yieldargs(&yargs_null));
+  va_list ap;
+  va_start(ap, argcount);
+  // note: allocated on the stack; use `lh_cstack_ptr` to retrieve in the operation handler.
+  yieldargs* yargs = (yieldargs*)lh_alloca(sizeof(yieldargs) + (argcount * sizeof(lh_value)));
+  yargs->argcount = argcount;
+  int i = 0;
+  while (i < argcount) {
+    yargs->args[i] = va_arg(ap, lh_value);
+    i++;
   }
-  else {
-    va_list ap;
-    va_start(ap, argcount);
-    // note: we need to use 'malloc' as we cannot pass arguments to an operation as a stack address
-    // todo: perhaps we need to reserve more space in the handler to pass arguments?
-    yieldargs* yargs = (yieldargs*)checked_malloc(sizeof(yieldargs) + ((argcount - 1) * sizeof(lh_value)));
-    yargs->argcount = argcount;
-    for (int i = 0; i < argcount; i++) {
-      yargs->args[i] = va_arg(ap, lh_value);
-    }
-    va_end(ap);
-    lh_value res = lh_yield(optag, lh_value_yieldargs(yargs));
-    checked_free(yargs);
-    return res;
-  }
+  assert(i == argcount);
+  yargs->args[i] = lh_value_null; // sentinel value
+  va_end(ap);
+  return lh_yield(optag, lh_value_yieldargs(yargs));
 }
 
 
@@ -1785,7 +1802,7 @@ lh_value lh_yieldN(lh_optag optag, int argcount, ...) {
 
 // Cast to a first class resumption.
 static resume* to_resume(lh_resume r) {
-  if (r->rkind != FullResume) fatal(EINVAL,"Trying to generally resume a tail-resumption");
+  if (r->rkind == TailResume) fatal(EINVAL,"Trying to generally resume a tail-resumption");
   return (resume*)r;
 }
 
@@ -1798,12 +1815,37 @@ static lh_value lh_release_resume_(resume* r, lh_value local, lh_value resarg) {
   return res;
 }
 
-lh_value lh_release_resume(lh_resume r, lh_value local, lh_value res) {
-  return lh_release_resume_(to_resume(r), local, res);
-}
 
 lh_value lh_call_resume(lh_resume r, lh_value local, lh_value res) {
   return lh_release_resume_(resume_acquire(to_resume(r)), local, res);
+}
+
+lh_value lh_scoped_resume(lh_resume r, lh_value local, lh_value res) {
+  return lh_call_resume(r, local, res);
+}
+
+lh_value lh_release_resume(lh_resume r, lh_value local, lh_value res) {
+  if (r->rkind == ScopedResume) {
+    return lh_scoped_resume(r, local, res);
+  }
+  else {
+    return lh_release_resume_(to_resume(r), local, res);
+  }
+}
+
+lh_value lh_tail_resume(lh_resume r, lh_value local, lh_value res) {
+  if (r->rkind == TailResume) {
+    tailresume* tr = (tailresume*)(r);
+    tr->resumed = true;
+    tr->local = local;
+    return res;
+  }
+  else if (r->rkind == ScopedResume) {
+    return lh_scoped_resume(r, local, res);
+  }
+  else {
+    return lh_release_resume(r, local, res);
+  }
 }
 
 static void _lh_release(resume* r) {
@@ -1825,21 +1867,6 @@ static void _lh_release(resume* r) {
 }
 
 void lh_release(lh_resume r) {
-  if (r->rkind == FullResume) _lh_release(to_resume(r));
+  if (r->rkind != TailResume) _lh_release(to_resume(r));
 }
 
-lh_value lh_tail_resume(lh_resume r, lh_value local, lh_value res) {
-  if (r->rkind==TailResume) {
-    tailresume* tr = (tailresume*)(r);
-    tr->resumed = true;
-    tr->local = local;
-    return res;
-  }
-  else {
-    return lh_release_resume(r, local, res);
-  }
-}
-
-lh_value lh_scoped_resume(lh_resume r, lh_value local, lh_value res) {
-  return lh_call_resume(r, local, res);
-}

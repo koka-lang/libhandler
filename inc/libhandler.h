@@ -28,8 +28,9 @@ typedef long long lh_value;
 #define lh_value_null         ((lh_value)0)
 
 #define lh_ptr_value(v)       ((void*)((intptr_t)(v)))
+#define lh_value_any_ptr(p)   ((lh_value)((intptr_t)(p)))
 #ifdef NDEBUG
-# define lh_value_ptr(p)      ((lh_value)((intptr_t)(p)))
+# define lh_value_ptr(p)      lh_value_any_ptr(p)
 #else
 # define lh_value_ptr(p)      lh_check_value_ptr(p)
 #endif
@@ -181,6 +182,14 @@ lh_value      lh_release_resume(lh_resume r, lh_value local, lh_value res);
   Convenience functions for yield
 -----------------------------------------------------------------*/
 
+// Inside an operation handler, adjust a pointer that was pointing to the C stack at 
+// capture time to point inside the now captured stack. This can be used to pass
+// values by stack reference to operation handlers. Use with care.
+void* lh_cstack_ptr(lh_resume r, void* p);
+
+#define lh_value_cstack_ptr(p)      lh_value_any_ptr(p)
+#define lh_cstack_ptr_value(r,v)    lh_cstack_ptr(r, lh_ptr_value(v))
+
 // `yieldargs` is used to pass multiple arguments from a yield
 typedef struct _yieldargs {
   int      argcount; // guaranteed to be >= 0
@@ -188,8 +197,8 @@ typedef struct _yieldargs {
 } yieldargs;
 
 // Convert between a yieldargs structure and a dynamic value
-#define lh_value_yieldargs(y)   lh_value_ptr(y)
-#define lh_yieldargs_value(v)   ((yieldargs*)lh_ptr_value(y))
+#define lh_value_yieldargs(y)   lh_value_cstack_ptr(y)
+#define lh_yieldargs_value(r,v)   ((yieldargs*)lh_cstack_ptr_value(r,v))
 
 // Yield with multiple arguments; the operation function gets a `yieldargs*` as its 
 // argument containing `argcount` arguments.  The `yieldarg*` pointer is valid during 

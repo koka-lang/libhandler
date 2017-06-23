@@ -27,6 +27,7 @@ int main(void) {
   test_general();
   test_tailops();
   test_state_alloc();
+  test_yieldn();
   
   // c++ specific tests with destructors, finalizers etc.  test_destructor();
   test_destructor();

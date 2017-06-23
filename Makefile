@@ -34,9 +34,11 @@ endif
 
 SRCFILES = libhandler.c
 
-TESTFILES= main-tests.c tests.c \
+CTESTS   = tests.c \
 					 test-exn.c test-state.c test-amb.c test-dynamic.c test-raise.c test-general.c \
-					 test-tailops.c test-state-alloc.c
+					 test-tailops.c test-state-alloc.c test-yieldn.c
+
+TESTFILES= main-tests.c					 
 
 BENCHFILES=main-perf.c perf.c tests.c test-state.c \
 					 perf-counter.c
@@ -54,10 +56,9 @@ BENCHMAIN= $(OUTDIR)/libh-bench$(EXE)
 
 
 
-TESTFILESXX	=main-tests.cpp tests.c \
+TESTFILESXX	=main-tests.cpp \
 						 test-destructor.cpp test-try.cpp \
-						 test-exn.c test-state.c test-amb.c test-dynamic.c test-raise.c test-general.c \
-						 test-tailops.c test-state-alloc.c
+						 $(CTESTS)
 
 OUTDIRXX = $(OUTDIR)xx
 SRCSXX   = $(patsubst %,src/%,$(SRCFILES)) $(patsubst %,src/%,$(ASMFILES))
