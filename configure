@@ -8,6 +8,7 @@ target_abi=""
 target_os=""
 cc=gcc
 ar=""
+link=""
 ccoption=''
 ccflags=''
 asmflags=''
@@ -16,9 +17,6 @@ cxx=''
 cxxflags=''
 
 # Parse command-line arguments
-
-
-
 while : ; do
   ac_option="$1"
   case "$ac_option" in
@@ -44,6 +42,8 @@ while : ; do
         cxx=$ac_optarg;;
     -ar*|--ar*)
         ar=$ac_optarg;;
+    -link*|--link*)
+        link=$ac_optarg;;
     -verbose|--verbose)
         verbose="yes";;
     -m*|--m*|-abi*|--abi*)
@@ -53,6 +53,7 @@ while : ; do
         echo "  --cc=<ccomp>                   set the c-compiler (for example 'clang')"
         echo "  --cxx=<ccomp>                  set the c++-compiler (for example 'clang++')"
         echo "  --ar=<libarch>                 set the library archiver"
+        echo "  --link=<linker>                set the linker"
         echo "  --cc-opts=<options>            set extra c-compiler options (for example '-m32')"
         echo "  --asm-opts=<options>           set extra assembler options (for example '-m32')"
         echo "  --abi=<abi>                    set ABI (for example: 'x86' or 'amd64')"
@@ -146,7 +147,9 @@ fi
 
 # Configure the c compiler for the runtime system
 
-link=$cc
+if test -z "$link"; then 
+  link=$cc
+fi 
 linkflags=""
 linkflagout="-o "
 arflags="rcs"
@@ -177,6 +180,9 @@ esac
 
 if test "$target_abi" = ""; then
   case "$target_arch,$ostype" in
+#    aarch64,*)
+#      echo "Modify target ABI from aarch64 to arm64"
+#      target_abi="arm64";;
     x86_64,windows)
       echo "Modify target ABI from x86_64 to x64 (as used on Windows)"
       target_abi="x64";;

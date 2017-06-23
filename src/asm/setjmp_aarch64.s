@@ -6,14 +6,13 @@
 -----------------------------------------------------------------------------*/
 
 /*
-Code for ARM 64-bit as on Windows.
+Code for ARM 64-bit as specified by ARM (used on Linux etc.)
 See:
 - <https://en.wikipedia.org/wiki/Calling_convention#ARM_.28A64.29>
 - <http://infocenter.arm.com/help/topic/com.arm.doc.ihi0055c/IHI0055C_beta_aapcs64.pdf>
 
 note: according to the ARM ABI specification, only the bottom 64 bits of the floating 
-      point registers need to be preserved (sec. 5.1.2 of aapcs64) but on windows
-      it seems the full 128 bits are preserved.
+      point registers need to be preserved (sec. 5.1.2 of aapcs64)
 
 jump_buf layout:
    0: x19  
@@ -31,12 +30,11 @@ jump_buf layout:
   96: sp   = x31
  104: fpcr
  112: fpsr
- 120: unused
- 128: q8  (128 bits)
- 144: q9
+ 120: d8  (64 bits)
+ 128: d9
  ...
- 240: q15
- 256: sizeof jmp_buf
+ 176: d15
+ 184: sizeof jmp_buf
 */
 
 .global _lh_setjmp
@@ -57,13 +55,12 @@ _lh_setjmp:
     /* store fp control and status */
     mrs   x10, fpcr
     mrs   x11, fpsr
-    stp   x10, x11, [x0], #16
-    add   x0, x0, #8            /* skip unused */
+    stp   x10, x11, [x0], #16    
     /* store float registers */
-    stp   q8,  q9,  [x0], #32
-    stp   q10, q11, [x0], #32
-    stp   q12, q13, [x0], #32
-    stp   q14, q15, [x0], #32
+    stp   d8,  d9,  [x0], #16
+    stp   d10, d11, [x0], #16
+    stp   d12, d13, [x0], #16
+    stp   d14, d15, [x0], #16
     /* always return zero */
     mov   x0, #0
     ret                         /* jump to lr */
@@ -83,12 +80,11 @@ _lh_longjmp:
     ldp   x10, x11, [x0], #16
     msr   fpcr, x10
     msr   fpsr, x11
-    add   x0, x0, #8            /* skip unused */
     /* load float registers */
-    ldp   q8,  q9,  [x0], #32
-    ldp   q10, q11, [x0], #32
-    ldp   q12, q13, [x0], #32
-    ldp   q14, q15, [x0], #32
+    ldp   d8,  d9,  [x0], #16
+    ldp   d10, d11, [x0], #16
+    ldp   d12, d13, [x0], #16
+    ldp   d14, d15, [x0], #16
     /* never return zero */
     mov   x0, x1
     cmp   w1, #0

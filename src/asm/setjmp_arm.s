@@ -7,7 +7,9 @@
 
 // -------------------------------------------------------
 // Code for ARM 32-bit with floating point (vfp)
-// See: https://en.wikipedia.org/wiki/Calling_convention#ARM_.28A32.29
+// See: 
+// - <https://en.wikipedia.org/wiki/Calling_convention#ARM_.28A32.29>
+// - <http://infocenter.arm.com/help/topic/com.arm.doc.ihi0042f/IHI0042F_aapcs.pdf>
 //
 // jump_buf layout, 
 //  0: r4
