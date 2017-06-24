@@ -134,12 +134,19 @@ __externc __noreturn     void _lh_longjmp(lh_jmp_buf buf, int arg) __throws;
 # error "setjmp not found!"
 #endif
 
-#if defined(HAS_ASM_EXN_LINK)
-__externc __noreturn     void  _lh_longjmp_ex(lh_jmp_buf buf, const void* bottom, void* link);
-__externc                void* _lh_get_exn_link(const void* bottom);
+// On most platforms C++ exception handling is done without exception frames on the stack.
+// An exception is 32-bit windows (x86). On such platform, when we resume we chain the
+// exception handling frames in the resumption to the top exception frame below the resumption
+// so the debugger and OS always see a valid exception handler chain. (This is not strictly
+// necessary since the bottom exception handling frame in a resumption always catches all
+// exceptions and re-throws after restoring the fragment.)
+#if defined(ASM_USE_EXN_FRAMES)
+__externc __noreturn     void  _lh_longjmp_chain(lh_jmp_buf buf, const void* bottom, void* exnframe);
+__externc                void* _lh_get_exn_frame(const void* bottom);
 #else
-#define _lh_longjmp_ex(buf,bot,link)  _lh_longjmp(buf,1)
-#define _lh_get_exn_link(bot)         ((void*)NULL)
+// Most platforms have no exception handler chains on the stack, ignore the extra parameters:
+#define _lh_longjmp_chain(buf,bot,frame)  _lh_longjmp(buf,1)
+#define _lh_get_exn_frame(bot)             ((void*)NULL)
 #endif
 
 
@@ -1221,14 +1228,14 @@ public:
 // variables will remain in-tact. The `no_opt` parameter is there so 
 // smart compilers (i.e. clang) will not optimize away the `alloca` in `jumpto`.
 static __noinline __noreturn __noopt void _jumpto_stack(
-  const cstack cs, lh_jmp_buf* entry, bool freecframes, void* link, byte* no_opt )
+  const cstack cs, lh_jmp_buf* entry, bool freecframes, void* exnframe, byte* no_opt )
 {
   if (no_opt != NULL) no_opt[0] = 0;
   // copy the saved stack onto our stack
   memcpy((void*)cs.base, cs.frames, cs.size);           // this will not overwrite our stack frame 
   if (freecframes) { free(cs.frames); }  // should be fine to call `free` (assuming it will not mess with the stack above its frame)
   // and jump 
-  _lh_longjmp_ex(*entry, cstack_bottom(&cs), link);
+  _lh_longjmp_chain(*entry, cstack_bottom(&cs), exnframe);
 }
 
 /* jump to `entry` while restoring cstack `cs` and pushing handlers `hs` onto the global handler stack.
@@ -1261,8 +1268,8 @@ static __noinline __noreturn void jumpto(
     }
     // since we allocated more, the execution of `_jumpto_stack` will be in a stack frame 
     // that will not get overwritten itself when copying the new stack
-    void* link = (resuming ? _lh_get_exn_link(cstack_bottom(cs)) : NULL);
-    _jumpto_stack(*cs, entry, freecframes, link, no_opt);
+    void* exnframe = (resuming ? _lh_get_exn_frame(cstack_bottom(cs)) : NULL);
+    _jumpto_stack(*cs, entry, freecframes, exnframe, no_opt);
   }
 }
 

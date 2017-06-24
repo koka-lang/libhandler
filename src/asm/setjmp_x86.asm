@@ -7,8 +7,9 @@
 
 ; -------------------------------------------------------
 ; Code for x86 (ia32) cdecl calling convention: Win32 (MSVC)
-; Used on win32; also restores the exception handler chain at FS:[0]
 ; see: https://en.wikipedia.org/wiki/X86_calling_conventions
+;
+; Used on win32; also restores the exception handler chain at FS:[0]
 ;
 ; jump_buf layout, somewhat compatible with msvc
 ;  0: ebp
@@ -30,7 +31,9 @@
 .CODE 
 ASSUME FS:NOTHING
 
-; called with jmp_buf at sp+4
+; int setjmp(jmp_buf)
+; esp+4: jmp_buf
+; esp+0: return address
 _lh_setjmp PROC
   mov     ecx, [esp+4]     ; jmp_buf to ecx
   mov     eax, [esp]       ; eip: save the return address
@@ -47,7 +50,7 @@ _lh_setjmp PROC
   stmxcsr [ecx+24]         ; save sse control word
   fnstcw  [ecx+28]         ; save fpu control word
 
-  mov     eax, fs:[0]      ; save registration node (exception handlers top)
+  mov     eax, fs:[0]      ; save exception top frame
   mov     [ecx+32], eax
     
   xor     eax, eax         ; return zero
@@ -56,12 +59,14 @@ _lh_setjmp PROC
 _lh_setjmp ENDP
 
 
-; called with jmp_buf at esp+4, and arg at sp+8
+; void longjmp(jmp_buf,int)
+; esp+8: argument
+; esp+4: jump buffer
 _lh_longjmp PROC
   mov     eax, [esp+8]        ; set eax to the return value (arg)
   mov     ecx, [esp+4]        ; ecx to jmp_buf
   
-  mov     ebx, [ecx+32]       ; restore registration node (exception handlers top)
+  mov     ebx, [ecx+32]       ; restore the exception handler top frame
   mov     fs:[0], ebx 
 
   mov     ebp, [ecx+ 0]       ; restore registers
@@ -83,69 +88,74 @@ ok:
 _lh_longjmp ENDP
 
 
-; Get the top exception frame below or at `base`
+; void* get_exn_frame(void* base)
+; Get the top exception frame above or at `base`
 ; esp+4: base
-; returns: eax points to the top exeption handler frame below or at base
+; returns: eax points to the top exeption handler frame above or at base
 ;          ebx points to the exception handler before that (greater than base)
 ; clobbers: edx
-_lh_get_exn_link PROC
-  mov     edx, [esp+4]        ; edx: the base
-  mov     eax, fs:[0]         ; eax: set to current exception frame top
+_lh_get_exn_frame PROC
+  mov     edx, [esp+4]        ; set edx to the base
+  mov     eax, fs:[0]         ; set eax to current exception frame top
 
-; internal: 
+; internal entry point: 
 ; edx: base
 ; eax: current exception frame
-_lh_get_exn_link_ PROC
+_lh_get_exn_frame_ PROC
   xor     ebx, ebx            ; ebx: the previous frame
   
 find:  
   cmp     eax, edx            ; we found it if we are greater or equal to the base
   jae     found               
-  test    eax, eax            ; if the current is at 0 or -1 we reached the end of the frames
+  test    eax, eax            ; if the current is at 0 we reached the end of the frames
   jz      found
   mov     ebx, eax            ; go to the next frame
   mov     eax, [ebx]
-  cmp     eax, ebx            ; break if the new frame is up on the stack (should never happen, except for NULL)
+  cmp     eax, ebx            ; continue if the new frame is greater than the previous (should always be the case, except for NULL)
   ja      find    
-  test    eax, eax
+  test    eax, eax            ; if NULL we found the end
   jz      found
 
 notfound:
-  xor     ebx, ebx
+  xor     ebx, ebx            ; otherwise zero out the previous frame
 
 found:
   ret
-_lh_get_exn_link_ ENDP
-_lh_get_exn_link ENDP
+_lh_get_exn_frame_ ENDP
+_lh_get_exn_frame ENDP
 
 
-; called with:
+; void _lh_longjmp_chain(jmp_buf,void* base, void* frame)
+; Long jump to jmp_buf; if `link == NULL` this equals `longjmp(jmp_buf,1)
+; otherwise, `link > base` and first exception frame <= `base` will be
+; linked to `link` such that the exception handler chain is always valid.
+;
 ; esp+12: link to top exception frame beyond our restored stack
 ; esp+8 : bottom of our restored stack
 ; esp+4 : jmp_buf
 ; esp   : return address
-_lh_longjmp_ex PROC
-  mov     ecx, [esp+4]        ; `ecx` to `jmp_buf`
-  mov     esi, [esp+12]       ; `esi` to the link
-  test    esi, esi            ; don't do anything if it is NULL
+_lh_longjmp_chain PROC
+  mov     ecx, [esp+12]       ; `ecx` to the frame
+  test    ecx, ecx            ; don't do anything if `frame` is NULL
   jz      notfound
   
   mov     edx, [esp+8]        ; set `edx` to the bottom of our restored stack
-  mov     eax, [ecx+32]       ; set `eax` to the top exception handler frame we are going to restore
-  call    _lh_get_exn_link_   ; find bottom exception handler frame in our restored stack (in `ebx`)
+  cmp     ecx, edx            ; sanity check: ensure `frame` is greater than the bottom of the restored stack
+  jb      notfound
+
+  mov     eax, [esp+4]        ; set `eax` to the top exception handler frame we are going to restore
+  mov     eax, [eax+32]       
+  call    _lh_get_exn_frame_  ; find bottom exception handler frame in our restored stack (in `ebx`)
 
   test    ebx, ebx            ; check if we found it
   jz      notfound
 
-  cmp     esi, ebx            ; sanity check: ensure link is below on the stack
-  jbe     notfound
-
-  mov     [ebx], esi          ; restore the exception handler links
+  mov     [ebx], ecx          ; restore the exception handler chain
 
 notfound:
   mov     eax, 1
   mov     [esp+8], eax        ; modify argument in place
   jmp     _lh_longjmp         ; and jump to `_lh_longjmp(jmp_buf,1)`
-_lh_longjmp_ex ENDP
+_lh_longjmp_chain ENDP
 
 END 

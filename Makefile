@@ -38,7 +38,7 @@ CTESTS   = tests.c \
 	   test-exn.c test-state.c test-amb.c test-dynamic.c test-raise.c test-general.c \
 	    test-tailops.c test-state-alloc.c test-yieldn.c
 
-TESTFILES= main-tests.c					 
+TESTFILES= main-tests.c	$(CTESTS)				 
 
 BENCHFILES=main-perf.c perf.c tests.c test-state.c \
 	   perf-counter.c

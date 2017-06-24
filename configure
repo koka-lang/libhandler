@@ -342,7 +342,13 @@ if test -f "../src/$asmsetjmp"; then
   #echo "grep found: $jmpbufsz"
   jmpbufsz=`expr "X$jmpbufsz" : 'X\([0-9]*\)'`
   echo "#define ASM_JMPBUF_SIZE $jmpbufsz" >> cenv.h
-  echo "Jump buffer size: $jmpbufsz";
+  echo "Jump buffer size: $jmpbufsz"
+  if grep _lh_longjmp_chain "../src/$asmsetjmp" >/dev/null; then
+    echo "Use linked exception frames for C++ (and SEH)"
+    echo "#define ASM_USE_EXN_FRAMES" >> cenv.h
+  else
+    echo "Do not use linked exception frames for C++"
+  fi;
 elif sh ./runtest has_sigsetjmp.c; then
   echo "POSIX sigsetjmp found."
   echo "#define HAS_SIGSETJMP" >> cenv.h;

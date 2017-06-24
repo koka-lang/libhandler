@@ -8,7 +8,7 @@
 # define LH_TARGET "x86-pc-windows"
 # define LH_ABI_x86
 # define ASM_JMPBUF_SIZE 36
-# define HAS_ASM_EXN_LINK
+# define ASM_USE_EXN_FRAMES
 #elif _M_ARM64
 # define LH_TARGET "arm64-pc-windows"
 # define LH_ABI_arm64

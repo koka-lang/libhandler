@@ -6,7 +6,7 @@
 -----------------------------------------------------------------------------*/
 
 /*
-Code for ARM 64-bit as specified by ARM (used on Linux etc.)
+Code for ARM 64-bit 
 See:
 - <https://en.wikipedia.org/wiki/Calling_convention#ARM_.28A64.29>
 - <http://infocenter.arm.com/help/topic/com.arm.doc.ihi0055c/IHI0055C_beta_aapcs64.pdf>
