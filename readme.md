@@ -78,19 +78,20 @@ Configuration options:
   : Specify the calling convention ABI. For example, on Linux
     the `x32` ABI may have to specified explicitly.
 * `--ar=<archiver>`
-  : Specify the archiver for creating a static libary (="ar").
+  : Specify the archiver for creating a static library (=`ar`).
 * `--cxx=<c++ compiler>`
-  : Specify the C++ compiler to use (=$cc++).
+  : Specify the C++ compiler to use (=`$cc++`).
 * `--link=<linker>`
-  : Specify the linker to use (=$cc).
+  : Specify the linker to use (=`$cc`).
 
-Make targets:
+Make parameters:
 
-* `VARIANT=<debug|testopt|release>`
-  : Specify the build variant. 'testopt' builds optimized but with assertions enabled.
-
+* `VARIANT=`<`debug`|`testopt`|`release`>
+  : Specify the build variant. `testopt` builds optimized but with assertions enabled.
 * `VALGRIND=1`
   : Run the tests under [valgrind] for memory leak detection.
+
+Make targets:
 
 * `staticlib`
   : Build a static library.
