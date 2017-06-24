@@ -23,6 +23,8 @@ int main(void) {
   
   test_tailops();
   test_state_alloc();
+  test_yieldn();
+
   tests_done();
   return 0;
 }

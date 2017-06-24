@@ -82,4 +82,70 @@ ok:
 
 _lh_longjmp ENDP
 
+
+; Get the top exception frame below or at `base`
+; esp+4: base
+; returns: eax points to the top exeption handler frame below or at base
+;          ebx points to the exception handler before that (greater than base)
+; clobbers: edx
+_lh_get_exn_link PROC
+  mov     edx, [esp+4]        ; edx: the base
+  mov     eax, fs:[0]         ; eax: set to current exception frame top
+
+; internal: 
+; edx: base
+; eax: current exception frame
+_lh_get_exn_link_ PROC
+  xor     ebx, ebx            ; ebx: the previous frame
+  
+find:  
+  cmp     eax, edx            ; we found it if we are greater or equal to the base
+  jae     found               
+  test    eax, eax            ; if the current is at 0 or -1 we reached the end of the frames
+  jz      found
+  mov     ebx, eax            ; go to the next frame
+  mov     eax, [ebx]
+  cmp     eax, ebx            ; break if the new frame is up on the stack (should never happen, except for NULL)
+  ja      find    
+  test    eax, eax
+  jz      found
+
+notfound:
+  xor     ebx, ebx
+
+found:
+  ret
+_lh_get_exn_link_ ENDP
+_lh_get_exn_link ENDP
+
+
+; called with:
+; esp+12: link to top exception frame beyond our restored stack
+; esp+8 : bottom of our restored stack
+; esp+4 : jmp_buf
+; esp   : return address
+_lh_longjmp_ex PROC
+  mov     ecx, [esp+4]        ; `ecx` to `jmp_buf`
+  mov     esi, [esp+12]       ; `esi` to the link
+  test    esi, esi            ; don't do anything if it is NULL
+  jz      notfound
+  
+  mov     edx, [esp+8]        ; set `edx` to the bottom of our restored stack
+  mov     eax, [ecx+32]       ; set `eax` to the top exception handler frame we are going to restore
+  call    _lh_get_exn_link_   ; find bottom exception handler frame in our restored stack (in `ebx`)
+
+  test    ebx, ebx            ; check if we found it
+  jz      notfound
+
+  cmp     esi, ebx            ; sanity check: ensure link is below on the stack
+  jbe     notfound
+
+  mov     [ebx], esi          ; restore the exception handler links
+
+notfound:
+  mov     eax, 1
+  mov     [esp+8], eax        ; modify argument in place
+  jmp     _lh_longjmp         ; and jump to `_lh_longjmp(jmp_buf,1)`
+_lh_longjmp_ex ENDP
+
 END 

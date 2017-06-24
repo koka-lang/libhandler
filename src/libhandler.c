@@ -111,8 +111,8 @@
 #if defined(HAS_ASMSETJMP)
 // define the lh_jmp_buf in terms of `void*` elements to have natural alignment
 typedef void* lh_jmp_buf[ASM_JMPBUF_SIZE/sizeof(void*)];
-__externc __nothrow __returnstwice int  _lh_setjmp(lh_jmp_buf buf);
-__externc __nothrow __noreturn     void _lh_longjmp(lh_jmp_buf buf, int arg) __throws;
+__externc __returnstwice int  _lh_setjmp(lh_jmp_buf buf);
+__externc __noreturn     void _lh_longjmp(lh_jmp_buf buf, int arg) __throws;
 
 #elif defined(HAS__SETJMP)
 # define lh_jmp_buf   jmp_buf
@@ -133,6 +133,16 @@ __externc __nothrow __noreturn     void _lh_longjmp(lh_jmp_buf buf, int arg) __t
 #else 
 # error "setjmp not found!"
 #endif
+
+#if defined(HAS_ASM_EXN_LINK)
+__externc __noreturn     void  _lh_longjmp_ex(lh_jmp_buf buf, const void* bottom, void* link);
+__externc                void* _lh_get_exn_link(const void* bottom);
+#else
+#define _lh_longjmp_ex(buf,bot,link)  _lh_longjmp(buf,1)
+#define _lh_get_exn_link(bot)         ((void*)NULL)
+#endif
+
+
 
 #ifdef HAS__ALLOCA        // msvc runtime
 # include <malloc.h>  
@@ -195,7 +205,8 @@ typedef struct _fragment {
 
 // Operation handlers receive an `lh_resume*`; the kind determines what it points to.
 typedef enum _resumekind {
-  FullResume,       // `lh_resume` is a `resume`
+  GeneralResume,       // `lh_resume` is a `resume`
+  ScopedResume,     // `lh_resume` is a `resume` but automatically released once out of scope
   TailResume        // `lh_resume` is a `tailresume`
 } resumekind;
 
@@ -211,7 +222,7 @@ struct _lh_resume {
 
 // A first-class resumption
 typedef struct _resume {
-  struct _lh_resume  lhresume;    // contains the kind: always `FullResume` (must be first field, used for casts)
+  struct _lh_resume  lhresume;    // contains the kind: always `GeneralResume` or `ScopedResume` (must be first field, used for casts)
   count              refcount;    // resumptions are heap allocated
   lh_jmp_buf         entry;       // jump point where the resume was captured
   struct _cstack     cstack;      // captured cstack
@@ -639,7 +650,7 @@ static __noinline void _resume_free(resume* r) {
 }
 
 static void _resume_release(resume* r) {
-  assert(r->lhresume.rkind == FullResume);
+  assert(r->lhresume.rkind == GeneralResume || r->lhresume.rkind == ScopedResume);
   assert(r->refcount > 0);
   if (r->refcount > 1) {
     r->refcount--;
@@ -665,7 +676,7 @@ static void resume_release_at(ref resume** pr) {
 static resume* resume_acquire(resume* r) {
   assert(r!=NULL);
   if (r != NULL) {
-    assert(r->lhresume.rkind==FullResume);
+    assert(r->lhresume.rkind == GeneralResume || r->lhresume.rkind == ScopedResume);
     assert(r->refcount > 0);
     if (r->refcount >= 0) r->refcount++;
   }
@@ -1210,15 +1221,14 @@ public:
 // variables will remain in-tact. The `no_opt` parameter is there so 
 // smart compilers (i.e. clang) will not optimize away the `alloca` in `jumpto`.
 static __noinline __noreturn __noopt void _jumpto_stack(
-  byte* cframes, ptrdiff_t size, byte* base, lh_jmp_buf* entry, bool freecframes,
-  byte* no_opt, const void* cbottom )
+  const cstack cs, lh_jmp_buf* entry, bool freecframes, void* link, byte* no_opt )
 {
   if (no_opt != NULL) no_opt[0] = 0;
   // copy the saved stack onto our stack
-  memcpy(base, cframes, size);        // this will not overwrite our stack frame 
-  if (freecframes) { free(cframes); } // should be fine to call `free` (assuming it will not mess with the stack above its frame)
+  memcpy((void*)cs.base, cs.frames, cs.size);           // this will not overwrite our stack frame 
+  if (freecframes) { free(cs.frames); }  // should be fine to call `free` (assuming it will not mess with the stack above its frame)
   // and jump 
-  _lh_longjmp(*entry, 1); 
+  _lh_longjmp_ex(*entry, cstack_bottom(&cs), link);
 }
 
 /* jump to `entry` while restoring cstack `cs` and pushing handlers `hs` onto the global handler stack.
@@ -1251,8 +1261,8 @@ static __noinline __noreturn void jumpto(
     }
     // since we allocated more, the execution of `_jumpto_stack` will be in a stack frame 
     // that will not get overwritten itself when copying the new stack
-    _jumpto_stack(cs->frames, cs->size, (byte*)cstack_base(cs), entry, freecframes, no_opt,
-                   cstack_bottom(cs) );
+    void* link = (resuming ? _lh_get_exn_link(cstack_bottom(cs)) : NULL);
+    _jumpto_stack(*cs, entry, freecframes, link, no_opt);
   }
 }
 
@@ -1287,7 +1297,7 @@ static __noinline __noreturn void jumpto_resume( resume* r, lh_value local, lh_v
   // and then restore the cstack and jump
   r->arg = arg;         // set the argument in the cont slot  
   r->resumptions++;     // increment resume count
-  jumpto(&r->cstack, &r->entry, false, true );
+  jumpto(&r->cstack, &r->entry, false , true);
 }
 
 
@@ -1452,7 +1462,7 @@ static __noinline lh_value capture_resume_yield(hstack* hs, effecthandler* h, co
 {
   // initialize continuation
   resume* r = (resume*)checked_malloc(sizeof(resume));
-  r->lhresume.rkind = FullResume;
+  r->lhresume.rkind = (op->opkind<=LH_OP_SCOPED ? ScopedResume : GeneralResume);
   r->refcount = 1;
   r->resumptions = 0;
   r->arg = lh_value_null;
@@ -1752,30 +1762,46 @@ lh_value lh_yield(lh_optag optag, lh_value arg) {
   return yieldop(optag, arg);
 }
 
-// Empty yield args is allocated statically
-static const yieldargs yargs_null = { 0, { lh_value_null } };
+
+
+/*-----------------------------------------------------------------
+  Passing multiple arguments
+-----------------------------------------------------------------*/
+
+// Get a pointer to values passed by stack reference in an operation handler
+void* lh_cstack_ptr(lh_resume r, void* p) {
+  if (r->rkind == TailResume) return p;
+  assert(r->rkind == GeneralResume || r->rkind == ScopedResume);
+  cstack* cs = &((resume*)r)->cstack;
+  ptrdiff_t delta = ptrdiff(cs->frames, cs->base);
+  byte* q = (byte*)p + delta;
+  assert(q >= cs->frames && q < cs->frames + cs->size);
+  // paranoia: check that the new pointer is indeed in the captured stack
+  if (q >= cs->frames && q < cs->frames + cs->size) {
+    return q;
+  }
+  else {
+    return p;
+  }
+}
 
 // Yield N arguments to an operation
 lh_value lh_yieldN(lh_optag optag, int argcount, ...) {
   assert(argcount >= 0);
-  if (argcount <= 0) {
-    return lh_yield(optag, lh_value_yieldargs(&yargs_null));
+  va_list ap;
+  va_start(ap, argcount);
+  // note: allocated on the stack; use `lh_cstack_ptr` to retrieve in the operation handler.
+  yieldargs* yargs = (yieldargs*)lh_alloca(sizeof(yieldargs) + (argcount * sizeof(lh_value)));
+  yargs->argcount = argcount;
+  int i = 0;
+  while (i < argcount) {
+    yargs->args[i] = va_arg(ap, lh_value);
+    i++;
   }
-  else {
-    va_list ap;
-    va_start(ap, argcount);
-    // note: we need to use 'malloc' as we cannot pass arguments to an operation as a stack address
-    // todo: perhaps we need to reserve more space in the handler to pass arguments?
-    yieldargs* yargs = (yieldargs*)checked_malloc(sizeof(yieldargs) + ((argcount - 1) * sizeof(lh_value)));
-    yargs->argcount = argcount;
-    for (int i = 0; i < argcount; i++) {
-      yargs->args[i] = va_arg(ap, lh_value);
-    }
-    va_end(ap);
-    lh_value res = lh_yield(optag, lh_value_yieldargs(yargs));
-    checked_free(yargs);
-    return res;
-  }
+  assert(i == argcount);
+  yargs->args[i] = lh_value_null; // sentinel value
+  va_end(ap);
+  return lh_yield(optag, lh_value_yieldargs(yargs));
 }
 
 
@@ -1785,7 +1811,7 @@ lh_value lh_yieldN(lh_optag optag, int argcount, ...) {
 
 // Cast to a first class resumption.
 static resume* to_resume(lh_resume r) {
-  if (r->rkind != FullResume) fatal(EINVAL,"Trying to generally resume a tail-resumption");
+  if (r->rkind == TailResume) fatal(EINVAL,"Trying to generally resume a tail-resumption");
   return (resume*)r;
 }
 
@@ -1798,12 +1824,37 @@ static lh_value lh_release_resume_(resume* r, lh_value local, lh_value resarg) {
   return res;
 }
 
-lh_value lh_release_resume(lh_resume r, lh_value local, lh_value res) {
-  return lh_release_resume_(to_resume(r), local, res);
-}
 
 lh_value lh_call_resume(lh_resume r, lh_value local, lh_value res) {
   return lh_release_resume_(resume_acquire(to_resume(r)), local, res);
+}
+
+lh_value lh_scoped_resume(lh_resume r, lh_value local, lh_value res) {
+  return lh_call_resume(r, local, res);
+}
+
+lh_value lh_release_resume(lh_resume r, lh_value local, lh_value res) {
+  if (r->rkind == ScopedResume) {
+    return lh_scoped_resume(r, local, res);
+  }
+  else {
+    return lh_release_resume_(to_resume(r), local, res);
+  }
+}
+
+lh_value lh_tail_resume(lh_resume r, lh_value local, lh_value res) {
+  if (r->rkind == TailResume) {
+    tailresume* tr = (tailresume*)(r);
+    tr->resumed = true;
+    tr->local = local;
+    return res;
+  }
+  else if (r->rkind == ScopedResume) {
+    return lh_scoped_resume(r, local, res);
+  }
+  else {
+    return lh_release_resume(r, local, res);
+  }
 }
 
 static void _lh_release(resume* r) {
@@ -1825,21 +1876,6 @@ static void _lh_release(resume* r) {
 }
 
 void lh_release(lh_resume r) {
-  if (r->rkind == FullResume) _lh_release(to_resume(r));
+  if (r->rkind != TailResume) _lh_release(to_resume(r));
 }
 
-lh_value lh_tail_resume(lh_resume r, lh_value local, lh_value res) {
-  if (r->rkind==TailResume) {
-    tailresume* tr = (tailresume*)(r);
-    tr->resumed = true;
-    tr->local = local;
-    return res;
-  }
-  else {
-    return lh_release_resume(r, local, res);
-  }
-}
-
-lh_value lh_scoped_resume(lh_resume r, lh_value local, lh_value res) {
-  return lh_call_resume(r, local, res);
-}

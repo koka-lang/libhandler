@@ -88,7 +88,7 @@ void test_raise();
 void test_general();
 void test_tailops();
 void test_state_alloc();
-
+void test_yieldn();
 
 /*-----------------------------------------------------------------
   List of lh_value's; Declared in tests_amb

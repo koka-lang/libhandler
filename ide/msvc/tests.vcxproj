@@ -30,6 +30,7 @@
     <ClCompile Include="..\..\test\test-tailops.c" />
     <ClCompile Include="..\..\test\test-exn.c" />
     <ClCompile Include="..\..\test\test-state.c" />
+    <ClCompile Include="..\..\test\test-yieldn.c" />
     <ClCompile Include="..\..\test\tests.c" />
     <ClCompile Include="..\..\test\test-amb.c" />
     <ClCompile Include="..\..\test\test-dynamic.c" />

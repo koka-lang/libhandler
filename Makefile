@@ -34,12 +34,14 @@ endif
 
 SRCFILES = libhandler.c
 
-TESTFILES= main-tests.c tests.c \
-					 test-exn.c test-state.c test-amb.c test-dynamic.c test-raise.c test-general.c \
-					 test-tailops.c test-state-alloc.c
+CTESTS   = tests.c \
+	   test-exn.c test-state.c test-amb.c test-dynamic.c test-raise.c test-general.c \
+	    test-tailops.c test-state-alloc.c test-yieldn.c
+
+TESTFILES= main-tests.c					 
 
 BENCHFILES=main-perf.c perf.c tests.c test-state.c \
-					 perf-counter.c
+	   perf-counter.c
 
 
 SRCS     = $(patsubst %,src/%,$(SRCFILES)) $(patsubst %,src/%,$(ASMFILES))
@@ -54,10 +56,9 @@ BENCHMAIN= $(OUTDIR)/libh-bench$(EXE)
 
 
 
-TESTFILESXX	=main-tests.cpp tests.c \
-						 test-destructor.cpp test-try.cpp \
-						 test-exn.c test-state.c test-amb.c test-dynamic.c test-raise.c test-general.c \
-						 test-tailops.c test-state-alloc.c
+TESTFILESXX=main-tests.cpp \
+	    test-destructor.cpp test-try.cpp \
+	    $(CTESTS)
 
 OUTDIRXX = $(OUTDIR)xx
 SRCSXX   = $(patsubst %,src/%,$(SRCFILES)) $(patsubst %,src/%,$(ASMFILES))
@@ -74,23 +75,23 @@ TESTMAINXX = $(OUTDIRXX)/libh-tests++$(EXE)
 main: init staticlib
 
 tests: init staticlib testmain
-	  @echo ""
-		@echo "run tests"
-		$(TESTMAIN)
+	@echo ""
+	@echo "run tests"
+	$(TESTMAIN)
 
 bench: init staticlib benchmain
-	  @echo ""
-		@echo "run benchmark"
-		$(BENCHMAIN)
+	@echo ""
+	@echo "run benchmark"
+	$(BENCHMAIN)
 
 
 
 mainxx: initxx staticlibxx
 
 testsxx: initxx staticlibxx testmainxx
-	  @echo ""
-		@echo "run tests++"
-		$(TESTMAINXX)
+	@echo ""
+	@echo "run tests++"
+	$(TESTMAINXX)
 
 # -------------------------------------
 # build tests
