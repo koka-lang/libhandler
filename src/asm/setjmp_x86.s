@@ -1,28 +1,27 @@
-/* ----------------------------------------------------------------------------
-// Copyright (c) 2016, 2017 Microsoft Research, Daan Leijen
-// This is free software// you can redistribute it and/or modify it under the
-// terms of the Apache License, Version 2.0. A copy of the License can be
-// found in the file "license.txt" at the root of this distribution.
-// -----------------------------------------------------------------------------
+/* --------------------------------------------------------------------------
+Copyright (c) 2016, 2017 Microsoft Research, Daan Leijen
+This is free softwareyou can redistribute it and/or modify it under the
+terms of the Apache License, Version 2.0. A copy of the License can be
+found in the file "license.txt" at the root of this distribution.
+-----------------------------------------------------------------------------
 
-// -------------------------------------------------------
-// Code for x86 (ia32) cdecl calling convention on win32.
-// Used on win32/* also restores the exception handler chain at FS:[0] */
-// see: https://en.wikipedia.org/wiki/X86_calling_conventions
-//
-// jump_buf layout, somewhat compatible with msvc
-//  0: ebp
-//  4: ebx
-//  8: edi
-// 12: esi
-// 16: esp
-// 20: eip
-// 24: sse control word (32 bits)
-// 28: fpu control word (16 bits)
-// 30: unused
-// 32: register node
-// 36: sizeof jmp_buf
-// ------------------------------------------------------- */
+Code for x86 (ia32) cdecl calling convention on win32.
+Used on win32. Also restores the exception handler chain at FS:[0]
+see: https://en.wikipedia.org/wiki/X86_calling_conventions
+
+jump_buf layout, somewhat compatible with msvc
+ 0: ebp
+ 4: ebx
+ 8: edi
+12: esi
+16: esp
+20: eip
+24: sse control word (32 bits)
+28: fpu control word (16 bits)
+30: unused
+32: register node
+36: sizeof jmp_buf
+-------------------------------------------------------------------------- */
 
 .global _lh_setjmp
 .global _lh_longjmp
