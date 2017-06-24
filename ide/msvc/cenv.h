@@ -12,7 +12,7 @@
 #elif _M_ARM64
 # define LH_TARGET "arm64-pc-windows"
 # define LH_ABI_arm64
-# define ASM_JMPBUF_SIZE 256
+# define ASM_JMPBUF_SIZE 192
 #elif _M_ARM
 # define LH_TARGET "arm-pc-windows"
 # define LH_ABI_arm

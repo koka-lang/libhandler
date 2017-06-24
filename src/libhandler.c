@@ -68,29 +68,17 @@
 # define __noinline     __declspec(noinline)
 # define __noreturn     __declspec(noreturn)
 # define __returnstwice
-# define __noopt        /*no optimization*/
 #else
 // assume gcc or clang 
 // __thread is already defined
 # define __noinline     __attribute__((noinline))
 # define __noreturn     __attribute__((noreturn))
 # define __returnstwice __attribute__((returns_twice))
-# if defined(__clang__)
-#  define __noopt       __attribute__((optnone))
-# elif defined(__GNUC__)
-#  define __noopt       __attribute__((optimize("O0")))
-# else
-#  define __noopt       /*no optimization*/
-# endif
 #endif 
 
 #ifdef __cplusplus
-# define __auto
-# define __throws   noexcept(false)
 # define __externc  extern "C"
 #else
-# define __auto     auto
-# define __throws
 # define __externc
 #endif
 
@@ -106,7 +94,7 @@
 // define the lh_jmp_buf in terms of `void*` elements to have natural alignment
 typedef void* lh_jmp_buf[ASM_JMPBUF_SIZE/sizeof(void*)];
 __externc __returnstwice int  _lh_setjmp(lh_jmp_buf buf);
-__externc __noreturn     void _lh_longjmp(lh_jmp_buf buf, int arg) __throws;
+__externc __noreturn     void _lh_longjmp(lh_jmp_buf buf, int arg);
 
 #elif defined(HAS__SETJMP)
 # define lh_jmp_buf   jmp_buf
@@ -380,9 +368,21 @@ static void checked_free(void* p) {
 
 
 // approximate the top of the stack -- conservatively upward
-static __noinline __noopt void* get_stack_top() {
-  __auto byte* top = (byte*)&top;
-  return top;
+// note: often this code is written as:
+//    void* top = (void*)&top; return top;
+// but that does not work with optimizing compilers; these detect
+// that a local address is returned which is undefined behaviour.
+// Some compilers (clang and gcc) optimize to always return 0 in that case!
+
+// .. So, we use an identity function to return the final stack address:
+static __noinline void* _stack_address(void* p) {
+  return p;
+}
+
+// .. And pass the stack top location by address to it:
+static __noinline void* get_stack_top() {
+  void* top = NULL;
+  return _stack_address(&top);
 }
 
 // true if the stack grows up
@@ -392,9 +392,9 @@ static bool stackup = false;
 static const void* stackbottom = NULL;
 
 // infer the direction in which the stack grows and the size of a stack frame 
-static __noinline __noopt void infer_stackdir() {
-  __auto void* mark = (void*)&mark;
-  void* top = get_stack_top();
+static __noinline void infer_stackdir() {
+  void* mark = _stack_address(&mark);
+  void* top  = get_stack_top();
   stackup = (mark < top);
   stackbottom = mark;
 }
@@ -1221,7 +1221,7 @@ public:
 // run in a stack frame just above the stack we are restoring (so the local 
 // variables will remain in-tact. The `no_opt` parameter is there so 
 // smart compilers (i.e. clang) will not optimize away the `alloca` in `jumpto`.
-static __noinline __noreturn __noopt void _jumpto_stack(
+static __noinline __noreturn void _jumpto_stack(
   const cstack cs, lh_jmp_buf* entry, bool freecframes, void* exnframe, byte* no_opt )
 {
   if (no_opt != NULL) no_opt[0] = 0;
@@ -1410,7 +1410,7 @@ public:
 #endif
 // Call a `resume* r`. First capture a jump point and c-stack into a `fragment`
 // and push it in a fragment handler so the resume will return here later on.
-static __noinline lh_value capture_resume_call(hstack* hs, resume* r, lh_value resumelocal, lh_value resumearg) __throws
+static __noinline lh_value capture_resume_call(hstack* hs, resume* r, lh_value resumelocal, lh_value resumearg)
 {
   // initialize continuation
   fragment* f = (fragment*)checked_malloc(sizeof(fragment));
@@ -1663,11 +1663,11 @@ static __noinline lh_value handle_upto(hstack* hs, void* base, const lh_handlerd
 // `handle` installs a new handler on the stack and calls the given `action` with argument `arg`.
 lh_value lh_handle( const lh_handlerdef* def, lh_value local, lh_actionfun* action, lh_value arg)
 {
-  __auto void* base = (void*)&base; // get_stack_top(); 
+  void* base = NULL; // get_stack_top(); 
   hstack* hs = &__hstack;
   lh_value res;
   LH_INIT(hs)
-  res = handle_upto(hs, base, def, local, action, arg);
+  res = handle_upto(hs, &base, def, local, action, arg);
   LH_DONE(hs)
   return res;
 }

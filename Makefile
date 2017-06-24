@@ -27,6 +27,7 @@ else
 VARIANTUNKNOWN=1
 endif
 
+# SHOWASM    = -Wa,-aln=$@.s
 
 # -------------------------------------
 # Sources
@@ -135,7 +136,7 @@ $(HLIB): $(OBJS)
 	$(AR) $(ARFLAGS)  $(ARFLAGOUT)$@ $(OBJS) 
 
 $(OUTDIR)/%$(OBJ): src/%.c
-	$(CC) $(CCFLAGS) $(CCFLAG99) $(CCFLAGOUT)$@ -c $< 
+	$(CC) $(CCFLAGS) $(CCFLAG99) $(CCFLAGOUT)$@ -c $< $(SHOWASM)
 
 $(OUTDIR)/%$(OBJ): src/%$(ASM)
 	$(CC) $(ASMFLAGS)  $(ASMFLAGOUT)$@ -c $< 
@@ -150,7 +151,7 @@ $(OUTDIRXX)/%$(OBJ): src/%.cpp
 	$(CXX) $(CXXFLAGS) $(CCFLAGOUT)$@ -c $< 
 
 $(OUTDIRXX)/%$(OBJ): src/%.c
-	$(CXX) $(CXXFLAGS) $(CCFLAGOUT)$@ -c $< 
+	$(CXX) $(CXXFLAGS) $(CCFLAGOUT)$@ -c $< $(SHOWASM)  
 
 $(OUTDIRXX)/%$(OBJ): src/%$(ASM)
 	$(CXX) $(ASMFLAGS)  $(ASMFLAGOUT)$@ -c $< 
