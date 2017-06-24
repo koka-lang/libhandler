@@ -180,9 +180,9 @@ esac
 
 if test "$target_abi" = ""; then
   case "$target_arch,$ostype" in
-#    aarch64,*)
-#      echo "Modify target ABI from aarch64 to arm64"
-#      target_abi="arm64";;
+    aarch64,*)
+      echo "Modify target ABI from aarch64 to arm64"
+      target_abi="arm64";;
     x86_64,windows)
       echo "Modify target ABI from x86_64 to x64 (as used on Windows)"
       target_abi="x64";;
