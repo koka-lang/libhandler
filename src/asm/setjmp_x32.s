@@ -11,9 +11,10 @@ Code for x32 calling convention: Linux
 See: https://en.wikipedia.org/wiki/X32_ABI
 
 jump_buf layout 
-   0: rip
+   0: eip  (32 bits)
+   4: unused (32 bits)
    8: rbx
-  16: rsp
+  16: rsp 
   24: rbp
   32: r12
   40: r13
@@ -30,43 +31,52 @@ jump_buf layout
 .global _lh_setjmp
 .global _lh_longjmp
 
+/* int _lh_setjmp(jmp_buf) 
+  edi: jmp_buf
+  esp: return address (32 bit)
+*/
 _lh_setjmp:                 /* rdi: jmp_buf */
-  movq    (%rsp), %rax      /* rip: return address is on the stack */
-  movq    %rax, 0 (%rdi)    
+  xorl    %rax, %rax
+  movl    (%esp), %eax      /* eip: return address is on the stack */
+  movq    %rax, 0 (%edi)    
 
-  leaq    8 (%rsp), %rax    /* rsp - return address */
-  movq    %rax, 16 (%rdi)   
+  leaq    4 (%rsp), %rax    /* rsp - return address */
+  movq    %rax, 16 (%edi)   
 
-  movq    %rbx,  8 (%rdi)   /* save registers */
-  movq    %rbp, 24 (%rdi) 
-  movq    %r12, 32 (%rdi) 
-  movq    %r13, 40 (%rdi) 
-  movq    %r14, 48 (%rdi) 
-  movq    %r15, 56 (%rdi) 
+  movq    %rbx,  8 (%edi)   /* save registers */
+  movq    %rbp, 24 (%edi) 
+  movq    %r12, 32 (%edi) 
+  movq    %r13, 40 (%edi) 
+  movq    %r14, 48 (%edi) 
+  movq    %r15, 56 (%edi) 
 
-  fnstcw  64 (%rdi)          /* save fpu control word */
-  stmxcsr 68 (%rdi)          /* save sse control word */
+  fnstcw  64 (%edi)          /* save fpu control word */
+  stmxcsr 68 (%edi)          /* save sse control word */
 
   xor     %rax, %rax         /* return 0 */
   ret
 
-_lh_longjmp:                  /* rdi: jmp_buf, esi: arg */
+/* void _lh_longjmp(jmpbuf,int arg)
+   edi: jmp_buf, 
+   esi: arg 
+*/
+_lh_longjmp:                  
   movq  %rsi, %rax            /* return arg to rax */
   
-  movq   8 (%rdi), %rbx       /* restore registers */
-  movq  24 (%rdi), %rbp
-  movq  32 (%rdi), %r12
-  movq  40 (%rdi), %r13
-  movq  48 (%rdi), %r14
-  movq  56 (%rdi), %r15
+  movq   8 (%edi), %rbx       /* restore registers */
+  movq  24 (%edi), %rbp
+  movq  32 (%edi), %r12
+  movq  40 (%edi), %r13
+  movq  48 (%edi), %r14
+  movq  56 (%edi), %r15
 
   fnclex                      /* clear fpu exception flags */
-  fldcw   64 (%rdi)           /* restore fpu control word */
-  ldmxcsr 68 (%rdi)           /* restore sse control word */
+  fldcw   64 (%edi)           /* restore fpu control word */
+  ldmxcsr 68 (%edi)           /* restore sse control word */
 
   testl %eax, %eax            /* longjmp should never return 0 */ 
   jnz   ok
   incl  %eax
 ok:
-  movq  16 (%rdi), %rsp       /* restore the stack pointer */     
-  jmpq *(%rdi)                /* and jump to rip */
+  movq  16 (%edi), %rsp       /* restore the stack pointer */     
+  jmpl *(%edi)                /* and jump to eip  */

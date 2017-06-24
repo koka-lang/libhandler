@@ -43,7 +43,7 @@ platforms please test carefully. Currently tested platforms include:
 - (`gcc`,`clang`)`-amd64-pc-linux`       (64 bit, Ubuntu 16.04)
 
 - (`gcc`,`clang`)`-arm-linux` (32 bit, ARMv7 (raspberry pi 3, Raspbian/Debian Jessie))
-- `gcc-aarch64-linux`         (64 bit, ARMv8 (raspberry pi 3, Gentoo Linux))
+- `gcc-arm64-linux`           (64 bit, ARMv8 (raspberry pi 3, Gentoo Linux))
 
 
 C++ support is working but still under development.

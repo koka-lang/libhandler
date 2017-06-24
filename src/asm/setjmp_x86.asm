@@ -93,7 +93,6 @@ _lh_longjmp ENDP
 ; esp+4: base
 ; returns: eax points to the top exeption handler frame above or at base
 ;          ebx points to the exception handler before that (greater than base)
-; clobbers: edx
 _lh_get_exn_frame PROC
   mov     edx, [esp+4]        ; set edx to the base
   mov     eax, fs:[0]         ; set eax to current exception frame top
@@ -125,22 +124,22 @@ _lh_get_exn_frame_ ENDP
 _lh_get_exn_frame ENDP
 
 
-; void _lh_longjmp_chain(jmp_buf,void* base, void* frame)
-; Long jump to jmp_buf; if `link == NULL` this equals `longjmp(jmp_buf,1)
-; otherwise, `link > base` and first exception frame <= `base` will be
-; linked to `link` such that the exception handler chain is always valid.
+; void _lh_longjmp_chain(jmp_buf,void* base, void* exnframe)
+; Long jump to jmp_buf; if `exnframe == NULL` this equals `longjmp(jmp_buf,1)
+; otherwise, `exnframe > base` and first exception frame <= `base` will be
+; linked to `exnframe` such that the exception handler chain is always valid.
 ;
 ; esp+12: link to top exception frame beyond our restored stack
 ; esp+8 : bottom of our restored stack
 ; esp+4 : jmp_buf
 ; esp   : return address
 _lh_longjmp_chain PROC
-  mov     ecx, [esp+12]       ; `ecx` to the frame
-  test    ecx, ecx            ; don't do anything if `frame` is NULL
+  mov     ecx, [esp+12]       ; `ecx` to the exnframe
+  test    ecx, ecx            ; don't do anything if `exnframe` is NULL
   jz      notfound
   
   mov     edx, [esp+8]        ; set `edx` to the bottom of our restored stack
-  cmp     ecx, edx            ; sanity check: ensure `frame` is greater than the bottom of the restored stack
+  cmp     ecx, edx            ; sanity check: ensure `exnframe` is greater than the bottom of the restored stack
   jb      notfound
 
   mov     eax, [esp+4]        ; set `eax` to the top exception handler frame we are going to restore
