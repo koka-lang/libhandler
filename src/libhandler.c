@@ -111,8 +111,8 @@
 #if defined(HAS_ASMSETJMP)
 // define the lh_jmp_buf in terms of `void*` elements to have natural alignment
 typedef void* lh_jmp_buf[ASM_JMPBUF_SIZE/sizeof(void*)];
-__externc __nothrow __returnstwice int  _lh_setjmp(lh_jmp_buf buf);
-__externc __nothrow __noreturn     void _lh_longjmp(lh_jmp_buf buf, int arg) __throws;
+__externc __returnstwice int  _lh_setjmp(lh_jmp_buf buf);
+__externc __noreturn     void _lh_longjmp(lh_jmp_buf buf, int arg) __throws;
 
 #elif defined(HAS__SETJMP)
 # define lh_jmp_buf   jmp_buf
@@ -133,6 +133,16 @@ __externc __nothrow __noreturn     void _lh_longjmp(lh_jmp_buf buf, int arg) __t
 #else 
 # error "setjmp not found!"
 #endif
+
+#if defined(HAS_ASM_EXN_LINK)
+__externc __noreturn     void  _lh_longjmp_ex(lh_jmp_buf buf, const void* bottom, void* link);
+__externc                void* _lh_get_exn_link(const void* bottom);
+#else
+#define _lh_longjmp_ex(buf,bot,link)  _lh_longjmp(buf,1)
+#define _lh_get_exn_link(bot)         ((void*)NULL)
+#endif
+
+
 
 #ifdef HAS__ALLOCA        // msvc runtime
 # include <malloc.h>  
@@ -1211,26 +1221,26 @@ public:
 // variables will remain in-tact. The `no_opt` parameter is there so 
 // smart compilers (i.e. clang) will not optimize away the `alloca` in `jumpto`.
 static __noinline __noreturn __noopt void _jumpto_stack(
-  byte* cframes, ptrdiff_t size, byte* base, lh_jmp_buf* entry, bool freecframes,
-  byte* no_opt )
+  const cstack cs, lh_jmp_buf* entry, bool freecframes, void* link, byte* no_opt )
 {
   if (no_opt != NULL) no_opt[0] = 0;
   // copy the saved stack onto our stack
-  memcpy(base, cframes, size);        // this will not overwrite our stack frame 
-  if (freecframes) { free(cframes); } // should be fine to call `free` (assuming it will not mess with the stack above its frame)
+  memcpy((void*)cs.base, cs.frames, cs.size);           // this will not overwrite our stack frame 
+  if (freecframes) { free(cs.frames); }  // should be fine to call `free` (assuming it will not mess with the stack above its frame)
   // and jump 
-  _lh_longjmp(*entry, 1);
+  _lh_longjmp_ex(*entry, cstack_bottom(&cs), link);
 }
 
 /* jump to `entry` while restoring cstack `cs` and pushing handlers `hs` onto the global handler stack.
    Set `freecframes` to `true` to release the cstack after jumping.
 */
 static __noinline __noreturn void jumpto(
-  cstack* cs, lh_jmp_buf* entry, bool freecframes ) 
+  cstack* cs, lh_jmp_buf* entry, bool freecframes, bool resuming ) 
 {
   if (cs->frames == NULL) {
     // if no stack, just jump back down the stack; 
     // sanity: check if the entry is really below us!
+    assert(!resuming);
     void* top = get_stack_top();
     if (cs->base != NULL && stack_isbelow(top,cstack_top(cs))) {
       fatal(EFAULT,"Trying to jump up the stack to a scope that was already exited!");
@@ -1251,7 +1261,8 @@ static __noinline __noreturn void jumpto(
     }
     // since we allocated more, the execution of `_jumpto_stack` will be in a stack frame 
     // that will not get overwritten itself when copying the new stack
-    _jumpto_stack(cs->frames, cs->size, (byte*)cstack_base(cs), entry, freecframes, no_opt );
+    void* link = (resuming ? _lh_get_exn_link(cstack_bottom(cs)) : NULL);
+    _jumpto_stack(*cs, entry, freecframes, link, no_opt);
   }
 }
 
@@ -1261,7 +1272,7 @@ static __noinline __noreturn void jumpto_fragment(fragment* f, lh_value res)
 {
   assert(f->refcount >= 1);
   f->res = res; // set the argument in the cont slot  
-  jumpto(&f->cstack, &f->entry, false);
+  jumpto(&f->cstack, &f->entry, false, false);
 }
 
 
@@ -1286,7 +1297,7 @@ static __noinline __noreturn void jumpto_resume( resume* r, lh_value local, lh_v
   // and then restore the cstack and jump
   r->arg = arg;         // set the argument in the cont slot  
   r->resumptions++;     // increment resume count
-  jumpto(&r->cstack, &r->entry, false );
+  jumpto(&r->cstack, &r->entry, false , true);
 }
 
 
@@ -1371,7 +1382,7 @@ static void __noinline __noreturn yield_to_handler(hstack* hs, effecthandler* h,
   h->arg = oparg;
   h->arg_op = op;
   h->arg_resume = resume;
-  jumpto(&cs, &h->entry, true);
+  jumpto(&cs, &h->entry, true, false);
 }
 
 
