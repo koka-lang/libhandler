@@ -89,6 +89,9 @@ Make targets:
 * `VARIANT=<debug|testopt|release>`
   : Specify the build variant. 'testopt' builds optimized but with assertions enabled.
 
+* `VALGRIND=1`
+  : Run the tests under [valgrind] for memory leak detection.
+
 * `staticlib`
   : Build a static library.
 * `tests`
@@ -159,5 +162,6 @@ Using the Visual Studio IDE:
 - `cl-x86-pc-windows`
    Selecting 32-bit build.
 
-[msvc]: https://www.microsoft.com/en-us/download/details.aspx?id=48146
+[msvc]:     https://www.microsoft.com/en-us/download/details.aspx?id=48146
 [winlinux]: https://msdn.microsoft.com/en-us/commandline/wsl/install_guide
+[valgrind]: http://valgrind.org

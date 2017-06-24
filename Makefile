@@ -27,6 +27,20 @@ else
 VARIANTUNKNOWN=1
 endif
 
+# Use VALGRIND=1 to memory check under valgrind
+ifeq ($(VALGRIND),1)
+VALGRINDX=yes
+else ifeq ($(VALGRIND),yes)
+VALGRINDX=yes
+else
+VALGRINDX=
+endif
+
+ifeq ($(VALGRINDX),yes)
+VALGRINDX=valgrind --leak-check=full --show-leak-kinds=all --suppressions=./valgrind.supp 
+endif     
+
+# Uncomment to generate assembly for libhandler
 # SHOWASM    = -Wa,-aln=$@.s
 
 # -------------------------------------
@@ -78,7 +92,7 @@ main: init staticlib
 tests: init staticlib testmain
 	@echo ""
 	@echo "run tests"
-	$(TESTMAIN)
+	$(VALGRINDX) $(TESTMAIN)
 
 bench: init staticlib benchmain
 	@echo ""
@@ -92,7 +106,7 @@ mainxx: initxx staticlibxx
 testsxx: initxx staticlibxx testmainxx
 	@echo ""
 	@echo "run tests++"
-	$(TESTMAINXX)
+	$(VALGRINDX) $(TESTMAINXX)
 
 # -------------------------------------
 # build tests
@@ -179,6 +193,7 @@ initxx: init
 help:
 	@echo "Usage: make <target>"
 	@echo "Or   : make VARIANT=<variant> <target>"
+	@echo "Or   : make VALGRIND=1 tests"
 	@echo ""
 	@echo "Variants:"
 	@echo "  debug       : Build a debug version (default)"
@@ -188,6 +203,8 @@ help:
 	@echo "Targets:"
 	@echo "  main        : Build a static library (default)"
 	@echo "  tests       : Run tests"
+	@echo "  mainxx      : Build a static library for C++"
+	@echo "  testsxx     : Run tests for C++"
 	@echo "  bench       : Run benchmarks, use 'VARIANT=release'"	
 	@echo "  clean       : Clean output directory"
 	@echo "  depend      : Generate dependencies"

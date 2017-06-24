@@ -1,0 +1,14 @@
+# libhandler is valgrind safe
+# Only suppression is for dl_init in stdlibc++ that allocates 
+# a 72,704 byte memory pool that is not freed
+{
+	 dl_init/memory pool
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:malloc
+   obj:*/libstdc++.so.*
+   fun:call_init.part.0
+   fun:call_init
+   fun:*dl_init
+   obj:*/ld-*.so
+}
