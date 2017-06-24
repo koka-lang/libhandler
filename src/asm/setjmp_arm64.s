@@ -11,30 +11,34 @@ See:
 - <https://en.wikipedia.org/wiki/Calling_convention#ARM_.28A64.29>
 - <http://infocenter.arm.com/help/topic/com.arm.doc.ihi0055c/IHI0055C_beta_aapcs64.pdf>
 
-note: according to the ARM ABI specification, only the bottom 64 bits of the floating 
-      point registers need to be preserved (sec. 5.1.2 of aapcs64)
+notes: 
+- According to the ARM ABI specification, only the bottom 64 bits of the floating 
+  point registers need to be preserved (sec. 5.1.2 of aapcs64)
+- The x18 register is the "platform register" and may be temporary or not. For safety
+  we always save it.
 
 jump_buf layout:
-   0: x19  
-   8: x20
-  16: x21
-  24: x22
-  32: x23
-  40: x24
-  48: x25
-  56: x26
-  64: x27
-  72: x28
-  80: fp   = x29
-  88: lr   = x30
-  96: sp   = x31
- 104: fpcr
- 112: fpsr
- 120: d8  (64 bits)
- 128: d9
+   0: x18  
+   8: x19
+  16: x20
+  24: x21
+  32: x22
+  40: x23
+  48: x24
+  56: x25
+  64: x26
+  72: x27
+  80: x28
+  88: fp   = x29
+  96: lr   = x30
+ 104: sp   = x31
+ 112: fpcr
+ 120: fpsr
+ 128: d8  (64 bits)
+ 136: d9
  ...
- 176: d15
- 184: sizeof jmp_buf
+ 184: d15
+ 192: sizeof jmp_buf
 */
 
 .global _lh_setjmp
@@ -44,14 +48,14 @@ jump_buf layout:
 
 /* called with x0: &jmp_buf */
 _lh_setjmp:                 
-    stp   x19, x20, [x0], #16
-    stp   x21, x22, [x0], #16
-    stp   x23, x24, [x0], #16
-    stp   x25, x26, [x0], #16
-    stp   x27, x28, [x0], #16
-    stp   x29, x30, [x0], #16   /* fp and lr */
-    mov   x10, sp               /* sp */
-    str   x10, [x0], #8
+    stp   x18, x19, [x0], #16
+    stp   x20, x21, [x0], #16
+    stp   x22, x23, [x0], #16
+    stp   x24, x25, [x0], #16
+    stp   x26, x27, [x0], #16
+    stp   x28, x29, [x0], #16   /* x28 and fp */
+    mov   x10, sp               /* sp to x10 */
+    stp   x30, x10, [x0], #16   /* lr and sp */
     /* store fp control and status */
     mrs   x10, fpcr
     mrs   x11, fpsr
@@ -68,13 +72,13 @@ _lh_setjmp:
     
 /* called with x0: &jmp_buf, x1: return code */
 _lh_longjmp:                  
-    ldp   x19, x20, [x0], #16
-    ldp   x21, x22, [x0], #16
-    ldp   x23, x24, [x0], #16
-    ldp   x25, x26, [x0], #16
-    ldp   x27, x28, [x0], #16
-    ldp   x29, x30, [x0], #16   /* fp and lr */
-    ldr   x10, [x0], #8         /* sp */
+    ldp   x18, x19, [x0], #16
+    ldp   x20, x21, [x0], #16
+    ldp   x22, x23, [x0], #16
+    ldp   x24, x25, [x0], #16
+    ldp   x26, x27, [x0], #16
+    ldp   x28, x29, [x0], #16   /* x28 and fp */
+    ldp   x30, x10, [x0], #16   /* lr and sp */
     mov   sp,  x10
     /* load fp control and status */
     ldp   x10, x11, [x0], #16
