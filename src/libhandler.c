@@ -67,9 +67,6 @@
 # define __thread       __declspec(thread) 
 # define __noinline     __declspec(noinline)
 # define __noreturn     __declspec(noreturn)
-# ifndef __nothrow
-#  define __nothrow     __declspec(nothrow)
-# endif
 # define __returnstwice
 # define __noopt        /*no optimization*/
 #else
@@ -84,9 +81,6 @@
 #  define __noopt       __attribute__((optimize("O0")))
 # else
 #  define __noopt       /*no optimization*/
-# endif
-# ifndef __nothrow
-#  define __nothrow     __attribute__((nothrow))
 # endif
 #endif 
 
