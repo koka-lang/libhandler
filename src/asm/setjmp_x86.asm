@@ -92,7 +92,7 @@ _lh_longjmp ENDP
 ; Get the top exception frame above or at `base`
 ; esp+4: base
 ; returns: eax points to the top exeption handler frame above or at base
-;          ebx points to the exception handler before that (greater than base)
+;          ecx points to the exception handler before that (greater than base)
 _lh_get_exn_frame PROC
   mov     edx, [esp+4]        ; set edx to the base
   mov     eax, fs:[0]         ; set eax to current exception frame top
@@ -101,22 +101,22 @@ _lh_get_exn_frame PROC
 ; edx: base
 ; eax: current exception frame
 _lh_get_exn_frame_ PROC
-  xor     ebx, ebx            ; ebx: the previous frame
+  xor     ecx, ecx            ; ecx: the previous frame
   
 find:  
   cmp     eax, edx            ; we found it if we are greater or equal to the base
   jae     found               
   test    eax, eax            ; if the current is at 0 we reached the end of the frames
   jz      found
-  mov     ebx, eax            ; go to the next frame
-  mov     eax, [ebx]
-  cmp     eax, ebx            ; continue if the new frame is greater than the previous (should always be the case, except for NULL)
+  mov     ecx, eax            ; go to the next frame
+  mov     eax, [ecx]
+  cmp     eax, ecx            ; continue if the new frame is greater than the previous (should *always* be the case, except for NULL)
   ja      find    
   test    eax, eax            ; if NULL we found the end
   jz      found
 
 notfound:
-  xor     ebx, ebx            ; otherwise zero out the previous frame
+  xor     ecx, ecx            ; otherwise zero out the previous frame
 
 found:
   ret
@@ -134,22 +134,22 @@ _lh_get_exn_frame ENDP
 ; esp+4 : jmp_buf
 ; esp   : return address
 _lh_longjmp_chain PROC
-  mov     ecx, [esp+12]       ; `ecx` to the exnframe
-  test    ecx, ecx            ; don't do anything if `exnframe` is NULL
+  mov     esi, [esp+12]       ; `esi` to the exnframe
+  test    esi, esi            ; don't do anything if `exnframe` is NULL
   jz      notfound
   
   mov     edx, [esp+8]        ; set `edx` to the bottom of our restored stack
-  cmp     ecx, edx            ; sanity check: ensure `exnframe` is greater than the bottom of the restored stack
+  cmp     esi, edx            ; sanity check: ensure `exnframe` is greater than the bottom of the restored stack
   jb      notfound
 
   mov     eax, [esp+4]        ; set `eax` to the top exception handler frame we are going to restore
   mov     eax, [eax+32]       
   call    _lh_get_exn_frame_  ; find bottom exception handler frame in our restored stack (in `ebx`)
 
-  test    ebx, ebx            ; check if we found it
+  test    ecx, ecx            ; check if we found it
   jz      notfound
 
-  mov     [ebx], ecx          ; restore the exception handler chain
+  mov     [ecx], esi          ; restore the exception handler chain
 
 notfound:
   mov     eax, 1
