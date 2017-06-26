@@ -25,11 +25,7 @@ while : ; do
   esac
   # echo "option: $ac_option, arg: $ac_optarg"
   case "$ac_option" in
-    "") break;;
-    -target*|--target*)
-        target_type=$ac_optarg ;;
-    -host*|--host*)
-        target_type=$ac_optarg ;;
+    "") break;;    
     -cc-opts*|--cc-opts*)
         ccflags=$ac_optarg;;
     -asm-opts*|--asm-opts*)
@@ -48,6 +44,8 @@ while : ; do
         verbose="yes";;
     -m*|--m*|-abi*|--abi*)
         target_abi=$ac_optarg;;
+    -os*|--os*)
+        target_os=$ac_optarg;;
     -h|--help|-\?|help|\?)
         echo "./configure [options]"
         echo "  --cc=<ccomp>                   set the c-compiler (for example 'clang')"
@@ -57,7 +55,6 @@ while : ; do
         echo "  --cc-opts=<options>            set extra c-compiler options (for example '-m32')"
         echo "  --asm-opts=<options>           set extra assembler options (for example '-m32')"
         echo "  --abi=<abi>                    set ABI (for example: 'x86' or 'amd64')"
-        echo "  --target=<arch>-<vendor>-<os>  set the target (for example 'x64-pc-windows')"
         echo "  --verbose                      be verbose"
         exit 0;;
     *) echo "warning: unknown option \"$1\"." 1>&2
@@ -103,47 +100,84 @@ if test -z "$cxx"; then
   esac
 fi
 
-# Determine the system type
-if test "$target_type" = "unknown"; then	
+# Check if we can run the C-compiler
+$cc -v 2>/dev/null 1>/dev/null
+case $? in
+  0) echo "C compiler '$cc' found";;
+  *) $cc -v
+     echo "Unable to compile the test program."
+     echo "Make sure the C compiler '$cc' is properly installed."
+     exit 2;;
+esac
+
+
+# Determine the target OS
+if test -z "$target_os"; then	
 	# check for 32bit compilation on x64 platform.
 	cctarget=`$cc $ccflags -v 2>&1 | grep -o '^[Tt]arget: *[^ ]*'`
-  cctarget=`expr "X$cctarget" : '[^ ]* *\(.*\)'`
-  cctrest=`expr "X$cctarget" : '[^-]*-\([^-]*-[^-]*\)'`
-	if test "$cctarget" = ""; then
-	  host_os=`uname -o`
-	  if host_os="Msys"; then 
-	    host_arch=`uname -m`
-	    target_type="$host_arch-pc-windows";
-	  elif target_type=`./config.guess`; then 
-	    :; 
-	  else
-	    echo "Cannot guess target type"
-	    echo "You must specify one with the --target option"
-	    echo "For example: --target=x64-pc-windows"
-	    exit 2
-	  fi   
+  cctarget="${cctarget#*: }"
+  if test -z "$cctarget"; then
+	  target_os=`uname -s || uname -o`
+    target_arch=`uname -m`	  
+    echo "Host is $target_arch-$target_os"
 	else
     echo "Compiler target: $cctarget"
-    case "$cctarget" in
+    target_os="${cctarget#*-}"
+    case "$target_os" in
       mingw32)
-        echo "Target is 32-bit x86"
-        target_type="x86-pc-windows";;
-      i[3456]86-*)
-        echo "Target is 32-bit x86"
-        target_type="x86-$cctrest";;
-      x86_64-*)  
-        target_type="x86_64-$cctrest";;
-      *)  
-        echo "The compiler targets $cctarget"
-        target_type="$cctarget";;
+        target_arch="x86";;
+      *)
+        target_arch="${cctarget%%-*}";;
     esac
 	fi
 fi
-if target=`./config.sub $target_type`; then :; else
-  echo "Please specify the correct target type with the --target option"
-  exit 2
+
+if test -z "$target_os"; then
+  echo "Cannot determine the target OS; give it as on option `--os=<os>`"
+  echo "For example: `configure --os=linux`"
+  exit 1
 fi
 
+# canonical target os
+case "$target_os" in
+  mingw*|windows*|msys*|w64-*|pc-windows*)
+    target_os="windows";;
+esac
+
+
+# Determine ABI
+if test -z "$target_abi"; then
+  if test -z "$target_arch"; then 
+    target_abi=`uname -m`
+  else
+    target_abi="$target_arch"
+  fi
+fi
+
+if test -z "$target_abi"; then
+  echo "Cannot determine the target ABI; give it as on option '--abi=<abi>'"
+  echo "For example: './configure --abi=amd64'"
+  exit 1;
+fi
+
+# Canonical target ABI
+case "$target_abi,$target_os" in
+  aarch64,*)
+    echo "Modify target ABI from aarch64 to arm64"
+    target_abi="arm64";;
+  x86_64,windows)
+    echo "Modify target ABI from x86_64 to x64 (as used on Windows)"
+    target_abi="x64";;
+  x86_64,*)
+    echo "Modify target ABI from x86_64 to amd64 (used on Linux, etc)"
+    target_abi="amd64";;
+  i[3456]86,windows)
+    echo "Modify target ABI from $target_arch to x86 (as used on Win32)"
+    target_abi="x86";;  
+  i[3456]86,*)
+    echo "Modify target ABI from $target_arch to amd32 (used on Linux, etc)"
+    target_abi="amd32";;  
+esac
 
 # Configure the c compiler for the runtime system
 
@@ -167,40 +201,12 @@ ccflagdebug="-g"
 ccflag99=""
 ccdepend="$cc -MM "
 
-# note: expr regex has "^" implied as starting character
-target_arch=${target%%-*}
-target_os=${target#*-}
-
-case "$target" in
-  *-*-mingw*|*-*-win*|*-*-msys*)
-    exe=".exe"
-    dll=".dll"
-    ostype="windows";;
-esac
-
-if test "$target_abi" = ""; then
-  case "$target_arch,$ostype" in
-    aarch64,*)
-      echo "Modify target ABI from aarch64 to arm64"
-      target_abi="arm64";;
-    x86_64,windows)
-      echo "Modify target ABI from x86_64 to x64 (as used on Windows)"
-      target_abi="x64";;
-    x86_64,*)
-      echo "Modify target ABI from x86_64 to amd64 (used on Linux, etc)"
-      target_abi="amd64";;
-    i[3456]86,windows)
-      echo "Modify target ABI from $target_arch to x86 (as used on Win32)"
-      target_abi="x86";;  
-    i[3456]86,*)
-      echo "Modify target ABI from $target_arch to amd32 (used on Linux, etc)"
-      target_abi="amd32";;  
-    *,*)
-      target_abi="$target_arch";;
-  esac  
+if test "$target_os"="windows"; then
+  exe=".exe"
+  lib=".lib"
 fi
 
-case $target_abi in
+case "$target_abi" in
   x32) ccflags="$ccflags -mx32";;
 esac
 
@@ -268,7 +274,7 @@ if test -z "$ar"; then
   ar="ar"
 fi
 
-case "$ccname,$ostype" in 
+case "$ccname,$target_os" in 
   clang*,windows)
     ccversion=`$cc -v 2>&1 | grep -o '^clang version [0-9]*'`
     echo "$ccversion"
@@ -301,14 +307,14 @@ ccout="$linkflagout"
 export cc ccflags ccout cclibs verbose exe cxx cxxflags
 
 # Check C compiler
-sh ./runtest c99.c
+sh ./runtest $ccflag99 c99.c
 case $? in
   0) echo "The C compiler is C99 compliant.";;
   1) echo "The C compiler '$cc' is not C99 compliant."
      echo "A C99 compliant compiler might be required to build (due to line-comments etc).";;
   *) echo "Unable to compile the test program."
      echo "Make sure the C compiler '$cc' is properly installed."
-     env verbose="yes" sh ./runtest c99.c
+     env verbose="yes" sh ./runtest $ccflag99 c99.c
      exit 2;;
 esac
 
