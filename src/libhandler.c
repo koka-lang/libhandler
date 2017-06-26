@@ -122,14 +122,14 @@ __externc __noreturn     void _lh_longjmp(lh_jmp_buf buf, int arg);
 // so the debugger and OS always see a valid exception handler chain. (This is not strictly
 // necessary since the bottom exception handling frame in a resumption always catches all
 // exceptions and re-throws after restoring the fragment)
-typedef struct _exn_frame {
-  struct _exn_frame* previous;
-} exn_frame;
+struct exn_frame {
+  struct exn_frame* previous;
+};
 #if defined(ASM_HAS_EXN_FRAMES)
-__externc exn_frame* _lh_get_exn_top();
+__externc struct exn_frame* _lh_get_exn_top();
 #else
 // Most platforms have no exception handler chains on the stack; always return NULL.
-static exn_frame* _lh_get_exn_top() { return NULL; }
+static struct exn_frame* _lh_get_exn_top() { return NULL; }
 #endif
 
 
@@ -219,7 +219,7 @@ typedef struct _resume {
   struct _hstack     hstack;      // captured hstack  always `size == count`
   volatile lh_value  arg;         // the argument to `resume` is passed through `arg`.
   count              resumptions; // how often was this resumption resumed?
-  exn_frame*         exn_bottom;  // 
+  struct exn_frame*  exn_bottom;  // 
 } resume;
 
 // An optimized resumption that can only used for tail-call resumptions (`lh_tail_resume`).
@@ -263,7 +263,7 @@ typedef struct _effecthandler {
   resume*              arg_resume;  // the resumption function for the yielded operation
   void*                stackbase;   // pointer to the c-stack just below the handler
   lh_value             local;   
-  exn_frame*           exn_frame;
+  struct exn_frame*    exn_frame;
 } effecthandler;
 
 // A skip handler.
@@ -1172,7 +1172,7 @@ static void hstack_pop_upto(ref hstack* hs, ref handler* h, bool do_release, out
 -----------------------------------------------------------------*/
 
 static bool initialized = false;
-static exn_frame* exn_bottom = NULL;
+static struct exn_frame* exn_bottom = NULL;
 
 static __noinline bool _lh_init(hstack* hs) {
   if (!initialized) {
@@ -1181,7 +1181,7 @@ static __noinline bool _lh_init(hstack* hs) {
     exn_bottom = _lh_get_exn_top();
     if (exn_bottom != NULL) {
       // find the outermost exception handler (on win32, the chain is stopped with a -1)      
-      while (exn_bottom->previous != NULL && exn_bottom->previous != (exn_frame*)(-1)) {
+      while (exn_bottom->previous != NULL && exn_bottom->previous != (struct exn_frame*)(-1)) {
         exn_bottom = exn_bottom->previous;
       }
     }
@@ -1235,7 +1235,7 @@ public:
 // variables will remain in-tact. The `no_opt` parameter is there so 
 // smart compilers (i.e. clang) will not optimize away the `alloca` in `jumpto`.
 static __noinline __noreturn void _jumpto_stack(
-  const cstack cs, lh_jmp_buf* entry, bool freecframes, exn_frame* exnframe, byte* no_opt )
+  const cstack cs, lh_jmp_buf* entry, bool freecframes, struct exn_frame* exnframe, byte* no_opt )
 {
   if (no_opt != NULL) no_opt[0] = 0;
   // copy the saved stack onto our stack
@@ -1254,7 +1254,7 @@ static __noinline __noreturn void _jumpto_stack(
    Set `freecframes` to `true` to release the cstack after jumping.
 */
 static __noinline __noreturn void jumpto(
-  cstack* cs, lh_jmp_buf* entry, bool freecframes, exn_frame* exnframe ) 
+  cstack* cs, lh_jmp_buf* entry, bool freecframes, struct exn_frame* exnframe ) 
 {
   if (cs->frames == NULL) {
     // if no stack, just jump back down the stack; 
