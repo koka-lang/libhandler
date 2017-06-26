@@ -118,7 +118,7 @@ if test -z "$target_os"; then
   cctarget="${cctarget#*: }"
   if test -z "$cctarget"; then
 	  target_os=`uname -s || uname -o`
-    target_arch=`uname -m`	  
+    target_arch=`uname -m || uname -p`	  
     echo "Host is $target_arch-$target_os"
 	else
     echo "Compiler target: $cctarget"
@@ -169,14 +169,23 @@ case "$target_abi,$target_os" in
   x86_64,windows)
     echo "Normalize target ABI from x86_64 to x64 (as used on Windows)"
     target_abi="x64";;
-  x86_64,*)
+  x86_64,*|i686-64,*)
     echo "Normalize target ABI from x86_64 to amd64 (used on Linux, etc)"
     target_abi="amd64";;
   i[3456]86,windows)
-    echo "Normalize target ABI from $target_arch to x86 (as used on Win32)"
+    echo "Normalize target ABI from $target_abi to x86 (as used on Win32)"
     target_abi="x86";;  
   i[3456]86,*)
-    echo "Normalize target ABI from $target_arch to amd32 (used on Linux, etc)"
+    echo "Normalize target ABI from $target_abi to amd32 (used on Linux, etc)"
+    target_abi="amd32";;  
+  armv[67]*,*)
+    echo "Normalize target ABI from $target_abi to arm (32-bit)"
+    target_abi="arm";;     
+  armv[89]*,*)
+    echo "Normalize target ABI from $target_abi to arm (32-bit)"
+    target_abi="arm";;     
+  x86pc,*|i86pc,*|x86at,*)
+    echo "Normalize target ABI from $target_abi to amd32 (32-bit)"
     target_abi="amd32";;  
 esac
 
