@@ -71,12 +71,10 @@ Configuration options:
   : Specify extra c-compiler flags to use (e.g. `-m64`).
 * `--asm-opts=<options>`
   : Specify extra assembler flags to use (e.g. `-m64`).
-* `--target=<arch>-<vendor>-<os>`
-  : Specify the platform as architecture (`x86`,`x86-64`,`amd64`),
-    vendor (`pc`), and operating system (`windows`,`linux`,etc).
 * `--abi=<abi>`
-  : Specify the calling convention ABI. For example, on Linux
-    the `x32` ABI may have to specified explicitly.
+  : Specify the calling convention ABI. For example, `--abi=amd64` or `--abi=x64`.
+* `--os=<os>`
+  : Specify the target OS, for example, `--os=windows`.
 * `--ar=<archiver>`
   : Specify the archiver for creating a static library (=`ar`).
 * `--cxx=<c++ compiler>`
