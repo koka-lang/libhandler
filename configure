@@ -3,7 +3,6 @@
 echo "--- Configuring build ---"
 
 configure_options=$*
-target_type=unknown
 target_abi=""
 target_os=""
 cc=gcc
@@ -18,34 +17,34 @@ cxxflags=''
 
 # Parse command-line arguments
 while : ; do
-  ac_option="$1"
-  case "$ac_option" in
-  *=*)  ac_optarg="${ac_option#*=}";;
-  *)    ac_optarg="yes" ;;
+  flag="$1"
+  case "$flag" in
+  *=*)  flag_arg="${flag#*=}";;
+  *)    flag_arg="yes" ;;
   esac
-  # echo "option: $ac_option, arg: $ac_optarg"
-  case "$ac_option" in
+  # echo "option: $flag, arg: $flag_arg"
+  case "$flag" in
     "") break;;    
     -cc-opts*|--cc-opts*)
-        ccflags=$ac_optarg;;
+        ccflags=$flag_arg;;
     -asm-opts*|--asm-opts*)
-        asmflags=$ac_optarg;;
+        asmflags=$flag_arg;;
     -cxx-opts*|--cxx-opts*)
-        cxxflags=$ac_optarg;;
+        cxxflags=$flag_arg;;
     -cc*|--cc*)
-        ccoption=$ac_optarg;;
+        ccoption=$flag_arg;;
     -cxx*|--cxx*)
-        cxx=$ac_optarg;;
+        cxx=$flag_arg;;
     -ar*|--ar*)
-        ar=$ac_optarg;;
+        ar=$flag_arg;;
     -link*|--link*)
-        link=$ac_optarg;;
+        link=$flag_arg;;
     -verbose|--verbose)
         verbose="yes";;
     -m*|--m*|-abi*|--abi*)
-        target_abi=$ac_optarg;;
+        target_abi=$flag_arg;;
     -os*|--os*)
-        target_os=$ac_optarg;;
+        target_os=$flag_arg;;
     -h|--help|-\?|help|\?)
         echo "./configure [options]"
         echo "  --cc=<ccomp>                   set the c-compiler (for example 'clang')"
@@ -54,7 +53,8 @@ while : ; do
         echo "  --link=<linker>                set the linker"
         echo "  --cc-opts=<options>            set extra c-compiler options (for example '-m32')"
         echo "  --asm-opts=<options>           set extra assembler options (for example '-m32')"
-        echo "  --abi=<abi>                    set ABI (for example: 'x86' or 'amd64')"
+        echo "  --abi=<abi>                    set target ABI (for example: 'x86' or 'amd64')"
+        echo "  --os=<os>                      set target OS (for example: 'windows' or 'linux')"
         echo "  --verbose                      be verbose"
         exit 0;;
     *) echo "warning: unknown option \"$1\"." 1>&2
@@ -141,6 +141,7 @@ fi
 # canonical target os
 case "$target_os" in
   mingw*|windows*|msys*|w64-*|pc-windows*)
+    echo "Normalize OS from '$target_os' to 'windows'"
     target_os="windows";;
 esac
 
@@ -163,19 +164,19 @@ fi
 # Canonical target ABI
 case "$target_abi,$target_os" in
   aarch64,*)
-    echo "Modify target ABI from aarch64 to arm64"
+    echo "Normalize target ABI from aarch64 to arm64"
     target_abi="arm64";;
   x86_64,windows)
-    echo "Modify target ABI from x86_64 to x64 (as used on Windows)"
+    echo "Normalize target ABI from x86_64 to x64 (as used on Windows)"
     target_abi="x64";;
   x86_64,*)
-    echo "Modify target ABI from x86_64 to amd64 (used on Linux, etc)"
+    echo "Normalize target ABI from x86_64 to amd64 (used on Linux, etc)"
     target_abi="amd64";;
   i[3456]86,windows)
-    echo "Modify target ABI from $target_arch to x86 (as used on Win32)"
+    echo "Normalize target ABI from $target_arch to x86 (as used on Win32)"
     target_abi="x86";;  
   i[3456]86,*)
-    echo "Modify target ABI from $target_arch to amd32 (used on Linux, etc)"
+    echo "Normalize target ABI from $target_arch to amd32 (used on Linux, etc)"
     target_abi="amd32";;  
 esac
 
