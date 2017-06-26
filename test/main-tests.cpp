@@ -15,6 +15,8 @@ testing
 int main(void) {
   std::cout << "testing C++: " << LH_CCNAME << ", " << LH_TARGET << std::endl;
   // {
+    test_try();
+
 
   // regular c tests compiled as c++  
     test_exn();
@@ -31,7 +33,6 @@ int main(void) {
 
     // c++ specific tests with destructors, finalizers etc.  test_destructor();
     test_destructor();
-    test_try();
 
     // Show stats
     tests_done();
