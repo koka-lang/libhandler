@@ -68,7 +68,7 @@ static void uv_fs_free(uv_fs_t* req) {
   }
 }
   
-static int async_fstat(const char* path, uv_stat_t* stat ) {
+static int async_stat(const char* path, uv_stat_t* stat ) {
   memset(stat, 0, sizeof(uv_stat_t));
   uv_fs_t*   req = uv_fs_alloc();
   uv_loop_t* loop = async_uv_loop();
@@ -76,6 +76,19 @@ static int async_fstat(const char* path, uv_stat_t* stat ) {
   if (err == 0) {
     err = async_uv_await(req);
     if (err==0) *stat = req->statbuf;
+  }
+  uv_fs_free(req);
+  return err;
+}
+
+static int async_fstat(uv_file file, uv_stat_t* stat) {
+  memset(stat, 0, sizeof(uv_stat_t));
+  uv_fs_t*   req = uv_fs_alloc();
+  uv_loop_t* loop = async_uv_loop();
+  int err = uv_fs_fstat(loop, req, file, &async_fs_cb);
+  if (err == 0) {
+    err = async_uv_await(req);
+    if (err == 0) *stat = req->statbuf;
   }
   uv_fs_free(req);
   return err;
@@ -117,13 +130,49 @@ static int async_fread(uv_file file, uv_buf_t* buf, int64_t offset, ssize_t* rea
   return err;
 }
 
+static int async_fread_full(const char* path, ssize_t* len, char** contents ) {
+  *contents = NULL;
+  *len = 0;
+  uv_file file;
+  int err = async_fopen(path, O_RDONLY, 0, &file);
+  if (err != 0) return err;
+  uv_stat_t stat;
+  err = async_fstat(file, &stat);
+  if (err == 0) {
+    ssize_t size   = stat.st_size;
+    char*   buffer = (char*)malloc(size + 1);
+    uv_buf_t buf   = uv_buf_init(buffer, size);
+    ssize_t read = 0;
+    ssize_t total = 0;
+    while (total < size && (err = async_fread(file, &buf, -1, &read)) == 0 && read > 0) {
+      total += read;
+      if (total > size) {
+        total = size;
+      }
+      else {
+        buf = uv_buf_init(buffer + total, size - total);
+      }
+    }
+    buffer[total] = 0;
+    if (err == 0) {
+      *contents = buffer;
+      *len = total;
+    }
+    else {
+      free(buffer);
+    }
+  }
+  async_fclose(file);
+  return err;
+}
+
 /*-----------------------------------------------------------------
   Main
 -----------------------------------------------------------------*/
 static void test_stat() {
   const char* path = "cenv.h";
   uv_stat_t stat;
-  int err = async_fstat(path,&stat);
+  int err = async_stat(path,&stat);
   if (err==0) {
     printf("file %s last access time: %li\n", path, stat.st_atim.tv_sec);
   }
@@ -132,27 +181,18 @@ static void test_stat() {
   }
 }
 
-static char buffer[129];
-
 static void test_fileread() {
   printf("opening file\n");
-  uv_file f;
-  int err = async_fopen("cenv.h", O_RDONLY, 0, &f);
+  char* contents;
+  ssize_t len;
+  int err = async_fread_full("cenv.h", &len, &contents);
   if (err == 0) {
-    ssize_t read;
-    ssize_t size = 0;
-    uv_buf_t buf = uv_buf_init(buffer, 128);
-    while ((err = async_fread(f, &buf, -1, &read)) == 0 && read > 0) {
-      buffer[read-1] = 0;
-      printf("reading %i bytes:\n%s\n", read, buf.base);
-      size += read;
-    }
-    if (err == 0) {
-      err = async_fclose(f);
-      printf("closed file, total size: %li\n", size);
-    }
+    printf("read %li bytes\n: %s\n", len, contents);
+    free(contents);
   }
-  if (err != 0) fprintf(stderr, "error: %i: %s\n", err, uv_strerror(err));
+  else {
+    fprintf(stderr, "error: %i: %s\n", err, uv_strerror(err));
+  }
 }
 
 static void uv_main() {
