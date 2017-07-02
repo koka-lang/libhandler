@@ -48,6 +48,10 @@ platforms please test carefully. Currently tested platforms include:
 
 C++ support is working but still under development.
 
+There is an initial test code for integrating with `libuv` in the
+`test/libuv` directory (in the `dev` branch). The Microsoft IDE solution
+contains a project for building with `libuv`.
+
 
 ## Unix/MacOSX
 
