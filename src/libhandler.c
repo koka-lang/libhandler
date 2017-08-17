@@ -93,8 +93,17 @@
 #if defined(HAS_ASMSETJMP)
 // define the lh_jmp_buf in terms of `void*` elements to have natural alignment
 typedef void* lh_jmp_buf[ASM_JMPBUF_SIZE/sizeof(void*)];
+
+// Workaround macOS ABI prepending an underscore to external C functions
+#if defined(__MACH__)
+__externc __returnstwice int  lh_setjmp(lh_jmp_buf buf);
+__externc __noreturn     void lh_longjmp(lh_jmp_buf buf, int arg);
+# define _lh_setjmp lh_setjmp
+# define _lh_longjmp lh_longjmp
+#else
 __externc __returnstwice int  _lh_setjmp(lh_jmp_buf buf);
 __externc __noreturn     void _lh_longjmp(lh_jmp_buf buf, int arg);
+#endif
 
 #elif defined(HAS__SETJMP)
 # define lh_jmp_buf   jmp_buf
