@@ -42,12 +42,12 @@ lh_value tr_handle_test(lh_value arg) {
 }
 
 // test[pop-over-skip]
-lh_value exn_tr_handle_test(lh_value arg) {
-  return exn_handle(tr_handle_test, arg);
+lh_value excn_tr_handle_test(lh_value arg) {
+  return excn_handle(tr_handle_test, arg);
 }
 
 static void run() {
-  lh_value res1 = exn_tr_handle_test(lh_value_long(42));
+  lh_value res1 = excn_tr_handle_test(lh_value_long(42));
   test_printf("test res1: %li\n", lh_long_value(res1));
 }
 

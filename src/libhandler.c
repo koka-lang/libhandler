@@ -1203,21 +1203,25 @@ static __noinline void lh_done(hstack* hs) {
 }
 
 #ifdef __cplusplus
-class _raii_init {
-public:
+class _raii_hstack_init {
+private:
   bool init;
   hstack* hs;
-
-  _raii_init(hstack* _hs) {
+public:
+  _raii_hstack_init(hstack* _hs) {
     hs = _hs;
     init = lh_init(hs);
   }
-  ~_raii_init() {
+  ~_raii_hstack_init() {
     if (init) lh_done(hs);
   }
+  
+  hstack* hstack() {
+    return hs;
+  }
 };
-#define LH_INIT(hs)   { _raii_init __init(hs); 
-#define LH_DONE(hs)     assert(__init.hs == hs); }
+#define LH_INIT(hs)   { _raii_hstack_init __init(hs); 
+#define LH_DONE(hs)     assert(__init.hstack() == hs); }
 #else
 #define LH_INIT(hs)   { bool __init = lh_init(hs);
 #define LH_DONE(hs)   if (__init) lh_done(hs); }
@@ -1695,6 +1699,54 @@ lh_value lh_handle( const lh_handlerdef* def, lh_value local, lh_actionfun* acti
 
 
 /*-----------------------------------------------------------------
+  Linear handlers only have tail resume operations that do not exit themselves.
+  In that case we never have to capture a first-class resumption
+  and we can make them more convenient with block structured 
+  macros.
+-----------------------------------------------------------------*/
+
+#ifdef __cplusplus
+lh_raii_linear_handler::lh_raii_linear_handler(const lh_handlerdef* hdef, lh_value local) {
+  hstack* hs = &__hstack;
+  this->hs = hs;
+  this->init = lh_init(hs);
+  this->h = hstack_push_effect(hs, hdef, NULL /*no base*/, local);
+}
+lh_raii_linear_handler::~lh_raii_linear_handler() {
+  hstack* hs = (hstack*)this->hs;
+  const handler* top = hstack_top(hs);
+  assert(is_effecthandler(top));
+  assert(top == this->h);
+  hstack_pop(hs, true); // calls release
+  if (this->init) lh_done(hs);
+}
+
+#else
+void* _lh_linear_handler_init(const lh_handlerdef* hdef, lh_value local, bool* init) {
+  hstack* hs = &__hstack;
+  bool _init = lh_init(hs); if (init != NULL) *init = _init;
+  return hstack_push_effect(hs, hdef, NULL /*no base*/, local);
+}
+
+void _lh_linear_handler_done(void* h, bool init) {
+  if (h == NULL) return;
+  hstack* hs = &__hstack;
+  assert(hstack_top(hs) == h);
+  assert(((effecthandler*)h)->stackbase == NULL);
+  hstack_pop(hs, true); // calls the release function
+  if (init) lh_done(hs);
+}
+#endif
+
+// Effect declaration for defer (defined as macros in libhandler.h)
+LH_DEFINE_EFFECT0(defer);
+
+// Default operation declaration for implicit parameters (define in libhandler.h)
+lh_value _lh_implicit_get(lh_resume r, lh_value local, lh_value arg) {  
+  return lh_tail_resume(r, local, local);
+}
+
+/*-----------------------------------------------------------------
   Yield an operation
 -----------------------------------------------------------------*/
 
@@ -1733,7 +1785,7 @@ static lh_value __noinline yieldop(lh_optag optag, lh_value arg)
       hstack_push_skip(hs, skipped);
       count hidx = hstack_indexof(hs, to_handler(h));
       #ifdef __cplusplus
-      raii_hstack_pop do_pop(hs, true, LH_EFFECT(__skip));
+      raii_hstack_pop do_pop(hs, false /* skip frames need no release */, LH_EFFECT(__skip));
       #endif
       // call the operation handler directly for a tail resumption
       res = op->opfun(&r.lhresume, local, arg);

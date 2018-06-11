@@ -27,7 +27,7 @@ LH_DEFINE_OP0(async, uv_loop, uv_loop_ptr);
 static void async_fs_cb(uv_fs_t* req) {
   lh_resume r = (lh_resume)(req->data);
   if (r != NULL) {
-    int err = req->result >= 0 ? 0 : req->result;
+    ssize_t err = req->result >= 0 ? 0 : req->result;
     lh_release_resume(r, lh_value_uv_loop_ptr(req->loop), lh_value_int(err));
   }
 }
@@ -187,7 +187,7 @@ static void test_fileread() {
   ssize_t len;
   int err = async_fread_full("cenv.h", &len, &contents);
   if (err == 0) {
-    printf("read %li bytes\n: %s\n", len, contents);
+    printf("read %li bytes:\n%s\n", len, contents);
     free(contents);
   }
   else {

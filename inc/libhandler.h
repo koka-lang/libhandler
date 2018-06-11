@@ -315,9 +315,87 @@ const char* lh_effect_name(lh_effect effect);
 
 #define LH_WRAP_VOIDFUN0(fun) \
   lh_value wrap_##fun(lh_value arg) { (void)(arg); fun(); return lh_value_null; }
-
+  
 #define LH_WRAP_VOIDFUN1(fun,argtype) \
   lh_value wrap_##fun(lh_value arg) { fun(lh_##argtype##_value(arg)); return lh_value_null; }
 
+
+
+/*-----------------------------------------------------------------
+  Linear handlers: have either no operations, or only
+  operations that do a tail resume without early exit themselves.
+-----------------------------------------------------------------*/
+
+#ifdef __cplusplus
+class lh_raii_linear_handler {
+private:
+  void*  h;     // effecthandler*
+  void*  hs;    // hstack*
+  bool   init;
+public:
+  lh_raii_linear_handler(const lh_handlerdef* hdef, lh_value local);
+  ~lh_raii_linear_handler();
+};
+#define LH_LINEAR(hdef,local) { lh_raii_linear_handler _linear_handler(hdef,local); {
+#define LH_LINEAR_END         } }
+#else
+void* _lh_linear_handler_init(const lh_handlerdef* hdef, lh_value local, bool* init);
+void _lh_linear_handler_done(void* h, bool init);
+#define LH_LINEAR(hdef,local) { bool _linear_init = false; \
+                                void* _linear_handler = _lh_linear_handler_init(hdef,local,&_linear_init); {
+#define LH_LINEAR_END         } _lh_linear_handler_done(_linear_handler,_linear_init); }
+#endif
+
+/*-----------------------------------------------------------------
+ Defer
+-----------------------------------------------------------------*/
+LH_DECLARE_EFFECT0(defer)
+
+#define LH_DEFER(release_fun,local) { const lh_handlerdef _deferdef = { LH_EFFECT(defer), NULL, release_fun, NULL, NULL }; \
+                                      LH_LINEAR(&_deferdef,local)
+#define LH_DEFER_END                  LH_LINEAR_END }
+
+
+/*-----------------------------------------------------------------
+  Implicit Parameters
+-----------------------------------------------------------------*/
+lh_value _lh_implicit_get(lh_resume r, lh_value local, lh_value arg);
+
+#define LH_IMPLICIT(name,local)     { const lh_operation _ops[2] = { { LH_OP_TAIL_NOOP, LH_OPTAG(name,get), &_lh_implicit_get }, NULL }; \
+                                      const lh_handlerdef _hdef  = { LH_EFFECT(name), NULL, NULL, NULL, _ops }; \
+                                      LH_LINEAR(&_hdef,local)
+#define LH_IMPLICIT_END               LH_LINEAR_END }
+
+
+
+/*-----------------------------------------------------------------
+  Standard exceptions
+-----------------------------------------------------------------*/
+
+typedef struct _lh_exception {
+  int         code;
+  const char* msg;
+  void*       data;
+  int         _is_alloced;  // 0: static, bits: 0:exception, 1:msg, 2:data, determines if needs free
+} lh_exception;
+
+// Free an exception
+void lh_exception_free(lh_exception* exn);
+
+// Create exceptions
+lh_exception* lh_exception_alloc_ex(int code, const char* msg, void* data, int _is_alloced);
+lh_exception* lh_exception_alloc_strdup(int code, const char* msg);
+lh_exception* lh_exception_alloc(int code, const char* msg);
+
+// The Exception effect
+LH_DECLARE_EFFECT1(exn, _throw)
+
+// Throw an exception
+void lh_throw(const lh_exception* e);
+void lh_throw_errno(int eno);
+
+// Convert an exceptional computation to an exceptional value
+// If an exception is thrown, `exn` will be set to a non-null value
+lh_value lh_try(lh_exception** exn, lh_actionfun* action, lh_value arg);
 
 #endif // __libhandler_h
