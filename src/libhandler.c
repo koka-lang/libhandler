@@ -1621,10 +1621,11 @@ static __noinline lh_value handle_with(
     lh_resultfun* resfun = NULL;
     lh_value local = lh_value_null;
     #ifdef __cplusplus
-      try { 
-        raii_hstack_pop do_pop(hs, true, h->hdef->effect);
-    #endif
-        res = action(arg); 
+    {
+      raii_hstack_pop do_pop(hs, true, h->hdef->effect);
+      try {
+        #endif
+        res = action(arg);
         assert(hs == &__hstack);
         h = (effecthandler*)hstack_top(hs);  // re-load our handler since the handler stack could have been reallocated
         #ifndef NDEBUG
@@ -1634,18 +1635,19 @@ static __noinline lh_value handle_with(
         #endif
         // pop our handler
         resfun = h->hdef->resultfun;
-        local  = h->local;
-    #ifndef __cplusplus
+        local = h->local;
+        #ifndef __cplusplus
         hstack_pop(hs, true);
-    #else
+        #else
       }
-      catch (const lh_unwind_exception& exn) { 
-        if (exn.handler==NULL || exn.handler->id != id) throw; // rethrow to other handler
+      catch (const lh_unwind_exception& exn) {
+        if (exn.handler == NULL || exn.handler->id != id) throw; // rethrow to other handler
         res = exn.res;
         if (exn.opfun != NULL) {
           res = exn.opfun(NULL, exn.handler->local, res); // LH_OP_NORESUME
         }
       }
+    }
     #endif
     if (resfun != NULL) {
       res = resfun(local, res);

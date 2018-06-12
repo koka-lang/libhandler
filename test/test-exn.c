@@ -14,12 +14,20 @@ testing
 static void free_resource(lh_value arg) {
   test_printf("free resource: %i\n", lh_int_value(arg));  
 }
+static void free_ptr(lh_value arg) {
+  void* p = lh_ptr_value(arg);
+  test_printf("free ptr: is null: %s\n", (p==NULL?"true":"false"));
+  if (p!=NULL) free(p);
+}
 
 static lh_value action1(lh_value arg) {
   int resource = 42;
-  LH_DEFER(&free_resource, lh_value_int(resource))
-  lh_throw_errno(EDOM);
-  LH_DEFER_END
+  {defer(&free_resource, lh_value_int(resource)) {
+    void* p = malloc(42);
+    {defer(&free_ptr, lh_value_ptr(p)) {
+      lh_throw_errno(EDOM);
+    }}
+  }}
   return 42;
 }
 
@@ -43,6 +51,7 @@ static void run() {
 void test_exn()
 {
   test("builtin exceptions", run,
+    "free ptr: is null: false\n"
     "free resource: 42\n"
     "exception: Domain error\n"
   );
