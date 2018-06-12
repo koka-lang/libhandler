@@ -1239,12 +1239,13 @@ public:
 // variables will remain in-tact. The `no_opt` parameter is there so 
 // smart compilers (i.e. clang) will not optimize away the `alloca` in `jumpto`.
 static __noinline __noreturn void _jumpto_stack(
-  const cstack cs, lh_jmp_buf* entry, bool freecframes, struct exn_frame* exnframe, byte* no_opt )
+  byte* cframes, ptrdiff_t size, byte* base,
+  lh_jmp_buf* entry, bool freecframes, struct exn_frame* exnframe, byte* no_opt )
 {
   if (no_opt != NULL) no_opt[0] = 0;
   // copy the saved stack onto our stack
-  memcpy((void*)cs.base, cs.frames, cs.size);           // this will not overwrite our stack frame 
-  if (freecframes) { free(cs.frames); }  // should be fine to call `free` (assuming it will not mess with the stack above its frame)
+  memcpy(base, cframes, size);         // this will not overwrite our stack frame 
+  if (freecframes) { free(cframes); }  // should be fine to call `free` (assuming it will not mess with the stack above its frame)
   // and jump 
   // _lh_longjmp_chain(*entry, cstack_bottom(&cs), exnframe);
   if (exnframe != NULL) {
@@ -1285,7 +1286,8 @@ static __noinline __noreturn void jumpto(
     // since we allocated more, the execution of `_jumpto_stack` will be in a stack frame 
     // that will not get overwritten itself when copying the new stack
     // void* exnframe = (resuming ? _lh_get_exn_frame(cstack_bottom(cs)) : NULL);
-    _jumpto_stack(*cs, entry, freecframes, exnframe, no_opt);
+    _jumpto_stack(cs->frames, cs->size, (byte*)cstack_base(cs),
+                  entry, freecframes, exnframe, no_opt);
   }
 }
 
