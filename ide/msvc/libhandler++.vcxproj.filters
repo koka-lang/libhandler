@@ -25,6 +25,9 @@
     <ClInclude Include="cenv.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\inc\libhandler-internal.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <MASM Include="..\..\src\asm\setjmp_x86.asm">

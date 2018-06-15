@@ -25,6 +25,7 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\..\inc\libhandler-internal.h" />
     <ClInclude Include="..\..\inc\libhandler.h" />
     <ClInclude Include="cenv.h" />
   </ItemGroup>

@@ -1,16 +1,12 @@
 /* ----------------------------------------------------------------------------
-Copyright (c) 2016,2017, Microsoft Research, Daan Leijen
+Copyright (c) 2016-2018, Microsoft Research, Daan Leijen
 This is free software; you can redistribute it and/or modify it under the
 terms of the Apache License, Version 2.0. A copy of the License can be
 found in the file "license.txt" at the root of this distribution.
 -----------------------------------------------------------------------------*/
 
-#ifdef __cplusplus
-#include <exception>
-#include <utility>
-#endif
-
 #include "libhandler.h"
+#include "libhandler-internal.h"
 #include <malloc.h>
 #include <string.h>
 #include <errno.h>
@@ -42,7 +38,7 @@ lh_exception* lh_exception_alloc_ex(int code, const char* msg, void* data, int _
 }
 
 lh_exception* lh_exception_alloc_strdup(int code, const char* msg) {
-  return lh_exception_alloc_ex(code, _strdup(msg), NULL, 0x02);
+  return lh_exception_alloc_ex(code, lh_strdup(msg), NULL, 0x02);
 }
 
 lh_exception* lh_exception_alloc(int code, const char* msg) {
@@ -58,11 +54,20 @@ void lh_throw(const lh_exception* e) {
   lh_yield(LH_OPTAG(exn,_throw), lh_value_ptr(e)); 
 }
 
+void lh_throw_str(int code, const char* msg) {
+  lh_throw(lh_exception_alloc(code, msg));
+}
+
+void lh_throw_strdup(int code, const char* msg) {
+  lh_throw(lh_exception_alloc_strdup(code, msg));
+}
+
 void lh_throw_errno(int eno) {
   char msg[256];
   strerror_s(msg, 255, eno); msg[255] = 0;
-  lh_throw(lh_exception_alloc_strdup(eno, msg));
+  lh_throw_strdup(eno, msg);
 }
+
 
 
 static lh_value _handle_exn_throw(lh_resume r, lh_value local, lh_value arg) {
@@ -85,13 +90,16 @@ static lh_value exn_try(lh_exception** exn, lh_value(*action)(lh_value), lh_valu
 
 
 // Convert an exceptional computation to an exceptional value
-lh_value lh_try(lh_exception** exn, lh_actionfun* action, lh_value arg) {
+static lh_value _lh_try(lh_exception** exn, lh_actionfun* action, lh_value arg, bool catchall) {
   #ifdef __cplusplus
   try {
   #endif
     return exn_try(exn, action, arg);
   #ifdef __cplusplus
   } 
+  catch (lh_unwind_exception e) {
+    throw e;
+  }
   catch (std::exception e) {
     *exn = lh_exception_alloc_strdup(EOTHER, e.what());  // TODO: how to store a first class exception?
   }
@@ -102,3 +110,10 @@ lh_value lh_try(lh_exception** exn, lh_actionfun* action, lh_value arg) {
   #endif
 }
 
+lh_value lh_try(lh_exception** exn, lh_actionfun* action, lh_value arg) {
+  return _lh_try(exn, action, arg, false);
+}
+
+lh_value lh_try_all(lh_exception** exn, lh_actionfun* action, lh_value arg) {
+  return _lh_try(exn, action, arg, true);
+}

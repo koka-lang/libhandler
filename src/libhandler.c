@@ -43,6 +43,7 @@
 #endif
 
 #include "libhandler.h"
+#include "libhandler-internal.h"
 #include "cenv.h"     // configure generated
 
 #include <stddef.h>   // ptrdiff_t
@@ -321,11 +322,13 @@ void lh_register_onfatal(lh_fatalfun* _onfatal) {
 
 // Set up different allocation functions
 static lh_mallocfun* custom_malloc = NULL;
+static lh_callocfun* custom_calloc = NULL;
 static lh_reallocfun* custom_realloc = NULL;
 static lh_freefun* custom_free = NULL;
 
-void lh_register_malloc(lh_mallocfun* _malloc, lh_reallocfun* _realloc, lh_freefun* _free) {
+void lh_register_malloc(lh_mallocfun* _malloc, lh_callocfun* _calloc, lh_reallocfun* _realloc, lh_freefun* _free) {
   custom_malloc = _malloc;
+  custom_calloc = _calloc;
   custom_realloc = _realloc;
   custom_free = _free;
 }
@@ -343,25 +346,58 @@ void lh_register_malloc(lh_mallocfun* _malloc, lh_reallocfun* _realloc, lh_freef
 static void* checked_malloc(size_t size) {
   //assert((ptrdiff_t)(size) > 0); // check for overflow or negative sizes
   if ((ptrdiff_t)(size) <= 0) fatal(EINVAL, "invalid memory allocation size: %lu", (unsigned long)size );
-  void* p = (custom_malloc==NULL ? malloc(size) : custom_malloc(size));
+  void* p = lh_malloc(size);
   if (p == NULL) fatal(ENOMEM, "out of memory");
   return p;
 }
 static void* checked_realloc(void* p, size_t size) {
   //assert((ptrdiff_t)(size) > 0); // check for overflow or negative sizes
   if ((ptrdiff_t)(size) <= 0) fatal(EINVAL, "invalid memory re-allocation size: %lu", (unsigned long)size);
-  void* q = (custom_realloc==NULL ? realloc(p,size) : custom_realloc(p,size));
+  void* q = lh_realloc(p, size);
   if (q == NULL) fatal(ENOMEM, "out of memory");
   return q;
 }
 static void checked_free(void* p) {
+  lh_free(p);
+}
+#endif
+
+void* lh_malloc(size_t size) {
+  return (custom_malloc == NULL ? malloc(size) : custom_malloc(size));  
+}
+void* lh_calloc(size_t n, size_t size) {
+  return (custom_calloc == NULL ? calloc(n,size) : custom_calloc(n,size));
+}
+void* lh_realloc(void* p, size_t size) {
+  return (custom_realloc == NULL ? realloc(p, size) : custom_realloc(p, size));  
+}
+void lh_free(void* p) {
+  assert(p != NULL);
   if (p == NULL) return;
   if (custom_free == NULL) free(p);
   else custom_free(p);
 }
-#endif
+static char* _lh_strndup(const char* s, size_t max) {
+  size_t n = (max == SIZE_MAX ? max : max + 1);
+  char* t = (char*)lh_malloc(n * sizeof(char));
+  #ifdef _MSC_VER
+  strncpy_s(t, n, s, max);
+  #else
+  strncpy(t, s, max);
+  #endif
+  t[max] = 0;
+  return t;
+}
 
-
+char* lh_strdup(const char* s) {
+  if (s == NULL) return NULL;
+  size_t n = strlen(s);
+  return  _lh_strndup(s, n);
+}
+char* lh_strndup(const char* s, size_t max) {
+  if (s == NULL) return NULL;
+  return _lh_strndup(s, max);
+}
 
 /*-----------------------------------------------------------------
   Stack helpers; these abstract over the direction the C stack grows.
@@ -1368,29 +1404,6 @@ static void capture_hstack(hstack* hs, hstack* to, effecthandler* h, bool copy) 
 
 
 #ifdef __cplusplus
-// in some cases (like LH_OP_NORESUME) we need to unwind to the effect handler operation
-// while calling destructors. We do this using a special unwind exception.
-class lh_unwind_exception : public std::exception {
-public:
-  const effecthandler*  handler;
-  lh_opfun*             opfun;
-  lh_value              res;
-  
-  lh_unwind_exception(const effecthandler* h, lh_opfun* o, lh_value r) : handler(h), opfun(o), res(r) {  }
-  lh_unwind_exception(const lh_unwind_exception& e) : handler(e.handler), opfun(e.opfun), res(e.res) {  }
-  
-  lh_unwind_exception& operator=(const lh_unwind_exception& e) {
-    handler = e.handler;
-    opfun = e.opfun;
-    res = e.res;
-    return *this;
-  }
-  
-  virtual const char* what() const throw() {
-    return "libhandler: unwinding the stack; do not catch this exception!";
-  }
-};
-
 // Return to a handler by unwinding the handler stack and invoking any destructors.
 static void __noinline __noreturn yield_to_handler_unwind(effecthandler* h, const lh_operation* op, lh_value oparg)  {
   throw lh_unwind_exception(h, op->opfun, oparg);

@@ -97,6 +97,7 @@ typedef void lh_fatalfun(int err, const char* msg);
 
 // Function definitions if using custom allocators
 typedef void* lh_mallocfun(size_t size);
+typedef void* lh_callocfun(size_t n, size_t size);
 typedef void* lh_reallocfun(void* p, size_t size);
 typedef void* lh_freefun(void* p);
 
@@ -227,7 +228,17 @@ void lh_register_onfatal(lh_fatalfun* onfatal);
 
 
 // Register custom allocation functions
-void lh_register_malloc(lh_mallocfun* malloc, lh_reallocfun* realloc, lh_freefun* free);
+void lh_register_malloc(lh_mallocfun* malloc, lh_callocfun* calloc, lh_reallocfun* realloc, lh_freefun* free);
+
+
+void* lh_malloc(size_t size);
+void* lh_calloc(size_t count, size_t size);
+void* lh_realloc(void* p, size_t newsize);
+void  lh_free(void* p);
+char* lh_strdup(const char* s);
+char* lh_strndup(const char* s, size_t max);
+
+
 
 /*-----------------------------------------------------------------
   Operation tags 
@@ -396,9 +407,14 @@ LH_DECLARE_EFFECT1(exn, _throw)
 // Throw an exception
 void lh_throw(const lh_exception* e);
 void lh_throw_errno(int eno);
+void lh_throw_str(int code, const char* msg);
+void lh_throw_strdup(int code, const char* msg);
 
 // Convert an exceptional computation to an exceptional value
 // If an exception is thrown, `exn` will be set to a non-null value
 lh_value lh_try(lh_exception** exn, lh_actionfun* action, lh_value arg);
+
+// Also catch 'uncatchable' exceptions (like cancelation)
+lh_value lh_try_all(lh_exception** exn, lh_actionfun* action, lh_value arg);
 
 #endif // __libhandler_h
