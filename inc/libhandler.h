@@ -340,20 +340,22 @@ const char* lh_effect_name(lh_effect effect);
 #ifdef __cplusplus
 class lh_raii_linear_handler {
 private:
-  void*  h;     // effecthandler*
-  void*  hs;    // hstack*
-  bool   init;
+  ptrdiff_t id;
+  void*     hs;    // hstack*
+  bool      do_release;
+  bool      init;
 public:
-  lh_raii_linear_handler(const lh_handlerdef* hdef, lh_value local);
+  lh_raii_linear_handler(const lh_handlerdef* hdef, lh_value local, bool do_release);
   ~lh_raii_linear_handler();
 };
-#define LH_LINEAR(hdef,local) lh_raii_linear_handler _lh_linear_handler(hdef,local); 
+#define LH_LINEAR(hdef,local,do_release) lh_raii_linear_handler _lh_linear_handler(hdef,local,do_release); 
 #else
-void* _lh_linear_handler_init(const lh_handlerdef* hdef, lh_value local, bool* init);
-void _lh_linear_handler_done(void* h, bool init);
-#define LH_LINEAR(hdef,local)   bool _lh_linear_init = false; \
-                                void* _lh_linear_handler = _lh_linear_handler_init(hdef,local,&_lh_linear_init); \
-                                for(bool _lh_linear_first = true; _lh_linear_first; (_lh_linear_handler_done(_lh_linear_handler,_lh_linear_init), _lh_linear_first=false))
+ptrdiff_t  _lh_linear_handler_init(const lh_handlerdef* hdef, lh_value local, bool* init);
+void       _lh_linear_handler_done(ptrdiff_t id, bool init, bool do_release);
+#define LH_LINEAR(hdef,local,do_release)  \
+                  bool _lh_linear_init = false; \
+                  ptrdiff_t _lh_linear_id = _lh_linear_handler_init(hdef,local,&_lh_linear_init); \
+                  for(bool _lh_linear_first = true; _lh_linear_first; (_lh_linear_handler_done(_lh_linear_id,_lh_linear_init,do_release), _lh_linear_first=false))
 #endif
 
 /*-----------------------------------------------------------------
@@ -363,9 +365,15 @@ void _lh_linear_handler_done(void* h, bool init);
 LH_DECLARE_EFFECT0(defer)
 
 #define LH_DEFER(release_fun,local)   const lh_handlerdef _lh_deferdef = { LH_EFFECT(defer), NULL, release_fun, NULL, NULL }; \
-                                      LH_LINEAR(&_lh_deferdef,local)
+                                      LH_LINEAR(&_lh_deferdef,local,true)
 
 #define defer(release_fun,local)      LH_DEFER(release_fun,local)
+
+
+#define LH_ON_EXN(release_fun,local)  const lh_handlerdef _lh_deferdef = { LH_EFFECT(defer), NULL, release_fun, NULL, NULL }; \
+                                      LH_LINEAR(&_lh_deferdef,local,false)
+
+#define on_exn(release_fun,local)     LH_ON_EXN(release_fun,local)
 
 /*-----------------------------------------------------------------
   Implicit Parameters:
@@ -375,7 +383,7 @@ lh_value _lh_implicit_get(lh_resume r, lh_value local, lh_value arg);
 
 #define LH_IMPLICIT(name,local)       const lh_operation _lh_imp_ops[2] = { { LH_OP_TAIL_NOOP, LH_OPTAG(name,get), &_lh_implicit_get }, NULL }; \
                                       const lh_handlerdef _lh_imp_hdef  = { LH_EFFECT(name), NULL, NULL, NULL, _lh_imp_ops }; \
-                                      LH_LINEAR(&_lh_imp_hdef,local)
+                                      LH_LINEAR(&_lh_imp_hdef,local,false)
 
 #define implicit(name,local)          LH_IMPLICIT(name,local)
 #define implicit_declare(name)        LH_DECLARE_EFFECT1(name,get) 

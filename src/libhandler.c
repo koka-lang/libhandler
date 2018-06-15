@@ -1723,34 +1723,37 @@ lh_value lh_handle( const lh_handlerdef* def, lh_value local, lh_actionfun* acti
 -----------------------------------------------------------------*/
 
 #ifdef __cplusplus
-lh_raii_linear_handler::lh_raii_linear_handler(const lh_handlerdef* hdef, lh_value local) {
+lh_raii_linear_handler::lh_raii_linear_handler(const lh_handlerdef* hdef, lh_value local, bool do_release) {
   hstack* hs = &__hstack;
   this->hs = hs;
+  this->do_release = do_release;
   this->init = lh_init(hs);
-  this->h = hstack_push_effect(hs, hdef, NULL /*no base*/, local);
+  effecthandler* h = hstack_push_effect(hs, hdef, NULL /*no base*/, local);
+  this->id = h->id;
 }
 lh_raii_linear_handler::~lh_raii_linear_handler() {
   hstack* hs = (hstack*)this->hs;
   const handler* top = hstack_top(hs);
   assert(is_effecthandler(top));
-  assert(top == this->h);
-  hstack_pop(hs, true); // calls release
+  assert(((effecthandler*)top)->id == this->id);
+  hstack_pop(hs, do_release); 
   if (this->init) lh_done(hs);
 }
 
 #else
-void* _lh_linear_handler_init(const lh_handlerdef* hdef, lh_value local, bool* init) {
+ptrdiff_t _lh_linear_handler_init(const lh_handlerdef* hdef, lh_value local, bool* init) {
   hstack* hs = &__hstack;
   bool _init = lh_init(hs); if (init != NULL) *init = _init;
-  return hstack_push_effect(hs, hdef, NULL /*no base*/, local);
+  effecthandler* h = hstack_push_effect(hs, hdef, NULL /*no base*/, local);
+  return h->id;
 }
 
-void _lh_linear_handler_done(void* h, bool init) {
-  if (h == NULL) return;
+void _lh_linear_handler_done(ptrdiff_t id, bool init, bool do_release) {
   hstack* hs = &__hstack;
-  assert(hstack_top(hs) == h);
-  assert(((effecthandler*)h)->stackbase == NULL);
-  hstack_pop(hs, true); // calls the release function
+  handler* top = hstack_top(hs);
+  assert(is_effecthandler(top));
+  assert(((effecthandler*)top)->id==id);
+  hstack_pop(hs, do_release); 
   if (init) lh_done(hs);
 }
 #endif

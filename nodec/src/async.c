@@ -1,4 +1,5 @@
-#include <nodec.h>
+#include "nodec.h"
+#include "nodec-internal.h"
 #include <uv.h>
 #include <assert.h> 
 
@@ -22,24 +23,33 @@ uv_loop_t* async_loop() {
   return async_uv_loop();
 }
 
-int async_await(uv_req_t* req) {
+void async_await(uv_req_t* req) {
+  check_uv_err(asyncx_await(req));
+}
+
+int asyncx_await(uv_req_t* req) {
   return async_uv_await(req);
 }
 
 // Await a file system request
-int async_await_fs(uv_fs_t* req) {
+int asyncx_await_fs(uv_fs_t* req) {
   return async_uv_await((uv_req_t*)req);
 }
 
+void async_await_fs(uv_fs_t* req) {
+  check_uv_err(asyncx_await_fs(req));
+}
+
+
 // Check an error result, throwing on error
-void _check_uv_err(int uverr) {
+void check_uv_err(int uverr) {
   if (uverr < 0) {
     lh_throw(lh_exception_alloc_strdup(uverr, uv_strerror(uverr)));
   }
 }
 
 // Check an error result, throwing on error
-void _check_uv_errmsg(int uverr, const char* msg) {
+void check_uv_errmsg(int uverr, const char* msg) {
   if (uverr < 0) {
     char buf[256];
     snprintf(buf, 255, "%s: %s", uv_strerror(uverr), msg);
@@ -149,6 +159,7 @@ static const lh_operation _local_async_ops[] = {
 const lh_handlerdef _local_async_hdef = { LH_EFFECT(async), NULL, NULL, NULL, _local_async_ops };
 
 
+
 /*-----------------------------------------------------------------
 Main wrapper
 -----------------------------------------------------------------*/
@@ -184,6 +195,7 @@ void async_main( nc_entryfun_t* entry  ) {
   int result = uv_run(loop, UV_RUN_DEFAULT);
   uv_loop_close(loop);
 
+  nodec_check_memory();
   char buf[128];
   printf("done! (press enter to quit)\n"); gets(buf);
   return;

@@ -1,4 +1,5 @@
-#include <nodec.h>
+#include "nodec.h"
+#include "nodec-internal.h"
 #include <uv.h>
 #include <assert.h> 
 
@@ -88,10 +89,10 @@ static void lh_channel_receive(lh_channel* channel, lh_channel_elem* result) {
     uv_channel_req_t* req = (uv_channel_req_t*)calloc(1, sizeof(uv_channel_req_t));
     channel->listener_arg = lh_value_ptr(req);
     channel->listener = &_channel_req_listener;
-    int err = async_await(&req->req);               // reqular await, triggered on channel_req_listener
+    int err = asyncx_await(&req->req);               // reqular await, triggered on channel_req_listener
     *result = req->elem;
     free(req);
-    _check_uv_err(err);
+    check_uv_err(err);
   }
 }
 

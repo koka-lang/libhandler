@@ -19,12 +19,14 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\..\nodec\inc\nodec-internal.h" />
     <ClInclude Include="..\..\nodec\inc\nodec.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\nodec\src\async.c" />
     <ClCompile Include="..\..\nodec\src\fs.c" />
     <ClCompile Include="..\..\nodec\src\interleave.c" />
+    <ClCompile Include="..\..\nodec\src\memory.c" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{C17F698B-0CF9-4034-9F70-CCB61DE46812}</ProjectGuid>
