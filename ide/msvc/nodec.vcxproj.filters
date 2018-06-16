@@ -35,5 +35,8 @@
     <ClCompile Include="..\..\nodec\src\memory.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\nodec\src\channel.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
 </Project>

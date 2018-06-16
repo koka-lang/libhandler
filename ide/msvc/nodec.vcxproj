@@ -24,6 +24,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\nodec\src\async.c" />
+    <ClCompile Include="..\..\nodec\src\channel.c" />
     <ClCompile Include="..\..\nodec\src\fs.c" />
     <ClCompile Include="..\..\nodec\src\interleave.c" />
     <ClCompile Include="..\..\nodec\src\memory.c" />
@@ -108,8 +109,10 @@
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <SDLCheck>true</SDLCheck>
-      <PrecompiledHeaderFile> </PrecompiledHeaderFile>
-      <PrecompiledHeaderOutputFile> </PrecompiledHeaderOutputFile>
+      <PrecompiledHeaderFile>
+      </PrecompiledHeaderFile>
+      <PrecompiledHeaderOutputFile>
+      </PrecompiledHeaderOutputFile>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -122,8 +125,10 @@
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <SDLCheck>true</SDLCheck>
-      <PrecompiledHeaderFile> </PrecompiledHeaderFile>
-      <PrecompiledHeaderOutputFile> </PrecompiledHeaderOutputFile>
+      <PrecompiledHeaderFile>
+      </PrecompiledHeaderFile>
+      <PrecompiledHeaderOutputFile>
+      </PrecompiledHeaderOutputFile>
       <AdditionalIncludeDirectories>..\..\inc;..\..\libuv\include;..\..\nodec\inc;.</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
@@ -140,8 +145,10 @@
       <PreprocessorDefinitions>WIN32;NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <SDLCheck>true</SDLCheck>
       <AdditionalIncludeDirectories>..\..\inc;..\..\libuv\include;..\..\nodec\inc;.</AdditionalIncludeDirectories>
-      <PrecompiledHeaderFile> </PrecompiledHeaderFile>
-      <PrecompiledHeaderOutputFile> </PrecompiledHeaderOutputFile>
+      <PrecompiledHeaderFile>
+      </PrecompiledHeaderFile>
+      <PrecompiledHeaderOutputFile>
+      </PrecompiledHeaderOutputFile>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -158,8 +165,10 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions>NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <SDLCheck>true</SDLCheck>
-      <PrecompiledHeaderFile> </PrecompiledHeaderFile>
-      <PrecompiledHeaderOutputFile> </PrecompiledHeaderOutputFile>
+      <PrecompiledHeaderFile>
+      </PrecompiledHeaderFile>
+      <PrecompiledHeaderOutputFile>
+      </PrecompiledHeaderOutputFile>
       <AdditionalIncludeDirectories>..\..\inc;..\..\libuv\include;..\..\nodec\inc;.</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>

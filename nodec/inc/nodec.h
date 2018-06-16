@@ -51,6 +51,28 @@ typedef void (nc_entryfun_t)();
 
 void async_main( nc_entryfun_t* entry );
 
+
+/* ----------------------------------------------------------------------------
+  Channels
+-----------------------------------------------------------------------------*/
+
+typedef struct _lh_channel_elem {
+  lh_value data;
+  lh_value arg;
+  int      err;
+} lh_channel_elem;
+
+struct _lh_channel;
+typedef struct _lh_channel lh_channel;
+
+lh_channel* lh_channel_alloc();
+void lh_channel_free(lh_channel* channel);
+void lh_channel_emit(lh_channel* channel, lh_channel_elem* elem);
+lh_channel_elem lh_channel_receive(lh_channel* channel);
+
+void lh_channel_freev(lh_value vchannel);
+#define with_channel(name) lh_channel* name = lh_channel_alloc(); defer(&lh_channel_freev,lh_value_ptr(name))
+
 /* ----------------------------------------------------------------------------
   Safe allocation
   These raise an exception on failure
@@ -93,8 +115,11 @@ char* nodec_strndup(const char* s, size_t max);
 #define nodec_alloc(tp)         ((tp*)(nodec_malloc(sizeof(tp))))
 #define nodec_nalloc(n,tp)      ((tp*)(nodec_malloc((n)*sizeof(tp))))
 #define nodec_ncalloc(n,tp)     ((tp*)(nodec_calloc(n,sizeof(tp))))
-#define with_alloc(tp,name)     tp* name = nodec_alloc(tp); defer(nodec_freev,lh_value_ptr(name))
-#define with_nalloc(n,tp,name)  tp* name = nodec_nalloc(n,tp); defer(nodec_freev,lh_value_ptr(name))
+
+#define with_free(name)         defer(nodec_freev,lh_value_ptr(name))
+#define with_alloc(tp,name)     tp* name = nodec_alloc(tp); with_free(name)
+#define with_nalloc(n,tp,name)  tp* name = nodec_nalloc(n,tp); with_free(name)
+#define with_ncalloc(n,tp,name) tp* name = nodec_ncalloc(n,tp); with_free(name)
 
 #define nodec_zero(tp,ptr)      memset(ptr,0,sizeof(tp));
 
