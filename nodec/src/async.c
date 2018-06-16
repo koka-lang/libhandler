@@ -42,7 +42,7 @@ void async_await_fs(uv_fs_t* req) {
 
 // Await a connection request
 int asyncx_await_connect(uv_connect_t* req) {
-  return async_uv_await((uv_connect_t*)req);
+  return async_uv_await((uv_req_t*)req);
 }
 
 void async_await_connect(uv_connect_t* req) {
@@ -51,7 +51,7 @@ void async_await_connect(uv_connect_t* req) {
 
 // The entry point for connection callbacks
 void _async_connect_cb(uv_connect_t* req) {
-  _async_plain_cb((uv_req_t*)req);
+  _async_plain_cb((uv_req_t*)req,0);
 }
 
 // Check an error result, throwing on error

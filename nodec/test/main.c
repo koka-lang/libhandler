@@ -2,7 +2,7 @@
 #include <nodec.h>
 
 /*-----------------------------------------------------------------
-Main
+  Test files
 -----------------------------------------------------------------*/
 static void test_stat() {
   const char* path = "cenv.h";
@@ -19,6 +19,15 @@ static void test_fileread() {
     printf("read %Ii bytes from %s:\n...\n", strlen(contents), path);
   }}
 }
+
+static void test_files() {
+  test_stat();
+  test_fileread();
+}
+
+/*-----------------------------------------------------------------
+  Test interleave
+-----------------------------------------------------------------*/
 
 lh_value test_statx(lh_value arg) {
   test_stat();
@@ -40,11 +49,27 @@ static void test_interleave() {
   interleave(3, actions);
 }
 
+/*-----------------------------------------------------------------
+  TCP
+-----------------------------------------------------------------*/
+
+static void test_tcp() {
+  channel_t* ch = nodec_tcp_listen_at4("127.0.0.1", 80, 0, 0);
+  {defer(channel_freev, lh_value_ptr(ch)) {
+    channel_elem e = channel_receive(ch);
+    printf("got a connection!\n");
+  }}
+}
+
+/*-----------------------------------------------------------------
+  Main
+-----------------------------------------------------------------*/
+
 static void entry() {
   printf("in the main loop\n");
-  //test_stat();
-  //test_fileread();
-  test_interleave();
+  //test_files();
+  //test_interleave();
+  test_tcp();
 }
 
 

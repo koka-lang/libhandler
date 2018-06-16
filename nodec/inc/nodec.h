@@ -12,6 +12,9 @@
 #include <uv.h>
 
 
+struct _channel_s;
+typedef struct _channel_s channel_t;
+
 /* ----------------------------------------------------------------------------
   Asynchronous primitives
 -----------------------------------------------------------------------------*/
@@ -45,6 +48,19 @@ ssize_t   async_fread(uv_file file, uv_buf_t* buf, int64_t offset);
 char*     async_fread_full(const char* path);
 
 /* ----------------------------------------------------------------------------
+  TCP
+-----------------------------------------------------------------------------*/
+
+uv_tcp_t*   nodec_tcp_alloc();
+void        nodec_tcp_free(uv_tcp_t* tcp);
+void        nodec_tcp_freev(lh_value tcp);
+void        nodec_tcp_bind(uv_tcp_t* handle, const struct sockaddr_in* addr, unsigned int flags);
+channel_t*  nodec_tcp_listen(uv_tcp_t* tcp, int backlog);
+
+// Convenience
+channel_t*  nodec_tcp_listen_at4(const char* name, unsigned int port, int backlog, unsigned int flags);
+
+/* ----------------------------------------------------------------------------
   Other
 -----------------------------------------------------------------------------*/
 
@@ -63,8 +79,7 @@ typedef struct _channel_elem {
   int      err;
 } channel_elem;
 
-struct _channel_s;
-typedef struct _channel_s channel_t;
+
 
 channel_t* channel_alloc();
 void channel_free(channel_t* channel);

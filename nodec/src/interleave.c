@@ -21,7 +21,7 @@ void _local_async_resume_request(lh_resume r, lh_value local, uv_req_t* req, int
   assert(local != lh_value_null);
   if (r != NULL) {
     channel_elem elem = { lh_value_ptr(r), local, lh_value_int(err) };
-    channel_emit((channel_t*)lh_ptr_value(local), &elem);
+    channel_emit((channel_t*)lh_ptr_value(local), elem);
   }
 }
 
