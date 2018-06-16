@@ -18,6 +18,7 @@
 uv_loop_t* async_loop();
 void       async_await(uv_req_t* req);
 void       async_await_fs(uv_fs_t* req);
+void       async_await_connect(uv_connect_t* req);
 
 
 
@@ -56,22 +57,22 @@ void async_main( nc_entryfun_t* entry );
   Channels
 -----------------------------------------------------------------------------*/
 
-typedef struct _lh_channel_elem {
+typedef struct _channel_elem {
   lh_value data;
   lh_value arg;
   int      err;
-} lh_channel_elem;
+} channel_elem;
 
-struct _lh_channel;
-typedef struct _lh_channel lh_channel;
+struct _channel_s;
+typedef struct _channel_s channel_t;
 
-lh_channel* lh_channel_alloc();
-void lh_channel_free(lh_channel* channel);
-void lh_channel_emit(lh_channel* channel, lh_channel_elem* elem);
-lh_channel_elem lh_channel_receive(lh_channel* channel);
+channel_t* channel_alloc();
+void channel_free(channel_t* channel);
+void channel_emit(channel_t* channel, channel_elem elem);
+channel_elem channel_receive(channel_t* channel);
 
-void lh_channel_freev(lh_value vchannel);
-#define with_channel(name) lh_channel* name = lh_channel_alloc(); defer(&lh_channel_freev,lh_value_ptr(name))
+void channel_freev(lh_value vchannel);
+#define with_channel(name) channel_t* name = channel_alloc(); defer(&channel_freev,lh_value_ptr(name))
 
 /* ----------------------------------------------------------------------------
   Safe allocation

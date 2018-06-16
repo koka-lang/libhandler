@@ -24,5 +24,6 @@ void       check_uv_errmsg(int err, const char* msg);
 
 int        asyncx_await(uv_req_t* req);
 int        asyncx_await_fs(uv_fs_t* req);
+int        asyncx_await_connect(uv_connect_t* req);
 
 #endif

@@ -20,12 +20,12 @@ void _local_async_resume_request(lh_resume r, lh_value local, uv_req_t* req, int
   assert(r != NULL);
   assert(local != lh_value_null);
   if (r != NULL) {
-    lh_channel_elem elem = { lh_value_ptr(r), local, lh_value_int(err) };
-    lh_channel_emit((lh_channel*)lh_ptr_value(local), &elem);
+    channel_elem elem = { lh_value_ptr(r), local, lh_value_int(err) };
+    channel_emit((channel_t*)lh_ptr_value(local), &elem);
   }
 }
 
-lh_value _local_async_handler(lh_channel* channel, lh_value(*action)(lh_value), lh_value arg) {
+lh_value _local_async_handler(channel_t* channel, lh_value(*action)(lh_value), lh_value arg) {
   return lh_handle(&_local_async_hdef, lh_value_ptr(channel), action, arg);
 }
 
@@ -47,7 +47,7 @@ static lh_value _interleave_strand(lh_value vargs) {
   return lh_value_null;
 }
 
-static void _handle_interleave_strand(lh_channel* channel, interleave_strand_args* args) {
+static void _handle_interleave_strand(channel_t* channel, interleave_strand_args* args) {
   _local_async_handler(channel, &_interleave_strand, lh_value_any_ptr(args));
 }
 
@@ -65,7 +65,7 @@ static void _interleave_n(ssize_t n, lh_actionfun** actions, lh_value* arg_resul
         _handle_interleave_strand(channel, &args);
       }
       while (*todo > 0) {
-        lh_channel_elem res = lh_channel_receive(channel);
+        channel_elem res = channel_receive(channel);
         lh_release_resume((lh_resume)lh_ptr_value(res.data), res.arg, lh_value_int(res.err));
       }
     }}

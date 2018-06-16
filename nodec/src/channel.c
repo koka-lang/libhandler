@@ -13,56 +13,77 @@ found in the file "license.txt" at the root of this distribution.
     Channels
 -----------------------------------------------------------------*/
 
-typedef void (lh_channel_listener)(lh_value arg, lh_channel_elem result);
+typedef void (channel_listener_fun)(lh_value arg, channel_elem result);
+typedef struct _channel_listener {
+  channel_listener_fun* fun;
+  lh_value              arg;
+} channel_listener;
 
-typedef struct _lh_channel {
-  lh_channel_listener* listener;
-  lh_value             listener_arg;
-  lh_channel_elem*     queue;
-  ssize_t              queued;
-  ssize_t              queue_size;
-} lh_channel;
+typedef struct _channel_s {
+  // listeners are a stack, so the last listeners
+  // gets to handle first
+  channel_listener* listeners;
+  ssize_t           lcount;
+  ssize_t           lsize;
 
-lh_channel* lh_channel_alloc() {
-  lh_channel* channel = nodec_alloc(lh_channel);
-  channel->listener = NULL;
+  // the queue is a true queue
+  channel_elem*     queue;
+  ssize_t           qcount;
+  ssize_t           qhead; // start index, wrap around
+  ssize_t           qsize;
+} channel_t;
 
+channel_t* channel_alloc() {
+  channel_t* channel = nodec_alloc(channel_t);
+  channel->listeners = NULL;
+  channel->lcount = 0;
+  channel->lsize = 0;
   channel->queue = NULL;
-  channel->queue_size = 0;
-  channel->queued = 0;
+  channel->qsize  = 0;
+  channel->qcount = 0;
+  channel->qhead = 0;
   return channel;
 }
 
-void lh_channel_free(lh_channel* channel) {
-  assert(channel->queued == 0);
+void channel_free(channel_t* channel) {
+  assert(channel->qcount == 0);
+  assert(channel->lcount == 0);
   if (channel->queue != NULL) {
-    free(channel->queue);
+    nodec_free(channel->queue);
     channel->queue = NULL;
-    channel->queue_size = 0;
+    channel->qcount = channel->qhead= channel->qsize = 0;
   }
-  free(channel);
+  if (channel->listeners != NULL) {
+    nodec_free(channel->listeners);
+    channel->listeners = NULL;
+    channel->lcount = channel->lsize = 0;
+  }
+  nodec_free(channel);
 }
 
-void lh_channel_freev(lh_value vchannel) {
-  lh_channel_free(lh_ptr_value(vchannel));
+void channel_freev(lh_value vchannel) {
+  channel_free(lh_ptr_value(vchannel));
 }
 
-void lh_channel_emit(lh_channel* channel, lh_channel_elem* elem) {
-  if (channel->listener != NULL) {
+void channel_emit(channel_t* channel, channel_elem elem) {
+  if (channel->lcount > 0) {
     // a listener, serve immediately
-    lh_channel_listener* listener = channel->listener;
-    channel->listener = NULL;
-    listener(channel->listener_arg, *elem);
+    channel->lcount--;
+    channel_listener l = channel->listeners[channel->lcount];
+    l.fun(l.arg, elem);
   }
   else {
     // otherwise queue it
-    if (channel->queued >= channel->queue_size) {
-      ssize_t newsize = (channel->queue_size > 0 ? 2 * channel->queue_size : 2);
-      channel->queue = (channel->queue == NULL ? nodec_nalloc(newsize, lh_channel_elem)
-        : nodec_realloc(channel->queue, newsize * sizeof(lh_channel_elem)));
-      channel->queue_size = newsize;
+    if (channel->qcount >= channel->qsize) {
+      ssize_t newsize = (channel->qsize > 0 ? 2 * channel->qsize : 2);
+      channel->queue = (channel->queue == NULL ? nodec_nalloc(newsize, channel_elem)
+        : nodec_realloc(channel->queue, newsize * sizeof(channel_elem)));
+      channel->qsize = newsize;
     }
-    channel->queue[channel->queued++] = *elem;
+    ssize_t idx = (channel->qhead + channel->qcount);
+    if (idx>=channel->qsize) idx = idx - channel->qsize;
+    channel->queue[idx] = elem;
+    channel->qcount++;
   }
 }
 
@@ -70,32 +91,39 @@ void lh_channel_emit(lh_channel* channel, lh_channel_elem* elem) {
 
 typedef struct _uv_channel_req_t {
   uv_req_t req;  // must be the first element!
-  lh_channel_elem elem;
+  channel_elem elem;
 } uv_channel_req_t;
 
-static void _channel_req_listener(lh_value arg, lh_channel_elem elem) {
+static void _channel_req_listener_fun(lh_value arg, channel_elem elem) {
   uv_channel_req_t* req = (uv_channel_req_t*)lh_ptr_value(arg);
   req->elem = elem;
   _async_plain_cb(&req->req, 0 /* error for our channel */);
 }
 
-lh_channel_elem lh_channel_receive(lh_channel* channel) {
-  lh_channel_elem result;
-  nodec_zero(lh_channel_elem, &result);
-  if (channel->listener != NULL) {
-    assert(false);
-    lh_throw_str(UV_ENOTSUP, "multiple listeners for a single channel");
-  }
-  else if (channel->queued>0) {
+channel_elem channel_receive(channel_t* channel) {
+  channel_elem result;
+  nodec_zero(channel_elem, &result);
+  if (channel->qcount>0) {
     // take top of the queue and continue
-    result = channel->queue[--channel->queued];
+    result = channel->queue[channel->qhead];
+    channel->qcount--;
+    channel->qhead++;
+    if (channel->qhead >= channel->qsize) channel->qhead = 0;
   }
   else {
     // await the next emit
     uv_channel_req_t* req = nodec_ncalloc(1, uv_channel_req_t);
     {with_free(req) {
-      channel->listener_arg = lh_value_ptr(req);
-      channel->listener = &_channel_req_listener;
+      if (channel->lcount >= channel->lsize) {
+        ssize_t newsize = (channel->lsize > 0 ? 2 * channel->lsize : 2);
+        channel->listeners = (channel->listeners == NULL ? nodec_nalloc(newsize, channel_listener)
+          : (channel_listener*)nodec_realloc(newsize, sizeof(channel_listener)));
+        channel->lsize = newsize;
+      }
+      channel->listeners[channel->lcount].arg = lh_value_ptr(req);
+      channel->listeners[channel->lcount].fun = &_channel_req_listener_fun;
+      channel->lcount++;
+      // and await our request 
       async_await(&req->req);               // reqular await, triggered on channel_req_listener
       result = req->elem;
     }}

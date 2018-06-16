@@ -40,6 +40,19 @@ void async_await_fs(uv_fs_t* req) {
   check_uv_err(asyncx_await_fs(req));
 }
 
+// Await a connection request
+int asyncx_await_connect(uv_connect_t* req) {
+  return async_uv_await((uv_connect_t*)req);
+}
+
+void async_await_connect(uv_connect_t* req) {
+  check_uv_err(asyncx_await_connect(req));
+}
+
+// The entry point for connection callbacks
+void _async_connect_cb(uv_connect_t* req) {
+  _async_plain_cb((uv_req_t*)req);
+}
 
 // Check an error result, throwing on error
 void check_uv_err(int uverr) {
@@ -100,7 +113,7 @@ void _async_plain_cb(uv_req_t* uvreq, int err) {
     lh_value local = req->local;
     _async_request_fun* reqfun = req->reqfun;
     free(req);
-    (*reqfun)(resume, local, (uv_req_t*)uvreq, err);
+    (*reqfun)(resume, local, uvreq, err);
   }
 }
 
