@@ -67,7 +67,10 @@ static void _listen_cb(uv_stream_t* server, int status) {
   else {
     client = (uv_tcp_t*)malloc(sizeof(uv_tcp_t));
     if (client==NULL) err = UV_ENOMEM;
-                 else err = uv_tcp_init(server->loop, client);
+    else {
+      nodec_zero(uv_tcp_t, client);
+      err = uv_tcp_init(server->loop, client);
+    }
     if (err==0) {
       err = uv_accept(server, (uv_stream_t*)client);
       if (err == 0) {
@@ -87,8 +90,7 @@ static void _listen_cb(uv_stream_t* server, int status) {
   if (err!=0) {
     // deallocate client on error
     if (client!=NULL) {
-      uv_close((uv_handle_t*)client, NULL);
-      free(client);
+      nodec_stream_free((uv_stream_t*)client);
       client = NULL;
     }
     fprintf(stderr, "connection error: %i\n", err);
@@ -98,6 +100,7 @@ static void _listen_cb(uv_stream_t* server, int status) {
 // Free TCP stream associated with a tcp channel
 static void _channel_release_tcp(lh_value tcpv) {
   uv_tcp_t* tcp = (uv_tcp_t*)lh_ptr_value(tcpv);
+  tcp->data = NULL; // is the channel itself; don't free it in the stream_free
   nodec_tcp_free(tcp);
 }
 

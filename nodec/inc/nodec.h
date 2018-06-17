@@ -55,6 +55,9 @@ void        nodec_handle_free(uv_handle_t* handle);
 void        nodec_stream_free(uv_stream_t* stream);
 void        async_shutdown(uv_stream_t* stream);
 
+ssize_t     async_read(uv_stream_t* stream, uv_buf_t buffer, ssize_t offset );
+ssize_t     async_read_full(uv_stream_t* stream, uv_buf_t* buffer);
+
 /* ----------------------------------------------------------------------------
   TCP
 -----------------------------------------------------------------------------*/

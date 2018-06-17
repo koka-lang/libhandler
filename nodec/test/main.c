@@ -54,11 +54,16 @@ static void test_interleave() {
 -----------------------------------------------------------------*/
 
 static void test_tcp() {
-  channel_t* ch = nodec_tcp_listen_at4("127.0.0.1", 80, 0, 0);
+  channel_t* ch = nodec_tcp_listen_at4("127.0.0.1", 8080, 0, 0);
   {defer(channel_freev, lh_value_ptr(ch)) {
     channel_elem e = channel_receive(ch);
     printf("got a connection!\n");
     uv_stream_t* client = (uv_stream_t*)lh_ptr_value(e.data);
+    uv_buf_t buf = uv_buf_init(nodec_nalloc(8*1024+1,char), 8*1024);
+    ssize_t nread = async_read(client, buf, 0);
+    buf.base[nread] = 0;
+    fprintf(stderr,"received:%Ii bytes\n%s\n", nread, buf.base);
+    nodec_free(buf.base);
     if (client != NULL) async_shutdown(client);
   }}
 }
