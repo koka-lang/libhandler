@@ -28,6 +28,7 @@
     <ClCompile Include="..\..\nodec\src\fs.c" />
     <ClCompile Include="..\..\nodec\src\interleave.c" />
     <ClCompile Include="..\..\nodec\src\memory.c" />
+    <ClCompile Include="..\..\nodec\src\stream.c" />
     <ClCompile Include="..\..\nodec\src\tcp.c" />
   </ItemGroup>
   <PropertyGroup Label="Globals">

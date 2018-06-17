@@ -59,7 +59,7 @@ static void test_tcp() {
     channel_elem e = channel_receive(ch);
     printf("got a connection!\n");
     uv_stream_t* client = (uv_stream_t*)lh_ptr_value(e.data);
-    if (client != NULL) uv_close((uv_handle_t*)client, NULL);
+    if (client != NULL) async_shutdown(client);
   }}
 }
 

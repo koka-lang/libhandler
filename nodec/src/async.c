@@ -49,10 +49,11 @@ void async_await_connect(uv_connect_t* req) {
   check_uv_err(asyncx_await_connect(req));
 }
 
-// The entry point for connection callbacks
 void _async_connect_cb(uv_connect_t* req) {
   _async_plain_cb((uv_req_t*)req,0);
 }
+
+
 
 // Check an error result, throwing on error
 void check_uv_err(int uverr) {

@@ -33,12 +33,10 @@ void check_uv_err_addr6(int err, const struct sockaddr_in6* addr) {
 /*-----------------------------------------------------------------
   handling tcp
 -----------------------------------------------------------------*/
-static void _close_tcp_cb(uv_handle_t* tcp) {
-  nodec_free(tcp);
-}
+
 
 void nodec_tcp_free(uv_tcp_t* tcp) {
-  uv_close((uv_handle_t*)tcp, _close_tcp_cb);
+  nodec_stream_free((uv_stream_t*)tcp);
 }
 
 void nodec_tcp_freev(lh_value tcp) {
@@ -51,8 +49,9 @@ uv_tcp_t* nodec_tcp_alloc() {
   return tcp;
 }
 
+
 void nodec_tcp_bind(uv_tcp_t* handle, const struct sockaddr_in* addr, unsigned int flags) {
-  check_uv_err_addr(uv_tcp_bind(handle, (const struct sockaddr*)addr, flags),addr);
+  check_uv_err_addr(uv_tcp_bind(handle, (const struct sockaddr*)addr, flags), addr);
 }
 
 static void _listen_cb(uv_stream_t* server, int status) {
@@ -105,9 +104,9 @@ static void _channel_release_tcp(lh_value tcpv) {
 tcp_channel_t* nodec_tcp_listen(uv_tcp_t* tcp, int backlog, bool channel_owns_tcp) {
   if (backlog <= 0) backlog = 512;
   check_uv_err(uv_listen((uv_stream_t*)tcp, backlog, &_listen_cb));
-  tcp_channel_t* ch = (tcp_channel_t*)channel_alloc(backlog,
+  tcp_channel_t* ch = (tcp_channel_t*)channel_alloc_ex(backlog,
                           (channel_owns_tcp ? &_channel_release_tcp : NULL), 
-                              lh_value_ptr(tcp)); 
+                              lh_value_ptr(tcp), NULL); 
   tcp->data = ch;
   return ch;
 }

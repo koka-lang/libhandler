@@ -20,9 +20,10 @@ typedef struct _channel_s channel_t;
 -----------------------------------------------------------------------------*/
 uv_loop_t* async_loop();
 void       async_await(uv_req_t* req);
+
 void       async_await_fs(uv_fs_t* req);
 void       async_await_connect(uv_connect_t* req);
-
+void       async_await_shutdown(uv_shutdown_t* req);
 
 
 /* ----------------------------------------------------------------------------
@@ -48,6 +49,13 @@ ssize_t   async_fread(uv_file file, uv_buf_t* buf, int64_t offset);
 char*     async_fread_full(const char* path);
 
 /* ----------------------------------------------------------------------------
+  Streams
+-----------------------------------------------------------------------------*/
+void        nodec_handle_free(uv_handle_t* handle);
+void        nodec_stream_free(uv_stream_t* stream);
+void        async_shutdown(uv_stream_t* stream);
+
+/* ----------------------------------------------------------------------------
   TCP
 -----------------------------------------------------------------------------*/
 typedef channel_t tcp_channel_t;
@@ -59,7 +67,7 @@ void        nodec_tcp_bind(uv_tcp_t* handle, const struct sockaddr_in* addr, uns
 tcp_channel_t*  nodec_tcp_listen(uv_tcp_t* tcp, int backlog, bool channel_owns_tcp);
 
 // Convenience
-channel_t*  nodec_tcp_listen_at4(const char* name, int port, int backlog, unsigned int flags);
+tcp_channel_t*  nodec_tcp_listen_at4(const char* ip, int port, int backlog, unsigned int flags);
 
 /* ----------------------------------------------------------------------------
   Other
@@ -80,15 +88,16 @@ typedef struct _channel_elem {
   int      err;
 } channel_elem;
 
+typedef void (channel_release_elem_fun)(channel_elem elem);
 
-
-channel_t* channel_alloc(ssize_t queue_max, lh_releasefun release, lh_value release_arg );
+channel_t* channel_alloc(ssize_t queue_max);
+channel_t* channel_alloc_ex(ssize_t queue_max, lh_releasefun* release, lh_value release_arg, channel_release_elem_fun* release_elem );
 void channel_free(channel_t* channel);
 int  channel_emit(channel_t* channel, channel_elem elem);
 channel_elem channel_receive(channel_t* channel);
 
 void channel_freev(lh_value vchannel);
-#define with_channel(name) channel_t* name = channel_alloc(-1,NULL,lh_value_null); defer(&channel_freev,lh_value_ptr(name))
+#define with_channel(name) channel_t* name = channel_alloc(-1); defer(&channel_freev,lh_value_ptr(name))
 
 /* ----------------------------------------------------------------------------
   Safe allocation

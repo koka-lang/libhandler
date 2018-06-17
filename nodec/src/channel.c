@@ -12,7 +12,7 @@ found in the file "license.txt" at the root of this distribution.
 /*-----------------------------------------------------------------
     Channels
 -----------------------------------------------------------------*/
-typedef void (channel_release_elem_fun)(channel_elem elem);
+
 typedef void (channel_listener_fun)(lh_value arg, channel_elem result);
 typedef struct _channel_listener {
   channel_listener_fun* fun;
@@ -39,7 +39,13 @@ typedef struct _channel_s {
   channel_release_elem_fun* release_elem;
 } channel_t;
 
-channel_t* channel_alloc( ssize_t queue_max, lh_releasefun* release_fun, lh_value release_arg ) {
+channel_t* channel_alloc(ssize_t queue_max) {
+  return channel_alloc_ex(queue_max, NULL, lh_value_null, NULL);
+}
+
+channel_t* channel_alloc_ex( ssize_t queue_max, lh_releasefun* release_fun, lh_value release_arg, 
+                          channel_release_elem_fun* release_elem ) 
+{
   channel_t* channel = nodec_alloc(channel_t);
   channel->listeners = NULL;
   channel->lcount = 0;
@@ -51,7 +57,7 @@ channel_t* channel_alloc( ssize_t queue_max, lh_releasefun* release_fun, lh_valu
   channel->qmax = (queue_max < 0 ? 1024*1024 : queue_max);
   channel->release_fun = release_fun;
   channel->release_arg = release_arg;
-  channel->release_elem = NULL;
+  channel->release_elem = release_elem;
   return channel;
 }
 
@@ -146,11 +152,11 @@ channel_elem channel_receive(channel_t* channel) {
   else {
     // await the next emit
     uv_channel_req_t* req = nodec_ncalloc(1, uv_channel_req_t);
-    {with_free(req) {
+    {with_free(req){
       if (channel->lcount >= channel->lsize) {
         ssize_t newsize = (channel->lsize > 0 ? 2 * channel->lsize : 2);
         channel->listeners = (channel->listeners == NULL ? nodec_nalloc(newsize, channel_listener)
-          : (channel_listener*)nodec_realloc(newsize, sizeof(channel_listener)));
+          : (channel_listener*)nodec_realloc(channel->listeners, newsize*sizeof(channel_listener)));
         channel->lsize = newsize;
       }
       channel->listeners[channel->lcount].arg = lh_value_ptr(req);
