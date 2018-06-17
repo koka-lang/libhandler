@@ -12,7 +12,7 @@ found in the file "license.txt" at the root of this distribution.
 /*-----------------------------------------------------------------
     Channels
 -----------------------------------------------------------------*/
-
+typedef void (channel_release_elem_fun)(channel_elem elem);
 typedef void (channel_listener_fun)(lh_value arg, channel_elem result);
 typedef struct _channel_listener {
   channel_listener_fun* fun;
@@ -31,17 +31,27 @@ typedef struct _channel_s {
   ssize_t           qcount;
   ssize_t           qhead; // start index, wrap around
   ssize_t           qsize;
+  ssize_t           qmax;
+
+  // release
+  lh_releasefun* release_fun;
+  lh_value       release_arg;
+  channel_release_elem_fun* release_elem;
 } channel_t;
 
-channel_t* channel_alloc() {
+channel_t* channel_alloc( ssize_t queue_max, lh_releasefun* release_fun, lh_value release_arg ) {
   channel_t* channel = nodec_alloc(channel_t);
   channel->listeners = NULL;
   channel->lcount = 0;
-  channel->lsize = 0;
-  channel->queue = NULL;
+  channel->lsize  = 0;
+  channel->queue  = NULL;
   channel->qsize  = 0;
   channel->qcount = 0;
-  channel->qhead = 0;
+  channel->qhead  = 0;
+  channel->qmax = (queue_max < 0 ? 1024*1024 : queue_max);
+  channel->release_fun = release_fun;
+  channel->release_arg = release_arg;
+  channel->release_elem = NULL;
   return channel;
 }
 
@@ -49,14 +59,29 @@ void channel_free(channel_t* channel) {
   assert(channel->qcount == 0);
   assert(channel->lcount == 0);
   if (channel->queue != NULL) {
+    if (channel->release_elem != NULL) {
+      for (ssize_t i = 0; i < channel->qcount; i++) {
+        ssize_t idx = i + channel->qhead;
+        if (idx >= channel->qsize) idx = idx - channel->qsize;
+        channel->release_elem(channel->queue[idx]);
+      }
+    }
     nodec_free(channel->queue);
     channel->queue = NULL;
     channel->qcount = channel->qhead= channel->qsize = 0;
   }
   if (channel->listeners != NULL) {
+    channel_elem cancel = { lh_value_null,lh_value_null,UV_ECANCELED };
+    for (ssize_t i = 0; i < channel->lcount; i++) {
+      channel_listener* l = &channel->listeners[i];
+      l->fun(l->arg, cancel);
+    }
     nodec_free(channel->listeners);
     channel->listeners = NULL;
     channel->lcount = channel->lsize = 0;
+  }
+  if (channel->release_fun != NULL) {
+    channel->release_fun(channel->release_arg);
   }
   nodec_free(channel);
 }
@@ -65,25 +90,33 @@ void channel_freev(lh_value vchannel) {
   channel_free(lh_ptr_value(vchannel));
 }
 
-void channel_emit(channel_t* channel, channel_elem elem) {
+int channel_emit(channel_t* channel, channel_elem elem) {
   if (channel->lcount > 0) {
     // a listener, serve immediately
+    // LIFO: good for web services but should perhaps be a parameter?
     channel->lcount--;
-    channel_listener l = channel->listeners[channel->lcount];
-    l.fun(l.arg, elem);
+    const channel_listener* l = &channel->listeners[channel->lcount];
+    l->fun(l->arg, elem);
+    return 0;
+  }
+  else if (channel->qcount >= channel->qmax) {
+    return UV_ENOSPC;
   }
   else {
-    // otherwise queue it
+    // otherwise queue it (FIFO buffer)
     if (channel->qcount >= channel->qsize) {
       ssize_t newsize = (channel->qsize > 0 ? 2 * channel->qsize : 2);
-      channel->queue = (channel->queue == NULL ? nodec_nalloc(newsize, channel_elem)
-        : nodec_realloc(channel->queue, newsize * sizeof(channel_elem)));
+      channel_elem* newqueue = (channel_elem*)(channel->queue == NULL ? malloc(newsize * sizeof(channel_elem))
+        : realloc(channel->queue, newsize * sizeof(channel_elem)));
+      if (newqueue == NULL) return UV_ENOMEM;
+      channel->queue = newqueue;
       channel->qsize = newsize;
     }
     ssize_t idx = (channel->qhead + channel->qcount);
     if (idx>=channel->qsize) idx = idx - channel->qsize;
     channel->queue[idx] = elem;
     channel->qcount++;
+    return 0;
   }
 }
 

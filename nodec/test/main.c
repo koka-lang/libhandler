@@ -16,7 +16,7 @@ static void test_fileread() {
   printf("opening file: %s\n", path);
   char* contents = async_fread_full(path);
   {with_free(contents) {
-    printf("read %Ii bytes from %s:\n...\n", strlen(contents), path);
+    printf("read %Ii bytes from %s:\n...\n", strlen(contents), path);    
   }}
 }
 
@@ -58,6 +58,8 @@ static void test_tcp() {
   {defer(channel_freev, lh_value_ptr(ch)) {
     channel_elem e = channel_receive(ch);
     printf("got a connection!\n");
+    uv_stream_t* client = (uv_stream_t*)lh_ptr_value(e.data);
+    if (client != NULL) uv_close((uv_handle_t*)client, NULL);
   }}
 }
 

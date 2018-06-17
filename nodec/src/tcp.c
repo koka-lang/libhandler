@@ -33,10 +33,12 @@ void check_uv_err_addr6(int err, const struct sockaddr_in6* addr) {
 /*-----------------------------------------------------------------
   handling tcp
 -----------------------------------------------------------------*/
+static void _close_tcp_cb(uv_handle_t* tcp) {
+  nodec_free(tcp);
+}
 
 void nodec_tcp_free(uv_tcp_t* tcp) {
-  uv_close((uv_handle_t*)tcp, NULL);
-  nodec_free(tcp);
+  uv_close((uv_handle_t*)tcp, _close_tcp_cb);
 }
 
 void nodec_tcp_freev(lh_value tcp) {
@@ -94,18 +96,30 @@ static void _listen_cb(uv_stream_t* server, int status) {
   }
 }
 
-channel_t* nodec_tcp_listen(uv_tcp_t* tcp, int backlog) {
-  check_uv_err(uv_listen((uv_stream_t*)tcp, (backlog <= 0 ? 128 : backlog) , &_listen_cb));
-  channel_t* ch = channel_alloc(); // todo: if this fails, should we close the connection?
+// Free TCP stream associated with a tcp channel
+static void _channel_release_tcp(lh_value tcpv) {
+  uv_tcp_t* tcp = (uv_tcp_t*)lh_ptr_value(tcpv);
+  nodec_tcp_free(tcp);
+}
+
+tcp_channel_t* nodec_tcp_listen(uv_tcp_t* tcp, int backlog, bool channel_owns_tcp) {
+  if (backlog <= 0) backlog = 512;
+  check_uv_err(uv_listen((uv_stream_t*)tcp, backlog, &_listen_cb));
+  tcp_channel_t* ch = (tcp_channel_t*)channel_alloc(backlog,
+                          (channel_owns_tcp ? &_channel_release_tcp : NULL), 
+                              lh_value_ptr(tcp)); 
   tcp->data = ch;
   return ch;
 }
 
-channel_t* nodec_tcp_listen_at4(const char* ip, int port, int backlog, unsigned int flags) {
+tcp_channel_t* nodec_tcp_listen_at4(const char* ip, int port, int backlog, unsigned int flags) {
   struct sockaddr_in addr;
   check_uv_err(uv_ip4_addr(ip, port, &addr));
   uv_tcp_t* tcp = nodec_tcp_alloc();
-  nodec_tcp_bind(tcp, &addr, flags);
-  return nodec_tcp_listen(tcp, backlog);
-  // todo: tcp is never closed!
+  tcp_channel_t* ch = NULL;
+  {on_exn(nodec_tcp_freev, lh_value_ptr(tcp)) {
+    nodec_tcp_bind(tcp, &addr, flags);
+    ch = nodec_tcp_listen(tcp, backlog, true);
+  }}
+  return ch;
 }

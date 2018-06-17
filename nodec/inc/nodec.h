@@ -50,15 +50,16 @@ char*     async_fread_full(const char* path);
 /* ----------------------------------------------------------------------------
   TCP
 -----------------------------------------------------------------------------*/
+typedef channel_t tcp_channel_t;
 
 uv_tcp_t*   nodec_tcp_alloc();
 void        nodec_tcp_free(uv_tcp_t* tcp);
 void        nodec_tcp_freev(lh_value tcp);
 void        nodec_tcp_bind(uv_tcp_t* handle, const struct sockaddr_in* addr, unsigned int flags);
-channel_t*  nodec_tcp_listen(uv_tcp_t* tcp, int backlog);
+tcp_channel_t*  nodec_tcp_listen(uv_tcp_t* tcp, int backlog, bool channel_owns_tcp);
 
 // Convenience
-channel_t*  nodec_tcp_listen_at4(const char* name, unsigned int port, int backlog, unsigned int flags);
+channel_t*  nodec_tcp_listen_at4(const char* name, int port, int backlog, unsigned int flags);
 
 /* ----------------------------------------------------------------------------
   Other
@@ -81,13 +82,13 @@ typedef struct _channel_elem {
 
 
 
-channel_t* channel_alloc();
+channel_t* channel_alloc(ssize_t queue_max, lh_releasefun release, lh_value release_arg );
 void channel_free(channel_t* channel);
-void channel_emit(channel_t* channel, channel_elem elem);
+int  channel_emit(channel_t* channel, channel_elem elem);
 channel_elem channel_receive(channel_t* channel);
 
 void channel_freev(lh_value vchannel);
-#define with_channel(name) channel_t* name = channel_alloc(); defer(&channel_freev,lh_value_ptr(name))
+#define with_channel(name) channel_t* name = channel_alloc(-1,NULL,lh_value_null); defer(&channel_freev,lh_value_ptr(name))
 
 /* ----------------------------------------------------------------------------
   Safe allocation
