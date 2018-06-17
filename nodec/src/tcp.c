@@ -55,7 +55,7 @@ void nodec_tcp_bind(uv_tcp_t* handle, const struct sockaddr_in* addr, unsigned i
 }
 
 static void _listen_cb(uv_stream_t* server, int status) {
-  fprintf(stderr, "connection came in!\n");
+  // fprintf(stderr, "connection came in!\n");
   uv_tcp_t* client = NULL;
   int err = 0;
   if (status != 0) {

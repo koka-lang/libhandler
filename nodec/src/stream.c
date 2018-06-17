@@ -195,7 +195,7 @@ void async_write_buf(uv_stream_t* stream, uv_buf_t buf) {
 void async_write_bufs(uv_stream_t* stream, uv_buf_t bufs[], ssize_t buf_count) {
   if (bufs==NULL || buf_count<=0) return;
   {with_zalloc(uv_write_t, req) {    
-    // Todo: verify it is ok to have bufs on the stack or if we need to heap alloc them first
+    // Todo: verify it is ok to have bufs on the stack or if we need to heap alloc them first for safety
     check_uv_err(uv_write(req, stream, bufs, buf_count, &_async_write_cb));
     async_await_write(req);
   }}
