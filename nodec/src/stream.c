@@ -9,6 +9,17 @@ found in the file "license.txt" at the root of this distribution.
 #include <uv.h>
 #include <assert.h>
 
+
+#ifdef _MSC_VER
+# include <malloc.h>
+# define alloca _alloca
+#else
+# include <alloca.h>
+#endif
+
+/* ----------------------------------------------------------------------------
+  Stream requests for reading
+-----------------------------------------------------------------------------*/
 typedef struct _stream_req_t {
   uv_req_t  req;  // must be the first element!
   uv_buf_t  buf;
@@ -22,7 +33,9 @@ static void stream_req_resume(stream_req_t* req, uv_stream_t* stream) {
 }
 
 
-// Await a shutdownn request
+/* ----------------------------------------------------------------------------
+  Await shutdown
+-----------------------------------------------------------------------------*/
 static int asyncx_await_shutdown(uv_shutdown_t* req) {
   return asyncx_await((uv_req_t*)req);
 }
@@ -35,6 +48,22 @@ static void _async_shutdown_cb(uv_shutdown_t* req, int status) {
   _async_plain_cb((uv_req_t*)req, status);
 }
 
+
+/* ----------------------------------------------------------------------------
+  Await write requests
+-----------------------------------------------------------------------------*/
+static void _async_write_cb(uv_write_t* req, int status) {
+  _async_plain_cb((uv_req_t*)req, status);
+}
+
+static void async_await_write(uv_write_t* req) {
+  async_await((uv_req_t*)req);
+}
+
+
+/* ----------------------------------------------------------------------------
+  Handle management
+-----------------------------------------------------------------------------*/
 
 static void _close_handle_cb(uv_handle_t* h) {
   if ((h->type == UV_STREAM || h->type==UV_TCP) && h->data!=NULL) {
@@ -60,11 +89,14 @@ void async_shutdown(uv_stream_t* stream) {
     {with_alloc(uv_shutdown_t, req) {
       check_uv_err(uv_shutdown(req, stream, &_async_shutdown_cb));
     }}
-  }
+  } 
   nodec_stream_free(stream);
 }
 
 
+/* ----------------------------------------------------------------------------
+  Reading from a stream
+-----------------------------------------------------------------------------*/
 
 static void _read_alloc_cb(uv_handle_t* handle, size_t suggested_size, uv_buf_t* buf) {
   stream_req_t* req = (stream_req_t*)handle->data;
@@ -122,6 +154,7 @@ ssize_t async_read_full(uv_stream_t* stream, uv_buf_t* buffer) {
     total += nread;
     if (buffer->len <= total) {
       //realloc 
+      // todo: check newsize overflow?
       ssize_t newsize = (buffer->len > (1024 * 1024) ? buffer->len + (1024 * 1024) : buffer->len * 2);
       buffer->base = (char*)nodec_realloc(buffer->base, newsize + 1);
       buffer->len = (ULONG)newsize;
@@ -129,4 +162,41 @@ ssize_t async_read_full(uv_stream_t* stream, uv_buf_t* buffer) {
   }
   ((int8_t*)buffer->base)[total] = 0;  // safe as we allocate always +1
   return total;
+}
+
+
+/* ----------------------------------------------------------------------------
+  Writing to a stream
+-----------------------------------------------------------------------------*/
+
+void async_write(uv_stream_t* stream, const char* s) {
+  if (s==NULL) return;
+  async_write_data(stream, s, strlen(s));
+}
+
+void async_write_strs(uv_stream_t* stream, const char* strings[], ssize_t string_count) {
+  if (strings==NULL||string_count <= 0) return;
+  uv_buf_t* bufs = alloca(string_count*sizeof(uv_buf_t));
+  for (ssize_t i = 0; i < string_count; i++) {
+    bufs[i] = uv_buf_init((char*)strings[i], (unsigned)(strings[i]!=NULL ? strlen(strings[i]) : 0));
+  }
+  async_write_bufs(stream, bufs, string_count);
+}
+
+void async_write_data(uv_stream_t* stream, const void* data, ssize_t len) {
+  uv_buf_t buf = uv_buf_init((void*)data, (unsigned)len);
+  async_write_buf(stream, buf);
+}
+
+void async_write_buf(uv_stream_t* stream, uv_buf_t buf) {
+  async_write_bufs(stream, &buf, 1);
+}
+
+void async_write_bufs(uv_stream_t* stream, uv_buf_t bufs[], ssize_t buf_count) {
+  if (bufs==NULL || buf_count<=0) return;
+  {with_zalloc(uv_write_t, req) {    
+    // Todo: verify it is ok to have bufs on the stack or if we need to heap alloc them first
+    check_uv_err(uv_write(req, stream, bufs, buf_count, &_async_write_cb));
+    async_await_write(req);
+  }}
 }

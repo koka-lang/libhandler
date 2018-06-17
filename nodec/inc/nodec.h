@@ -24,7 +24,7 @@ void       async_await(uv_req_t* req);
 void       async_await_fs(uv_fs_t* req);
 void       async_await_connect(uv_connect_t* req);
 void       async_await_shutdown(uv_shutdown_t* req);
-
+void       async_await_write(uv_write_t* req);
 
 /* ----------------------------------------------------------------------------
   Asynchronous combinators
@@ -56,7 +56,15 @@ void        nodec_stream_free(uv_stream_t* stream);
 void        async_shutdown(uv_stream_t* stream);
 
 ssize_t     async_read(uv_stream_t* stream, uv_buf_t buffer, ssize_t offset );
+void        async_write_bufs(uv_stream_t* stream, uv_buf_t bufs[], ssize_t buf_count);
+
+// Convenience
 ssize_t     async_read_full(uv_stream_t* stream, uv_buf_t* buffer);
+
+void        async_write(uv_stream_t* stream, const char* s);
+void        async_write_strs(uv_stream_t* stream, const char* strings[], ssize_t string_count );
+void        async_write_data(uv_stream_t* stream, const void* data, ssize_t len);
+void        async_write_buf(uv_stream_t* stream, uv_buf_t buf);
 
 /* ----------------------------------------------------------------------------
   TCP
@@ -144,11 +152,13 @@ char* nodec_strndup(const char* s, size_t max);
 #define nodec_alloc(tp)         ((tp*)(nodec_malloc(sizeof(tp))))
 #define nodec_nalloc(n,tp)      ((tp*)(nodec_malloc((n)*sizeof(tp))))
 #define nodec_ncalloc(n,tp)     ((tp*)(nodec_calloc(n,sizeof(tp))))
+#define nodec_zalloc(tp)        nodec_ncalloc(1,tp)
 
 #define with_free(name)         defer(nodec_freev,lh_value_ptr(name))
 #define with_alloc(tp,name)     tp* name = nodec_alloc(tp); with_free(name)
 #define with_nalloc(n,tp,name)  tp* name = nodec_nalloc(n,tp); with_free(name)
 #define with_ncalloc(n,tp,name) tp* name = nodec_ncalloc(n,tp); with_free(name)
+#define with_zalloc(tp,name)    with_ncalloc(1,tp,name)
 
 #define nodec_zero(tp,ptr)      memset(ptr,0,sizeof(tp));
 

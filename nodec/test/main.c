@@ -53,6 +53,23 @@ static void test_interleave() {
   TCP
 -----------------------------------------------------------------*/
 
+const char* response_headers =
+"HTTP/1.1 200 OK\r\n"
+"Server : NodeC/0.1 (windows-x64)\r\n"
+"Content-Type : text/html; charset=utf-8\r\n"
+"Connection : Closed\r\n";
+
+const char* response_body =
+"<!DOCTYPE html>"
+"<html>\n"
+"<head>\n"
+"  <meta charset=\"utf-8\">\n"
+"</head>\n"
+"<body>\n"
+"  <h1>Hello NodeC World!</h1>\n"
+"</body>\n"
+"</html>\n";
+
 static void test_tcp() {
   channel_t* ch = nodec_tcp_listen_at4("127.0.0.1", 8080, 0, 0);
   {defer(channel_freev, lh_value_ptr(ch)) {
@@ -64,9 +81,15 @@ static void test_tcp() {
     buf.base[nread] = 0;
     fprintf(stderr,"received:%Ii bytes\n%s\n", nread, buf.base);
     nodec_free(buf.base);
+    
+    char content_len[128];
+    snprintf(content_len, 128, "Content-Length: %i\r\n\r\n", strlen(response_body));
+    const char* response[3] = { response_headers, content_len, response_body };
+    async_write_strs(client, response, 3);
     if (client != NULL) async_shutdown(client);
   }}
 }
+
 
 /*-----------------------------------------------------------------
   Main
