@@ -8,6 +8,7 @@
 -----------------------------------------------------------------*/
 typedef uv_loop_t*   uv_loop_ptr;
 typedef uv_req_t*    uv_req_ptr;
+typedef uv_handle_t* uv_handle_ptr;
 
 #define lh_uv_loop_ptr_value(v)     ((uv_loop_t*)lh_ptr_value(v))
 #define lh_value_uv_loop_ptr(h)     lh_value_ptr(h)
@@ -118,6 +119,8 @@ void _async_plain_cb(uv_req_t* uvreq, int err) {
   }
 }
 
+
+
 // Await an asynchronous request
 static lh_value _async_uv_await(lh_resume r, lh_value local, lh_value arg) {
   uv_req_t* uvreq = lh_uv_req_ptr_value(arg);
@@ -156,7 +159,7 @@ static lh_value _local_async_uv_await(lh_resume r, lh_value local, lh_value arg)
   uvreq->data = req;
   req->resume = r;
   req->local = local;
-  req->reqfun = *_local_async_resume_request;
+  req->reqfun = &_local_async_resume_request;
   return lh_value_null;  // exit to our local async handler in interleaved
 }
 

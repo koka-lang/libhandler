@@ -62,8 +62,6 @@ channel_t* channel_alloc_ex( ssize_t queue_max, lh_releasefun* release_fun, lh_v
 }
 
 void channel_free(channel_t* channel) {
-  assert(channel->qcount == 0);
-  assert(channel->lcount == 0);
   if (channel->queue != NULL) {
     if (channel->release_elem != NULL) {
       for (ssize_t i = 0; i < channel->qcount; i++) {

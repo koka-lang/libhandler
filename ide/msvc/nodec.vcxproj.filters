@@ -44,5 +44,8 @@
     <ClCompile Include="..\..\nodec\src\stream.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\nodec\src\timer.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
 </Project>

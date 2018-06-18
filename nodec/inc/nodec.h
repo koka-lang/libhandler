@@ -37,6 +37,9 @@ void       async_await_write(uv_write_t* req);
 void interleave(size_t n, lh_actionfun* actions[], lh_value arg_results[]);
 
 
+void async_delay(uint64_t timeout);
+void async_yield();
+
 /* ----------------------------------------------------------------------------
   File system (fs)
 -----------------------------------------------------------------------------*/

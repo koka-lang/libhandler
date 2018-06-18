@@ -72,15 +72,20 @@ const char* response_body =
 
 
 static void test_tcp_serve(int strand_id, uv_stream_t* client) {
+  fprintf(stderr, "strand %i entered\n", strand_id);
   // input
   const char* input = async_read_chunk(client, 1024, NULL);
   {with_free(input) {
     printf("strand %i received:%zi bytes\n%s", strand_id, strlen(input), input);
   }}
+  // work
+  printf("waiting %i secs...\n", 3 + strand_id); 
+  async_delay(3000 + strand_id*1000);
+
   // response
   {with_nalloc(128, char, content_len) {
     snprintf(content_len, 128, "Content-Length: %zi\r\n\r\n", strlen(response_body));
-    printf("response body is %zi bytes\n", strlen(response_body));
+    printf("strand %i: response body is %zi bytes\n", strand_id, strlen(response_body));
     const char* response[3] = { response_headers, content_len, response_body };
     async_write_strs(client, response, 3);
   }}
@@ -113,8 +118,8 @@ static void entry() {
   printf("in the main loop\n");
   //test_files();
   //test_interleave();
-  test_tcp_raw();
-  //test_tcp();
+  //test_tcp_raw();
+  test_tcp();
 }
 
 

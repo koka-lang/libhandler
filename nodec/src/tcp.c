@@ -55,7 +55,7 @@ void nodec_tcp_bind(uv_tcp_t* handle, const struct sockaddr_in* addr, unsigned i
 }
 
 static void _listen_cb(uv_stream_t* server, int status) {
-  // fprintf(stderr, "connection came in!\n");
+  fprintf(stderr, "connection came in!\n");
   uv_tcp_t* client = NULL;
   int err = 0;
   if (status != 0) {
@@ -82,6 +82,7 @@ static void _listen_cb(uv_stream_t* server, int status) {
           // under an async/try handler again.
           // TODO: we should have a size limited queue and check the emit return value
           channel_elem elem = { lh_value_ptr(client),lh_value_null,0 };
+          fprintf(stderr, "emit\n");
           channel_emit(ch, elem);
         }
       }
