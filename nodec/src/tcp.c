@@ -125,3 +125,9 @@ tcp_channel_t* nodec_tcp_listen_at4(const char* ip, int port, int backlog, unsig
   }}
   return ch;
 }
+
+uv_stream_t* tcp_channel_receive(tcp_channel_t* ch) {
+  channel_elem e = channel_receive(ch);
+  //printf("got a connection!\n");
+  return (uv_stream_t*)lh_ptr_value(e.data);
+}

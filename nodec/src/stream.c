@@ -17,14 +17,25 @@ found in the file "license.txt" at the root of this distribution.
 # include <alloca.h>
 #endif
 
+#if (defined(_WIN32) || defined(_WIN64))
+typedef ULONG  uv_buf_len_t;
+#else
+typedef size_t uv_buf_len_t;
+#endif
+
+
+uv_buf_t nodec_buf(const void* data, size_t len) {
+  return uv_buf_init((char*)data, (uv_buf_len_t)(len));
+}
+
 /* ----------------------------------------------------------------------------
   Stream requests for reading
 -----------------------------------------------------------------------------*/
 typedef struct _stream_req_t {
   uv_req_t  req;  // must be the first element!
   uv_buf_t  buf;
-  ssize_t   nread;
-  int       err;
+  size_t    nread;
+  uv_err_t  err;
 } stream_req_t;
 
 
@@ -44,7 +55,7 @@ static void async_await_shutdown(uv_shutdown_t* req) {
   check_uv_err(asyncx_await_shutdown(req));
 }
 
-static void _async_shutdown_cb(uv_shutdown_t* req, int status) {
+static void _async_shutdown_cb(uv_shutdown_t* req, uv_err_t status) {
   _async_plain_cb((uv_req_t*)req, status);
 }
 
@@ -52,7 +63,7 @@ static void _async_shutdown_cb(uv_shutdown_t* req, int status) {
 /* ----------------------------------------------------------------------------
   Await write requests
 -----------------------------------------------------------------------------*/
-static void _async_write_cb(uv_write_t* req, int status) {
+static void _async_write_cb(uv_write_t* req, uv_err_t status) {
   _async_plain_cb((uv_req_t*)req, status);
 }
 
@@ -93,6 +104,10 @@ void async_shutdown(uv_stream_t* stream) {
   nodec_stream_free(stream);
 }
 
+void async_shutdownv(lh_value streamv) {
+  async_shutdown((uv_stream_t*)lh_ptr_value(streamv));
+}
+
 
 /* ----------------------------------------------------------------------------
   Reading from a stream
@@ -118,12 +133,12 @@ static void _read_cb(uv_stream_t* stream, ssize_t nread, const uv_buf_t* buf) {
   else if (nread < 0) {
     // done reading (error or UV_EOF)
     stream_req_t* req = (stream_req_t*)stream->data;
-    req->err = (int)(nread==UV_EOF ? 0 : nread);
+    req->err = (uv_err_t)(nread==UV_EOF ? 0 : nread);
     stream_req_resume(req,stream);
   }
 }
 
-ssize_t async_read(uv_stream_t* stream, uv_buf_t buffer, ssize_t offset ) {
+size_t async_read_buf(uv_stream_t* stream, uv_buf_t buffer, size_t offset ) {
   stream_req_t* req = (stream_req_t*)stream->data;
   if (req==NULL) {
     stream->data = req = nodec_alloc(stream_req_t); // now owned by stream
@@ -135,33 +150,62 @@ ssize_t async_read(uv_stream_t* stream, uv_buf_t buffer, ssize_t offset ) {
     }
     check_uv_err(err);
   }
-  req->buf.base = (offset>=buffer.len ? NULL : buffer.base + offset);
-  req->buf.len = (ULONG)(offset >= buffer.len ? 0 : buffer.len - offset);
+  req->buf = (offset>=buffer.len ? nodec_buf(NULL, 0) : nodec_buf(buffer.base+offset, buffer.len - offset));
   async_await(&req->req);
-  ssize_t nread = req->nread;
+  size_t nread = req->nread;
   nodec_zero(stream_req_t, req);
   return nread;
 }
 
-ssize_t async_read_full(uv_stream_t* stream, uv_buf_t* buffer) {
+size_t async_read(uv_stream_t* stream, uv_buf_t* buffer, size_t max_len, size_t initial_size ) {
+  const size_t max_increase = 4*1024*1024;     // 4MB
+  if (max_len==0) max_len = 1024*1024*1024;    // 1GB
+  if (initial_size==0) initial_size = 8*1024; //  8KB
   if (buffer->base == NULL) {
-    if (buffer->len == 0) buffer->len = 8 * 1024;
+    if (buffer->len == 0) {
+      buffer->len = (uv_buf_len_t)(max_len < initial_size ? max_len : initial_size);
+    }
     buffer->base = nodec_malloc(buffer->len + 1);
   }
-  ssize_t nread = 0;
-  ssize_t total = 0;
-  while ((nread = async_read(stream, *buffer, total)) > 0) {
+  else {
+    buffer->len--; // space for the final zero
+  }
+  size_t nread = 0;
+  size_t total = 0;
+  while (total < max_len && (nread = async_read_buf(stream, *buffer, total)) > 0) {
     total += nread;
-    if (buffer->len <= total) {
+    if (buffer->len <= total && buffer->len < max_len) {
       //realloc 
       // todo: check newsize overflow?
-      ssize_t newsize = (buffer->len > (1024 * 1024) ? buffer->len + (1024 * 1024) : buffer->len * 2);
-      buffer->base = (char*)nodec_realloc(buffer->base, newsize + 1);
-      buffer->len = (ULONG)newsize;
+      size_t newsize = (buffer->len > max_increase ? buffer->len + max_increase : buffer->len * 2);      
+      if (newsize > max_len) newsize = max_len;
+      *buffer = nodec_buf(nodec_realloc(buffer->base, newsize + 1),newsize);
     }
   }
-  ((int8_t*)buffer->base)[total] = 0;  // safe as we allocate always +1
+  buffer->base[total] = 0;  // safe as we allocate always +1
+  if (buffer->len>total) {
+    *buffer = nodec_buf(nodec_realloc(buffer->base, total+1),total); // reduce allocated area
+  }
   return total;
+}
+
+char* async_read_chunk(uv_stream_t* stream, size_t max_len, size_t* nread) {
+  if (max_len==0) max_len = 8*1024;
+  uv_buf_t buf = nodec_buf( nodec_nalloc(max_len+1, char), max_len);
+  size_t n = async_read_buf(stream, buf, 0);
+  buf.base[n] = 0;
+  if (buf.len>n) {
+    buf = nodec_buf(nodec_realloc(buf.base, n+1), n); // reduce allocated area
+  }
+  if (nread != NULL) *nread = n;
+  return buf.base;
+}
+
+char* async_read_str(uv_stream_t* stream, size_t max_len, size_t* nread) {
+  uv_buf_t buf = uv_buf_init(NULL, 0);
+  size_t n = async_read(stream, &buf, max_len, 0);
+  if (nread != NULL) *nread = n;
+  return buf.base;
 }
 
 
@@ -174,17 +218,17 @@ void async_write(uv_stream_t* stream, const char* s) {
   async_write_data(stream, s, strlen(s));
 }
 
-void async_write_strs(uv_stream_t* stream, const char* strings[], ssize_t string_count) {
+void async_write_strs(uv_stream_t* stream, const char* strings[], unsigned int string_count) {
   if (strings==NULL||string_count <= 0) return;
   uv_buf_t* bufs = alloca(string_count*sizeof(uv_buf_t));
-  for (ssize_t i = 0; i < string_count; i++) {
-    bufs[i] = uv_buf_init((char*)strings[i], (unsigned)(strings[i]!=NULL ? strlen(strings[i]) : 0));
+  for (unsigned int i = 0; i < string_count; i++) {
+    bufs[i] = nodec_buf(strings[i], (strings[i]!=NULL ? strlen(strings[i]) : 0));
   }
   async_write_bufs(stream, bufs, string_count);
 }
 
-void async_write_data(uv_stream_t* stream, const void* data, ssize_t len) {
-  uv_buf_t buf = uv_buf_init((void*)data, (unsigned)len);
+void async_write_data(uv_stream_t* stream, const void* data, size_t len) {
+  uv_buf_t buf = nodec_buf(data, len);
   async_write_buf(stream, buf);
 }
 
@@ -192,7 +236,7 @@ void async_write_buf(uv_stream_t* stream, uv_buf_t buf) {
   async_write_bufs(stream, &buf, 1);
 }
 
-void async_write_bufs(uv_stream_t* stream, uv_buf_t bufs[], ssize_t buf_count) {
+void async_write_bufs(uv_stream_t* stream, uv_buf_t bufs[], unsigned int buf_count) {
   if (bufs==NULL || buf_count<=0) return;
   {with_zalloc(uv_write_t, req) {    
     // Todo: verify it is ok to have bufs on the stack or if we need to heap alloc them first for safety

@@ -70,48 +70,26 @@ const char* response_body =
 "</body>\n"
 "</html>\n";
 
-uv_stream_t* tcp_channel_receive(tcp_channel_t* ch) {
-  channel_elem e = channel_receive(ch);
-  //printf("got a connection!\n");
-  return (uv_stream_t*)lh_ptr_value(e.data);
-}
 
-void async_shutdownv(lh_value streamv) {
-  async_shutdown((uv_stream_t*)lh_ptr_value(streamv));
-}
-
-#define with_stream(s)  defer(async_shutdownv,lh_value_ptr(s))
-
-char* async_read_str(uv_stream_t* stream, ssize_t max_len, ssize_t* nread ) {
-  // TODO: we should keep reading until `max_len` or EOF, and realloc
-  // slowly in case max_len is very large, and realloc eventually if `nread`<`max_len`.
-  uv_buf_t buf = uv_buf_init(nodec_nalloc(max_len+1, char), (ULONG)max_len);
-  {on_exn(nodec_freev, lh_value_ptr(buf.base)) {
-    ssize_t n = async_read(stream, buf, 0);
-    buf.base[n] = 0;
-    if (nread!=NULL) *nread = n;
-  }}
-  return buf.base;
-}
 
 static void test_tcp() {
   tcp_channel_t* ch = nodec_tcp_listen_at4("127.0.0.1", 8080, 0, 0);
-  {defer(channel_freev, lh_value_ptr(ch)) {
+  {with_tcp_channel(ch){
     int max_connects = 3;
     while (max_connects-- > 0) {
       uv_stream_t* client = tcp_channel_receive(ch);
       {with_stream(client){
         // input
-        const char* input = async_read_str(client, 1024, NULL);
+        const char* input = async_read_chunk(client, 1024, NULL);
         {with_free(input){
-          printf("received:%i bytes\n%s\n", strlen(input), input);
+          printf("received:%zi bytes\n%s\n", strlen(input), input);
         }}
-        // response: todo: we cannot stack allocate write buffers in general.
-        // it goes ok here because if fits in the initial low level write buffer (of 64kb)
-        char content_len[128];
-        snprintf(content_len, 128, "Content-Length: %i\r\n\r\n", strlen(response_body));
-        const char* response[3] = { response_headers, content_len, response_body };
-        async_write_strs(client, response, 3);
+        // response
+        {with_nalloc(128, char, content_len){
+          snprintf(content_len, 128, "Content-Length: %zi\r\n\r\n", strlen(response_body));
+          const char* response[3] = { response_headers, content_len, response_body };
+          async_write_strs(client, response, 3);
+        }}
       }}
     }
   }}

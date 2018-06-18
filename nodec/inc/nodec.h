@@ -15,6 +15,10 @@
 struct _channel_s;
 typedef struct _channel_s channel_t;
 
+typedef int uv_err_t;
+
+uv_buf_t nodec_buf(void* data, size_t len);
+
 /* ----------------------------------------------------------------------------
   Asynchronous primitives
 -----------------------------------------------------------------------------*/
@@ -54,16 +58,22 @@ char*     async_fread_full(const char* path);
 void        nodec_handle_free(uv_handle_t* handle);
 void        nodec_stream_free(uv_stream_t* stream);
 void        async_shutdown(uv_stream_t* stream);
+void        async_shutdownv(lh_value streamv);
 
-ssize_t     async_read(uv_stream_t* stream, uv_buf_t buffer, ssize_t offset );
-void        async_write_bufs(uv_stream_t* stream, uv_buf_t bufs[], ssize_t buf_count);
+#define with_stream(s)        defer(async_shutdownv,lh_value_ptr(s))
+
+
+size_t      async_read_buf(uv_stream_t* stream, uv_buf_t buffer, size_t offset );
+void        async_write_bufs(uv_stream_t* stream, uv_buf_t bufs[], unsigned int buf_count);
 
 // Convenience
-ssize_t     async_read_full(uv_stream_t* stream, uv_buf_t* buffer);
+char*       async_read_chunk(uv_stream_t* stream, size_t max_len, size_t* nread);
+size_t      async_read(uv_stream_t* stream, uv_buf_t* buffer, size_t max_len, size_t initial_size);
+char*       async_read_str(uv_stream_t* stream, size_t max_len, size_t* nread);
 
 void        async_write(uv_stream_t* stream, const char* s);
-void        async_write_strs(uv_stream_t* stream, const char* strings[], ssize_t string_count );
-void        async_write_data(uv_stream_t* stream, const void* data, ssize_t len);
+void        async_write_strs(uv_stream_t* stream, const char* strings[], unsigned int string_count );
+void        async_write_data(uv_stream_t* stream, const void* data, size_t len);
 void        async_write_buf(uv_stream_t* stream, uv_buf_t buf);
 
 /* ----------------------------------------------------------------------------
@@ -74,11 +84,16 @@ typedef channel_t tcp_channel_t;
 uv_tcp_t*   nodec_tcp_alloc();
 void        nodec_tcp_free(uv_tcp_t* tcp);
 void        nodec_tcp_freev(lh_value tcp);
+
+#define with_tcp_channel(ch)  defer(channel_freev,lh_value_ptr(ch))
+
+
 void        nodec_tcp_bind(uv_tcp_t* handle, const struct sockaddr_in* addr, unsigned int flags);
 tcp_channel_t*  nodec_tcp_listen(uv_tcp_t* tcp, int backlog, bool channel_owns_tcp);
 
 // Convenience
 tcp_channel_t*  nodec_tcp_listen_at4(const char* ip, int port, int backlog, unsigned int flags);
+
 
 /* ----------------------------------------------------------------------------
   Other
@@ -101,14 +116,18 @@ typedef struct _channel_elem {
 
 typedef void (channel_release_elem_fun)(channel_elem elem);
 
-channel_t* channel_alloc(ssize_t queue_max);
-channel_t* channel_alloc_ex(ssize_t queue_max, lh_releasefun* release, lh_value release_arg, channel_release_elem_fun* release_elem );
-void channel_free(channel_t* channel);
-int  channel_emit(channel_t* channel, channel_elem elem);
-channel_elem channel_receive(channel_t* channel);
-
-void channel_freev(lh_value vchannel);
+channel_t*    channel_alloc(ssize_t queue_max);
+channel_t*    channel_alloc_ex(ssize_t queue_max, lh_releasefun* release, lh_value release_arg, channel_release_elem_fun* release_elem );
+void          channel_free(channel_t* channel);
+void          channel_freev(lh_value vchannel);
 #define with_channel(name) channel_t* name = channel_alloc(-1); defer(&channel_freev,lh_value_ptr(name))
+
+int           channel_emit(channel_t* channel, channel_elem elem);
+channel_elem  channel_receive(channel_t* channel);
+
+
+// Convenience
+uv_stream_t*  tcp_channel_receive(tcp_channel_t* ch);
 
 /* ----------------------------------------------------------------------------
   Safe allocation
