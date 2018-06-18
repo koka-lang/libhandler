@@ -31,45 +31,49 @@ uv_buf_t nodec_buf(const void* data, size_t len) {
 /* ----------------------------------------------------------------------------
   Stream requests for reading
 -----------------------------------------------------------------------------*/
+
+// We use our own request for waiting on stream handle reads
 typedef struct _stream_req_t {
-  uv_req_t  req;  // must be the first element!
-  uv_buf_t  buf;
-  size_t    nread;
-  uv_err_t  err;
+  uv_req_t  req;    // must be the first element!
+  uv_buf_t  buf;    // the bufffer to write to
+  size_t    nread;  // bytes read
+  uverr  err;    // error code
 } stream_req_t;
 
-
+// Resume to the `async_await_stream`
 static void stream_req_resume(stream_req_t* req, uv_stream_t* stream) {
-  _async_plain_cb(&req->req, req->err);
+  async_req_resume(&req->req, req->err);
 }
 
+
+static void async_await_stream(stream_req_t* req) {
+  async_await(&req->req);
+}
 
 /* ----------------------------------------------------------------------------
   Await shutdown
 -----------------------------------------------------------------------------*/
-static int asyncx_await_shutdown(uv_shutdown_t* req) {
-  return asyncx_await((uv_req_t*)req);
-}
 
 static void async_await_shutdown(uv_shutdown_t* req) {
-  check_uv_err(asyncx_await_shutdown(req));
+  async_await((uv_req_t*)req);
 }
 
-static void _async_shutdown_cb(uv_shutdown_t* req, uv_err_t status) {
-  _async_plain_cb((uv_req_t*)req, status);
+static void async_shutdown_resume(uv_shutdown_t* req, uverr status) {
+  async_req_resume((uv_req_t*)req, status);
 }
 
 
 /* ----------------------------------------------------------------------------
   Await write requests
 -----------------------------------------------------------------------------*/
-static void _async_write_cb(uv_write_t* req, uv_err_t status) {
-  _async_plain_cb((uv_req_t*)req, status);
-}
-
 static void async_await_write(uv_write_t* req) {
   async_await((uv_req_t*)req);
 }
+
+static void async_write_resume(uv_write_t* req, uverr status) {
+  async_req_resume((uv_req_t*)req, status);
+}
+
 
 
 /* ----------------------------------------------------------------------------
@@ -84,11 +88,11 @@ static void _close_handle_cb(uv_handle_t* h) {
 }
 
 void nodec_handle_free(uv_handle_t* h) {
-  // Todo: this is "wrong" as the callback is called outside of
+  // Todo: this is philosophically "wrong" as the callback is called outside of
   // our framework (i.e. we should do an await). 
   // but we're ok since the callback does just a free.
   uv_close(h, _close_handle_cb);
-}
+}   
 
 void nodec_stream_free(uv_stream_t* stream) {
   nodec_handle_free((uv_handle_t*)stream);  
@@ -97,8 +101,9 @@ void nodec_stream_free(uv_stream_t* stream) {
 void async_shutdown(uv_stream_t* stream) {
   if (stream==NULL) return;
   if (stream->write_queue_size>0) {
-    {with_alloc(uv_shutdown_t, req) {
-      check_uv_err(uv_shutdown(req, stream, &_async_shutdown_cb));
+    {with_zalloc(uv_shutdown_t, req) {
+      check_uv_err(uv_shutdown(req, stream, &async_shutdown_resume));
+      async_await_shutdown(req);
     }}
   } 
   nodec_stream_free(stream);
@@ -133,11 +138,12 @@ static void _read_cb(uv_stream_t* stream, ssize_t nread, const uv_buf_t* buf) {
   else if (nread < 0) {
     // done reading (error or UV_EOF)
     stream_req_t* req = (stream_req_t*)stream->data;
-    req->err = (uv_err_t)(nread==UV_EOF ? 0 : nread);
+    req->err = (uverr)(nread==UV_EOF ? 0 : nread);
     stream_req_resume(req,stream);
   }
 }
 
+// Most primitive: read from `stream` to a pre-allocated `buffer` starting at `offset`.
 size_t async_read_buf(uv_stream_t* stream, uv_buf_t buffer, size_t offset ) {
   stream_req_t* req = (stream_req_t*)stream->data;
   if (req==NULL) {
@@ -151,12 +157,16 @@ size_t async_read_buf(uv_stream_t* stream, uv_buf_t buffer, size_t offset ) {
     check_uv_err(err);
   }
   req->buf = (offset>=buffer.len ? nodec_buf(NULL, 0) : nodec_buf(buffer.base+offset, buffer.len - offset));
-  async_await(&req->req);
+  async_await_stream(req);
   size_t nread = req->nread;
   nodec_zero(stream_req_t, req);
   return nread;
 }
 
+// Read at most `max_len` or upto end-of-data from `stream` into a buffer `buffer`.
+// (Re)allocates as needed starting with `initial_size` if the initial `buffer` was empty.
+// Reallocates at the end too to fit exactly the data that was read. The buffer memory
+// will be one more byte than `buffer->len` and it is used to zero terminate the data.
 size_t async_read(uv_stream_t* stream, uv_buf_t* buffer, size_t max_len, size_t initial_size ) {
   const size_t max_increase = 4*1024*1024;     // 4MB
   if (max_len==0) max_len = 1024*1024*1024;    // 1GB
@@ -189,6 +199,10 @@ size_t async_read(uv_stream_t* stream, uv_buf_t* buffer, size_t max_len, size_t 
   return total;
 }
 
+// Read the initial data that is available upto `max_len` and return it as a string.
+// Can keep reading until `*nread` becomes `0`. 
+// The returned string is heap allocated and never NULL (and the caller should
+// `nodec_free` it.
 char* async_read_chunk(uv_stream_t* stream, size_t max_len, size_t* nread) {
   if (max_len==0) max_len = 8*1024;
   uv_buf_t buf = nodec_buf( nodec_nalloc(max_len+1, char), max_len);
@@ -201,6 +215,7 @@ char* async_read_chunk(uv_stream_t* stream, size_t max_len, size_t* nread) {
   return buf.base;
 }
 
+// Read upto `max_len` bytes or to the end-of-data as a string.
 char* async_read_str(uv_stream_t* stream, size_t max_len, size_t* nread) {
   uv_buf_t buf = uv_buf_init(NULL, 0);
   size_t n = async_read(stream, &buf, max_len, 0);
@@ -240,7 +255,7 @@ void async_write_bufs(uv_stream_t* stream, uv_buf_t bufs[], unsigned int buf_cou
   if (bufs==NULL || buf_count<=0) return;
   {with_zalloc(uv_write_t, req) {    
     // Todo: verify it is ok to have bufs on the stack or if we need to heap alloc them first for safety
-    check_uv_err(uv_write(req, stream, bufs, buf_count, &_async_write_cb));
+    check_uv_err(uv_write(req, stream, bufs, buf_count, &async_write_resume));
     async_await_write(req);
   }}
 }

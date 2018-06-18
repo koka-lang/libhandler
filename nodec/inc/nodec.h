@@ -11,18 +11,25 @@
 #include <libhandler.h>
 #include <uv.h>
 
-
+// Forward declarations 
 struct _channel_s;
 typedef struct _channel_s channel_t;
 
-typedef int uv_err_t;
+// Error codes: non-zero is an error. libuv error codes are negative.
+typedef int uverr;
 
+// Initialize a libuv buffer which is a record with a data pointer and its length.
 uv_buf_t nodec_buf(void* data, size_t len);
+
 
 /* ----------------------------------------------------------------------------
   Asynchronous primitives
 -----------------------------------------------------------------------------*/
+
+// Return the current event loop (ambiently bound by the async handler)
 uv_loop_t* async_loop();
+
+// Await an asynchronous request. Throws on error.
 void       async_await(uv_req_t* req);
 
 void       async_await_fs(uv_fs_t* req);
@@ -36,8 +43,10 @@ void       async_await_write(uv_write_t* req);
 
 void interleave(size_t n, lh_actionfun* actions[], lh_value arg_results[]);
 
-
+// Asynchronously wait for `timeout` milli seconds.
 void async_delay(uint64_t timeout);
+
+// Yield asynchronously to other strands.
 void async_yield();
 
 /* ----------------------------------------------------------------------------
@@ -49,7 +58,7 @@ uv_stat_t async_stat(const char* path);
 uv_stat_t async_fstat(uv_file file);
 uv_file   async_fopen(const char* path, int flags, int mode);
 void      async_fclose(uv_file file);
-ssize_t   async_fread(uv_file file, uv_buf_t* buf, int64_t offset);
+size_t    async_fread(uv_file file, uv_buf_t* buf, int64_t offset);
 
 // File system convenience functions
 
@@ -62,6 +71,7 @@ void        nodec_handle_free(uv_handle_t* handle);
 void        nodec_stream_free(uv_stream_t* stream);
 void        async_shutdown(uv_stream_t* stream);
 void        async_shutdownv(lh_value streamv);
+ 
 
 #define with_stream(s)        defer(async_shutdownv,lh_value_ptr(s))
 
@@ -80,7 +90,23 @@ void        async_write_data(uv_stream_t* stream, const void* data, size_t len);
 void        async_write_buf(uv_stream_t* stream, uv_buf_t buf);
 
 /* ----------------------------------------------------------------------------
-  TCP
+  Addresses
+-----------------------------------------------------------------------------*/
+void nodec_ip4_addr(const char* ip, int port, struct sockaddr_in* addr);
+void nodec_ip6_addr(const char* ip, int port, struct sockaddr_in6* addr);
+
+#define define_ip4_addr(ip,port,name)  \
+  struct sockaddr_in name##_ip4; nodec_ip4_addr(ip,port,&name##_ip4); \
+  struct sockaddr* name = (struct sockaddr*)&name##_ip4;
+
+#define define_ip6_addr(ip,port,name)  \
+  struct sockaddr_in name##_ip6; nodec_ip6_addr(ip,port,&name##_ip6); \
+  struct sockaddr* name = (struct sockaddr*)&name##_ip6;
+
+
+
+/* ----------------------------------------------------------------------------
+    TCP
 -----------------------------------------------------------------------------*/
 typedef channel_t tcp_channel_t;
 
@@ -91,16 +117,17 @@ void        nodec_tcp_freev(lh_value tcp);
 #define with_tcp_channel(ch)  defer(channel_freev,lh_value_ptr(ch))
 
 
-void        nodec_tcp_bind(uv_tcp_t* handle, const struct sockaddr_in* addr, unsigned int flags);
+void            nodec_tcp_bind(uv_tcp_t* handle, const struct sockaddr* addr, unsigned int flags);
 tcp_channel_t*  nodec_tcp_listen(uv_tcp_t* tcp, int backlog, bool channel_owns_tcp);
+uv_stream_t*    async_tcp_channel_receive(tcp_channel_t* ch);
 
 // Convenience
-tcp_channel_t*  nodec_tcp_listen_at4(const char* ip, int port, int backlog, unsigned int flags);
+tcp_channel_t*  nodec_tcp_listen_at(const struct sockaddr* addr, int backlog, unsigned int bind_flags);
 
-typedef void (nodec_tcp_servefun)(int id, uv_stream_t* client);
+typedef void    (nodec_tcp_servefun)(int id, uv_stream_t* client);
 
-void nodec_tcp_server_at4(const char* ip, int port, int backlog, unsigned int flags,
-                              int max_interleaving, nodec_tcp_servefun* servefun);
+void            async_tcp_server_at(const struct sockaddr* addr, int backlog, unsigned int bind_flags,
+                                      int max_interleaving, nodec_tcp_servefun* servefun);
 
 /* ----------------------------------------------------------------------------
   Other

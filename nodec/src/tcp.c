@@ -9,22 +9,19 @@ found in the file "license.txt" at the root of this distribution.
 #include <uv.h>
 #include <assert.h>
 
-void check_uv_err_addr(int err, const struct sockaddr_in* addr) {
+void check_uv_err_addr(int err, const struct sockaddr* addr) {
   // todo: switch to ipv6 address if needed
-  if (err != 0) {
-    char buf[128];
-    buf[0] = 0;
-    if (addr != NULL) uv_ip4_name(addr, buf, 127);
-    buf[127] = 0;
-    check_uv_errmsg(err, buf);
-  }
-}
-
-void check_uv_err_addr6(int err, const struct sockaddr_in6* addr) {
   if (err != 0) {
     char buf[256];
     buf[0] = 0;
-    if (addr != NULL) uv_ip6_name(addr, buf, 255);
+    if (addr != NULL) {
+      if (addr->sa_family == AF_INET6) {
+        uv_ip6_name((const struct sockaddr_in6*)addr, buf, 255);
+      }
+      else {
+        uv_ip4_name((const struct sockaddr_in*)addr, buf, 255);
+      }
+    }
     buf[255] = 0;
     check_uv_errmsg(err, buf);
   }
@@ -50,9 +47,9 @@ uv_tcp_t* nodec_tcp_alloc() {
 }
 
 
-void nodec_tcp_bind(uv_tcp_t* handle, const struct sockaddr_in* addr, unsigned int flags) {
-  check_uv_err_addr(uv_tcp_bind(handle, (const struct sockaddr*)addr, flags), addr);
-}
+void nodec_tcp_bind(uv_tcp_t* handle, const struct sockaddr* addr, unsigned int flags) {
+  check_uv_err_addr(uv_tcp_bind(handle, addr, flags), addr);
+} 
 
 static void _listen_cb(uv_stream_t* server, int status) {
   fprintf(stderr, "connection came in!\n");
@@ -115,19 +112,25 @@ tcp_channel_t* nodec_tcp_listen(uv_tcp_t* tcp, int backlog, bool channel_owns_tc
   return ch;
 }
 
-tcp_channel_t* nodec_tcp_listen_at4(const char* ip, int port, int backlog, unsigned int flags) {
-  struct sockaddr_in addr;
-  check_uv_err(uv_ip4_addr(ip, port, &addr));
+void nodec_ip4_addr(const char* ip, int port, struct sockaddr_in* addr) {
+  check_uv_err(uv_ip4_addr(ip, port, addr));
+}
+
+void nodec_ip6_addr(const char* ip, int port, struct sockaddr_in6* addr) {
+  check_uv_err(uv_ip6_addr(ip, port, addr));
+}
+
+tcp_channel_t* nodec_tcp_listen_at(const struct sockaddr* addr, int backlog, unsigned int bind_flags) {
   uv_tcp_t* tcp = nodec_tcp_alloc();
   tcp_channel_t* ch = NULL;
   {on_exn(nodec_tcp_freev, lh_value_ptr(tcp)) {
-    nodec_tcp_bind(tcp, &addr, flags);
+    nodec_tcp_bind(tcp, addr, bind_flags);
     ch = nodec_tcp_listen(tcp, backlog, true);
   }}
   return ch;
 }
 
-uv_stream_t* tcp_channel_receive(tcp_channel_t* ch) {
+uv_stream_t* async_tcp_channel_receive(tcp_channel_t* ch) {
   channel_elem e = channel_receive(ch);
   //printf("got a connection!\n");
   return (uv_stream_t*)lh_ptr_value(e.data);
@@ -149,7 +152,7 @@ static lh_value tcp_servev(lh_value argsv) {
   tcp_channel_t* ch = args->ch;
   nodec_tcp_servefun* serve = args->serve;
   do {
-    uv_stream_t* client = tcp_channel_receive(ch);
+    uv_stream_t* client = async_tcp_channel_receive(ch);
     {with_stream(client) {
       serve(id, client);
     }}
@@ -157,8 +160,8 @@ static lh_value tcp_servev(lh_value argsv) {
   return lh_value_null;
 }
 
-void nodec_tcp_server_at4(const char* ip, int port, int backlog, unsigned int flags, int n, nodec_tcp_servefun* servefun) {
-  tcp_channel_t* ch = nodec_tcp_listen_at4(ip, port, backlog, flags);
+void async_tcp_server_at(const struct sockaddr* addr, int backlog, unsigned int flags, int n, nodec_tcp_servefun* servefun) {
+  tcp_channel_t* ch = nodec_tcp_listen_at(addr, backlog, flags);
   {with_tcp_channel(ch) {
     {with_alloc(tcp_serve_args, sargs) {
       sargs->ch = ch;

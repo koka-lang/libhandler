@@ -14,9 +14,9 @@ Interleave
 -----------------------------------------------------------------*/
 
 
-// The local async handler
-// Local await an asynchronous request
-void _local_async_resume_request(lh_resume r, lh_value local, uv_req_t* req, int err) {
+// The channel async handler
+// Resume by emmitting a local resume into a channel
+void _channel_async_req_resume(lh_resume r, lh_value local, uv_req_t* req, int err) {
   assert(r != NULL);
   assert(local != lh_value_null);
   if (r != NULL) {
@@ -25,8 +25,8 @@ void _local_async_resume_request(lh_resume r, lh_value local, uv_req_t* req, int
   }
 }
 
-lh_value _local_async_handler(channel_t* channel, lh_value(*action)(lh_value), lh_value arg) {
-  return lh_handle(&_local_async_hdef, lh_value_ptr(channel), action, arg);
+static lh_value _channel_async_handler(channel_t* channel, lh_value(*action)(lh_value), lh_value arg) {
+  return lh_handle(&_channel_async_hdef, lh_value_ptr(channel), action, arg);
 }
 
 typedef struct _interleave_strand_args {
@@ -48,7 +48,7 @@ static lh_value _interleave_strand(lh_value vargs) {
 }
 
 static void _handle_interleave_strand(channel_t* channel, interleave_strand_args* args) {
-  _local_async_handler(channel, &_interleave_strand, lh_value_any_ptr(args));
+  _channel_async_handler(channel, &_interleave_strand, lh_value_any_ptr(args));
 }
 
 static void _interleave_n(size_t n, lh_actionfun** actions, lh_value* arg_results, lh_exception** exceptions) {
@@ -90,7 +90,7 @@ void interleave(size_t n, lh_actionfun* actions[], lh_value arg_results[]) {
       local_args = nodec_calloc(n, sizeof(lh_value));
       arg_results = local_args;
     }
-    {on_exn(&nodec_free_if_notnull,lh_value_ptr(local_args)){
+    {defer(&nodec_free_if_notnull,lh_value_ptr(local_args)){
       {with_ncalloc(n, lh_exception*, exceptions) {
         _interleave_n(n, actions, arg_results, exceptions);
         // rethrow the first exception and release the others

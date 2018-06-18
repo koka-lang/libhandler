@@ -93,11 +93,13 @@ static void test_tcp_serve(int strand_id, uv_stream_t* client) {
 }
 
 static void test_tcp() {
-  nodec_tcp_server_at4("127.0.0.1", 8080, 0, 0, 3, test_tcp_serve);
+  define_ip4_addr("127.0.0.1", 8080,addr);
+  async_tcp_server_at( addr, 0, 0, 3, &test_tcp_serve );
 }
 
 static void test_tcp_raw() {
-  tcp_channel_t* ch = nodec_tcp_listen_at4("127.0.0.1", 8080, 0, 0);
+  define_ip4_addr("127.0.0.1", 8080, addr);
+  tcp_channel_t* ch = nodec_tcp_listen_at(addr, 0, 0);
   {with_tcp_channel(ch){
     int max_connects = 3;
     while (max_connects-- > 0) {

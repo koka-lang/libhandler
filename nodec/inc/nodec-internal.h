@@ -13,17 +13,22 @@ found in the file "license.txt" at the root of this distribution.
 // ---------------------------------------------------------------------------------
 // Private: todo: is there a better way to define internally only visible routines?
 
-const lh_handlerdef _local_async_hdef;
-void                _local_async_resume_request(lh_resume r, lh_value local, uv_req_t* req, int err);
+const lh_handlerdef _channel_async_hdef;
+void                _channel_async_req_resume(lh_resume r, lh_value local, uv_req_t* req, uverr err);
 
-void       _async_fs_cb(uv_fs_t* req);
-void       _async_plain_cb(uv_req_t* uvreq, int err);
+// These are callback functions to resume requests:
+// Calling this will resume the `async_await` call on that request. 
+// A call to these will resume at most once! (and be ignored after that)
+void       async_req_resume(uv_req_t* uvreq, uverr err);
+void       async_fs_resume(uv_fs_t* req);
 
-void       check_uv_err(int err);
-void       check_uv_errmsg(int err, const char* msg);
+// Check the an error value and throw if it is not zero.
+void       check_uv_err(uverr err);
+void       check_uv_errmsg(uverr err, const char* msg);
 
-int        asyncx_await(uv_req_t* req);
-int        asyncx_await_fs(uv_fs_t* req);
-int        asyncx_await_connect(uv_connect_t* req);
+// Await an asynchronous request but return an explicit error value instead of throwing.
+// Use with care since these still throw on cancelation requests.
+uverr   asyncx_await(uv_req_t* req);
+uverr   asyncx_await_fs(uv_fs_t* req);
 
 #endif

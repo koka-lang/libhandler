@@ -134,7 +134,7 @@ typedef struct _uv_channel_req_t {
 static void _channel_req_listener_fun(lh_value arg, channel_elem elem) {
   uv_channel_req_t* req = (uv_channel_req_t*)lh_ptr_value(arg);
   req->elem = elem;
-  _async_plain_cb(&req->req, 0 /* error for our channel */);
+  async_req_resume(&req->req, 0 /* error for our channel */);
 }
 
 channel_elem channel_receive(channel_t* channel) {

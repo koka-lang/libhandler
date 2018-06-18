@@ -19,52 +19,34 @@ LH_DEFINE_EFFECT2(async, uv_await, uv_loop);
 LH_DEFINE_OP0(async, uv_loop, uv_loop_ptr);
 LH_DEFINE_OP1(async, uv_await, int, uv_req_ptr);
 
-
+// Wrappers around the primitive operations for async.
 uv_loop_t* async_loop() {
   return async_uv_loop();
+}
+
+uverr asyncx_await(uv_req_t* req) {
+  return async_uv_await(req);
 }
 
 void async_await(uv_req_t* req) {
   check_uv_err(asyncx_await(req));
 }
 
-int asyncx_await(uv_req_t* req) {
-  return async_uv_await(req);
-}
 
-// Await a file system request
-int asyncx_await_fs(uv_fs_t* req) {
-  return async_uv_await((uv_req_t*)req);
-}
-
-void async_await_fs(uv_fs_t* req) {
-  check_uv_err(asyncx_await_fs(req));
-}
-
-// Await a connection request
-int asyncx_await_connect(uv_connect_t* req) {
-  return async_uv_await((uv_req_t*)req);
-}
-
-void async_await_connect(uv_connect_t* req) {
-  check_uv_err(asyncx_await_connect(req));
-}
-
-void _async_connect_cb(uv_connect_t* req) {
-  _async_plain_cb((uv_req_t*)req,0);
-}
-
+/*-----------------------------------------------------------------
+  Throw on errors
+-----------------------------------------------------------------*/
 
 
 // Check an error result, throwing on error
-void check_uv_err(int uverr) {
+void check_uv_err(uverr uverr) {
   if (uverr < 0) {
     lh_throw(lh_exception_alloc_strdup(uverr, uv_strerror(uverr)));
   }
 }
 
 // Check an error result, throwing on error
-void check_uv_errmsg(int uverr, const char* msg) {
+void check_uv_errmsg(uverr uverr, const char* msg) {
   if (uverr < 0) {
     char buf[256];
     snprintf(buf, 255, "%s: %s", uv_strerror(uverr), msg);
@@ -73,11 +55,18 @@ void check_uv_errmsg(int uverr, const char* msg) {
   }
 }
 
+
 /*-----------------------------------------------------------------
-  Async handler
+  Main async handler
 -----------------------------------------------------------------*/
 
 typedef void(_async_request_fun)(lh_resume r, lh_value local, uv_req_t* req, int err);
+
+// Every libuv request will have a pointer to our request structure in its
+// `data` field. This allows us to resume to the `async_await` point.
+// The actual resuming is done in the `reqfun` such that we can sometimes change
+// the resume behaviour: normally it resumes but we can also emit results into 
+// a channel for example.
 typedef struct __async_request {
   lh_resume       resume;
   lh_value        local;
@@ -92,22 +81,11 @@ static void async_resume_request(lh_resume r, lh_value local, uv_req_t* req, int
   }
 }
 
-// The entry point for filesystem callbacks
-void _async_fs_cb(uv_fs_t* uvreq) {
-  _async_request* req = (_async_request*)uvreq->data;
-  if (req != NULL) {
-    uvreq->data = NULL; // resume at most once
-    int err = (uvreq->result >= 0 ? 0 : (int)uvreq->result);
-    lh_resume resume = req->resume;
-    lh_value local = req->local;
-    _async_request_fun* reqfun = req->reqfun;
-    free(req);
-    (*reqfun)(resume, local, (uv_req_t*)uvreq, err);
-  }
-}
 
-// The entry point for plain callbacks
-void _async_plain_cb(uv_req_t* uvreq, int err) {
+
+// The entry point for regular request callbacks which will resume
+// to the point where `async_await` was called on that request.
+void async_req_resume(uv_req_t* uvreq, int err) {
   _async_request* req = (_async_request*)uvreq->data;
   if (req != NULL) {
     uvreq->data = NULL; // resume at most once
@@ -149,31 +127,32 @@ lh_value async_handler(uv_loop_t* loop, lh_value(*action)(lh_value), lh_value ar
   return lh_handle(&_async_def, lh_value_uv_loop_ptr(loop), action, arg);
 }
 
+
 /*-----------------------------------------------------------------
-  Local async handler for interleave
+  Channel async handler for interleave
 -----------------------------------------------------------------*/
 
-static lh_value _local_async_uv_await(lh_resume r, lh_value local, lh_value arg) {
+static lh_value _channel_async_uv_await(lh_resume r, lh_value local, lh_value arg) {
   uv_req_t* uvreq = (uv_req_t*)lh_ptr_value(arg);
   _async_request* req = (_async_request*)malloc(sizeof(_async_request));
   uvreq->data = req;
   req->resume = r;
   req->local = local;
-  req->reqfun = &_local_async_resume_request;
+  req->reqfun = &_channel_async_req_resume;
   return lh_value_null;  // exit to our local async handler in interleaved
 }
 
 // Return the current libUV event loop
-static lh_value _local_async_uv_loop(lh_resume r, lh_value local, lh_value arg) {
+static lh_value _channel_async_uv_loop(lh_resume r, lh_value local, lh_value arg) {
   return lh_tail_resume(r, local, lh_value_ptr(async_loop()));
 }
 
-static const lh_operation _local_async_ops[] = {
-  { LH_OP_GENERAL, LH_OPTAG(async,uv_await), &_local_async_uv_await },
-  { LH_OP_TAIL, LH_OPTAG(async,uv_loop), &_local_async_uv_loop },
+static const lh_operation _channel_async_ops[] = {
+  { LH_OP_GENERAL, LH_OPTAG(async,uv_await), &_channel_async_uv_await },
+  { LH_OP_TAIL, LH_OPTAG(async,uv_loop), &_channel_async_uv_loop },
   { LH_OP_NULL, lh_op_null, NULL }
 };
-const lh_handlerdef _local_async_hdef = { LH_EFFECT(async), NULL, NULL, NULL, _local_async_ops };
+const lh_handlerdef _channel_async_hdef = { LH_EFFECT(async), NULL, NULL, NULL, _channel_async_ops };
 
 
 
