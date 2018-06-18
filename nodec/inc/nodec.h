@@ -34,7 +34,7 @@ void       async_await_write(uv_write_t* req);
   Asynchronous combinators
 -----------------------------------------------------------------------------*/
 
-void interleave(ssize_t n, lh_actionfun** actions);
+void interleave(size_t n, lh_actionfun* actions[], lh_value arg_results[]);
 
 
 /* ----------------------------------------------------------------------------
@@ -94,6 +94,10 @@ tcp_channel_t*  nodec_tcp_listen(uv_tcp_t* tcp, int backlog, bool channel_owns_t
 // Convenience
 tcp_channel_t*  nodec_tcp_listen_at4(const char* ip, int port, int backlog, unsigned int flags);
 
+typedef void (nodec_tcp_servefun)(int id, uv_stream_t* client);
+
+void nodec_tcp_server_at4(const char* ip, int port, int backlog, unsigned int flags,
+                              int max_interleaving, nodec_tcp_servefun* servefun);
 
 /* ----------------------------------------------------------------------------
   Other

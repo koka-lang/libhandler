@@ -40,13 +40,13 @@ lh_value test_filereadx(lh_value arg) {
 lh_value test_filereads(lh_value arg) {
   printf("test filereads\n");
   lh_actionfun* actions[2] = { &test_filereadx, &test_statx };
-  interleave(2, actions);
+  interleave(2, actions, NULL);
   return lh_value_null;
 }
 
 static void test_interleave() {
   lh_actionfun* actions[3] = { &test_filereadx, &test_statx, &test_filereads };
-  interleave(3, actions);
+  interleave(3, actions, NULL);
 }
 
 /*-----------------------------------------------------------------
@@ -71,25 +71,34 @@ const char* response_body =
 "</html>\n";
 
 
+static void test_tcp_serve(int strand_id, uv_stream_t* client) {
+  // input
+  const char* input = async_read_chunk(client, 1024, NULL);
+  {with_free(input) {
+    printf("strand %i received:%zi bytes\n%s", strand_id, strlen(input), input);
+  }}
+  // response
+  {with_nalloc(128, char, content_len) {
+    snprintf(content_len, 128, "Content-Length: %zi\r\n\r\n", strlen(response_body));
+    printf("response body is %zi bytes\n", strlen(response_body));
+    const char* response[3] = { response_headers, content_len, response_body };
+    async_write_strs(client, response, 3);
+  }}
+  printf("request handled\n\n\n");
+}
 
 static void test_tcp() {
+  nodec_tcp_server_at4("127.0.0.1", 8080, 0, 0, 3, test_tcp_serve);
+}
+
+static void test_tcp_raw() {
   tcp_channel_t* ch = nodec_tcp_listen_at4("127.0.0.1", 8080, 0, 0);
   {with_tcp_channel(ch){
     int max_connects = 3;
     while (max_connects-- > 0) {
       uv_stream_t* client = tcp_channel_receive(ch);
       {with_stream(client){
-        // input
-        const char* input = async_read_chunk(client, 1024, NULL);
-        {with_free(input){
-          printf("received:%zi bytes\n%s\n", strlen(input), input);
-        }}
-        // response
-        {with_nalloc(128, char, content_len){
-          snprintf(content_len, 128, "Content-Length: %zi\r\n\r\n", strlen(response_body));
-          const char* response[3] = { response_headers, content_len, response_body };
-          async_write_strs(client, response, 3);
-        }}
+        test_tcp_serve(max_connects, client);
       }}
     }
   }}
@@ -104,7 +113,8 @@ static void entry() {
   printf("in the main loop\n");
   //test_files();
   //test_interleave();
-  test_tcp();
+  test_tcp_raw();
+  //test_tcp();
 }
 
 

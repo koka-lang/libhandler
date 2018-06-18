@@ -131,3 +131,47 @@ uv_stream_t* tcp_channel_receive(tcp_channel_t* ch) {
   //printf("got a connection!\n");
   return (uv_stream_t*)lh_ptr_value(e.data);
 }
+
+/*-----------------------------------------------------------------
+  A TCP server
+-----------------------------------------------------------------*/
+
+typedef struct _tcp_serve_args {
+  tcp_channel_t*      ch;
+  nodec_tcp_servefun* serve;
+} tcp_serve_args;
+
+static lh_value tcp_servev(lh_value argsv) {
+  static int ids = 0;
+  int id = ids++;
+  tcp_serve_args* args = (tcp_serve_args*)lh_ptr_value(argsv);
+  tcp_channel_t* ch = args->ch;
+  nodec_tcp_servefun* serve = args->serve;
+  do {
+    uv_stream_t* client = tcp_channel_receive(ch);
+    {with_stream(client) {
+      serve(id, client);
+    }}
+  } while (false);  // should be until termination
+  return lh_value_null;
+}
+
+void nodec_tcp_server_at4(const char* ip, int port, int backlog, unsigned int flags, int n, nodec_tcp_servefun* servefun) {
+  tcp_channel_t* ch = nodec_tcp_listen_at4(ip, port, backlog, flags);
+  {with_tcp_channel(ch) {
+    {with_alloc(tcp_serve_args, sargs) {
+      sargs->ch = ch;
+      sargs->serve = servefun;
+      {with_nalloc(n, lh_actionfun*, actions) {
+        {with_nalloc(n, lh_value, args) {
+          for (int i = 0; i < n; i++) {
+            actions[i] = &tcp_servev;
+            args[i] = lh_value_any_ptr(sargs);
+          }
+          interleave(n, actions, args);
+        }}
+      }}
+    }}
+  }}
+}
+

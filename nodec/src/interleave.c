@@ -51,11 +51,11 @@ static void _handle_interleave_strand(channel_t* channel, interleave_strand_args
   _local_async_handler(channel, &_interleave_strand, lh_value_any_ptr(args));
 }
 
-static void _interleave_n(ssize_t n, lh_actionfun** actions, lh_value* arg_results, lh_exception** exceptions) {
-  {with_alloc(ssize_t, todo) {
+static void _interleave_n(size_t n, lh_actionfun** actions, lh_value* arg_results, lh_exception** exceptions) {
+  {with_alloc(size_t, todo) {
     *todo = n;
     {with_channel(channel) {      
-      for (int i = 0; i < n; i++) {
+      for (size_t i = 0; i < n; i++) {
         interleave_strand_args args = {
           actions[i],
           &arg_results[i],
@@ -72,18 +72,29 @@ static void _interleave_n(ssize_t n, lh_actionfun** actions, lh_value* arg_resul
   }}
 }
 
-void interleave(ssize_t n, lh_actionfun** actions) {
-  if (n <= 0 || actions == NULL) return;
+static void nodec_free_if_notnull(lh_value pv) {
+  if (pv!=lh_value_null) nodec_freev(pv);
+}
+
+void interleave(size_t n, lh_actionfun* actions[], lh_value arg_results[]) {
+  if (n == 0 || actions == NULL) return;
   if (n == 1) {
-    (actions[0])(lh_value_null);
+    lh_value res = (actions[0])(arg_results==NULL ? lh_value_null : arg_results[0]);
+    if (arg_results!=NULL) arg_results[0] = res;
   }
   else {
     lh_exception* exn = NULL;
-    {with_ncalloc(n, lh_value, arg_results) {
+    lh_value* local_args = NULL;
+    lh_exception* local_exns = NULL;
+    if (arg_results==NULL) {
+      local_args = nodec_calloc(n, sizeof(lh_value));
+      arg_results = local_args;
+    }
+    {on_exn(&nodec_free_if_notnull,lh_value_ptr(local_args)){
       {with_ncalloc(n, lh_exception*, exceptions) {
         _interleave_n(n, actions, arg_results, exceptions);
         // rethrow the first exception and release the others
-        for (ssize_t i = 0; i < n; i++) {
+        for (size_t i = 0; i < n; i++) {
           if (exceptions[i] != NULL) {
             if (exn == NULL) {
               exn = exceptions[i];
@@ -93,7 +104,7 @@ void interleave(ssize_t n, lh_actionfun** actions) {
             }
           }
         }
-      }}
+      }}      
     }}
     if (exn != NULL) lh_throw(exn);
   }
