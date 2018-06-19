@@ -4,27 +4,99 @@
 #include <assert.h> 
 
 /*-----------------------------------------------------------------
+  Asynchronous requests
+-----------------------------------------------------------------*/
+
+typedef void(async_resume_fun)(lh_resume r, lh_value local, uv_req_t* req, int err);
+
+typedef struct _async_scope_t {
+  struct _async_scope_t* parent;
+} async_scope_t;
+
+
+// Every libuv request will have a pointer to our request structure in its
+// `data` field. This allows us to resume to the `async_await` point.
+// The actual resuming is done in the `reqfun` such that we can sometimes change
+// the resume behaviour: normally it resumes but we can also emit results into 
+// a channel for example.
+typedef struct _async_request_t {
+  struct async_request_t* next;
+  struct async_request_t* prev;
+  lh_resume           resume;
+  lh_value            local;
+  async_scope_t*      scope;
+  uv_req_t*           uvreq;
+  async_resume_fun*   resumefun;
+} async_request_t;
+
+static async_request_t* async_request_alloc(uv_req_t* uvreq) {
+  async_request_t* req = nodec_zalloc(async_request_t);
+  uvreq->data = req;
+  req->uvreq = uvreq;
+  // todo: init scope
+  return req;
+}
+
+static void async_resume_default(lh_resume resume, lh_value local, uv_req_t* req, int err) {
+  //lh_assert(r != NULL);
+  if (resume != NULL) {
+    lh_release_resume(resume, local, lh_value_int(err));
+  }
+}
+
+
+static void async_request_resume(async_request_t* req, uv_req_t* uvreq, int err) {
+  assert(req->uvreq == NULL || req->uvreq == uvreq);
+  if (req->uvreq != NULL) {
+    uvreq->data = NULL; // resume at most once
+    req->uvreq = NULL;
+    // todo: unregister request?
+    async_resume_fun* resumefun = req->resumefun;
+    lh_resume resume = req->resume;
+    lh_value local = req->local;
+    free(req);
+    (*resumefun)(resume, local, uvreq, err);
+  }
+}
+
+
+
+// The entry point for regular request callbacks which will resume
+// to the point where `async_await` was called on that request.
+void async_req_resume(uv_req_t* uvreq, int err) {
+  async_request_t* req = (async_request_t*)uvreq->data;
+  if (req != NULL) async_request_resume(req, uvreq, err);
+}
+
+
+
+/*-----------------------------------------------------------------
   Async effect operations
 -----------------------------------------------------------------*/
 typedef uv_loop_t*   uv_loop_ptr;
 typedef uv_req_t*    uv_req_ptr;
 typedef uv_handle_t* uv_handle_ptr;
+typedef async_request_t* async_request_ptr;
 
 #define lh_uv_loop_ptr_value(v)     ((uv_loop_t*)lh_ptr_value(v))
 #define lh_value_uv_loop_ptr(h)     lh_value_ptr(h)
-#define lh_uv_req_ptr_value(v)      ((uv_req_t*)lh_ptr_value(v))
-#define lh_value_uv_req_ptr(r)      lh_value_ptr(r)
+#define lh_async_request_ptr_value(v)      ((async_request_t*)lh_ptr_value(v))
+#define lh_value_async_request_ptr(r)      lh_value_ptr(r)
 
 LH_DEFINE_EFFECT2(async, uv_await, uv_loop);
 LH_DEFINE_OP0(async, uv_loop, uv_loop_ptr);
-LH_DEFINE_OP1(async, uv_await, int, uv_req_ptr);
+LH_DEFINE_OP1(async, uv_await, int, async_request_ptr);
+
+
+
 
 // Wrappers around the primitive operations for async.
 uv_loop_t* async_loop() {
   return async_uv_loop();
 }
 
-uverr asyncx_await(uv_req_t* req) {
+uverr asyncx_await(uv_req_t* uvreq) {
+  async_request_t* req = async_request_alloc(uvreq);
   return async_uv_await(req);
 }
 
@@ -56,58 +128,18 @@ void check_uv_errmsg(uverr uverr, const char* msg) {
 }
 
 
-/*-----------------------------------------------------------------
-  Main async handler
------------------------------------------------------------------*/
-
-typedef void(_async_request_fun)(lh_resume r, lh_value local, uv_req_t* req, int err);
-
-// Every libuv request will have a pointer to our request structure in its
-// `data` field. This allows us to resume to the `async_await` point.
-// The actual resuming is done in the `reqfun` such that we can sometimes change
-// the resume behaviour: normally it resumes but we can also emit results into 
-// a channel for example.
-typedef struct __async_request {
-  lh_resume       resume;
-  lh_value        local;
-  _async_request_fun* reqfun;
-} _async_request;
-
-
-static void async_resume_request(lh_resume r, lh_value local, uv_req_t* req, int err) {
-  //lh_assert(r != NULL);
-  if (r != NULL) {
-    lh_release_resume(r, local, lh_value_int(err));
-  }
-}
-
-
-
-// The entry point for regular request callbacks which will resume
-// to the point where `async_await` was called on that request.
-void async_req_resume(uv_req_t* uvreq, int err) {
-  _async_request* req = (_async_request*)uvreq->data;
-  if (req != NULL) {
-    uvreq->data = NULL; // resume at most once
-    lh_resume resume = req->resume;
-    lh_value local = req->local;
-    _async_request_fun* reqfun = req->reqfun;
-    free(req);
-    (*reqfun)(resume, local, uvreq, err);
-  }
-}
-
-
 
 // Await an asynchronous request
-static lh_value _async_uv_await(lh_resume r, lh_value local, lh_value arg) {
-  uv_req_t* uvreq = lh_uv_req_ptr_value(arg);
-  _async_request* req = (_async_request*)malloc(sizeof(_async_request));
-  uvreq->data = req;
-  req->resume = r;
+static lh_value _async_uv_await(lh_resume resume, lh_value local, lh_value arg) {
+  async_request_t* req = lh_async_request_ptr_value(arg);
+  assert(req != NULL);
+  assert(req->uvreq != NULL);
+  assert(req->uvreq->data == req);
   req->local = local;
-  req->reqfun = &async_resume_request;
-  return lh_value_null;  // this exits our async handler to the main event loop
+  req->resume = resume;
+  // todo: register request
+  if (req->resumefun==NULL) req->resumefun = &async_resume_default;
+  return lh_value_null;  // this exits our async handler back to the main event loop
 }
 
 // Return the current libUV event loop
@@ -133,13 +165,15 @@ lh_value async_handler(uv_loop_t* loop, lh_value(*action)(lh_value), lh_value ar
 -----------------------------------------------------------------*/
 
 static lh_value _channel_async_uv_await(lh_resume r, lh_value local, lh_value arg) {
-  uv_req_t* uvreq = (uv_req_t*)lh_ptr_value(arg);
-  _async_request* req = (_async_request*)malloc(sizeof(_async_request));
-  uvreq->data = req;
+  async_request_t* req = lh_async_request_ptr_value(arg);
+  assert(req != NULL);
+  assert(req->uvreq != NULL);
+  assert(req->uvreq->data == req);
   req->resume = r;
   req->local = local;
-  req->reqfun = &_channel_async_req_resume;
-  return lh_value_null;  // exit to our local async handler in interleaved
+  if (req->resumefun==NULL) req->resumefun = &_channel_async_req_resume;
+  // todo: register request
+  return lh_value_null;  // exit to our local async handler back to interleaved
 }
 
 // Return the current libUV event loop
