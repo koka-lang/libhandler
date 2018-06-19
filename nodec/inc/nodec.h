@@ -44,6 +44,8 @@ lh_value _cancel_scope_alloc();
 // execute under a cancelation scope
 #define with_cancel_scope()        with_implicit_defer(nodec_freev,_cancel_scope_alloc(),_cancel_scope)
 
+void async_scoped_cancel();
+
 /* ----------------------------------------------------------------------------
   Asynchronous combinators
 -----------------------------------------------------------------------------*/

@@ -31,4 +31,8 @@ void       check_uv_errmsg(uverr err, const char* msg);
 uverr   asyncx_await(uv_req_t* req);
 uverr   asyncx_await_fs(uv_fs_t* req);
 
+// Set a timeout callback
+void    nodec_timer_free(uv_timer_t* timer);
+uverr   _uv_set_timeout(uv_loop_t* loop, uv_timer_cb cb, void* arg, uint64_t timeout);
+
 #endif

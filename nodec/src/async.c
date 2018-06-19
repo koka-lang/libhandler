@@ -5,6 +5,8 @@
 
 // forwards
 
+struct _cancel_scope_t;
+typedef struct _cancel_scope_t cancel_scope_t;
 struct _async_request_t;
 typedef struct _async_request_t async_request_t;
 
@@ -16,17 +18,21 @@ Async effect operations
 typedef uv_loop_t*   uv_loop_ptr;
 typedef uv_req_t*    uv_req_ptr;
 typedef uv_handle_t* uv_handle_ptr;
-typedef async_request_t* async_request_ptr;
+typedef async_request_t*  async_request_ptr;
+typedef const cancel_scope_t*   cancel_scope_ptr;
 
 #define lh_uv_loop_ptr_value(v)     ((uv_loop_t*)lh_ptr_value(v))
 #define lh_value_uv_loop_ptr(h)     lh_value_ptr(h)
 #define lh_async_request_ptr_value(v)      ((async_request_t*)lh_ptr_value(v))
 #define lh_value_async_request_ptr(r)      lh_value_ptr(r)
+#define lh_cancel_scope_ptr_value(v)      ((const cancel_scope_t*)lh_ptr_value(v))
+#define lh_value_cancel_scope_ptr(r)      lh_value_ptr(r)
 
-LH_DEFINE_EFFECT3(async, req_await, uv_loop, req_register);
+LH_DEFINE_EFFECT4(async, req_await, uv_loop, req_register, uv_cancel);
 LH_DEFINE_OP0(async, uv_loop, uv_loop_ptr);
 LH_DEFINE_OP1(async, req_await, int, async_request_ptr);
 LH_DEFINE_VOIDOP1(async, req_register, async_request_ptr);
+LH_DEFINE_VOIDOP1(async, uv_cancel, cancel_scope_ptr);
 
 
 
@@ -37,7 +43,9 @@ uv_loop_t* async_loop() {
 
 uverr asyncx_await(uv_req_t* uvreq) {
   async_request_t* req = async_request_alloc(uvreq);
-  return async_req_await(req);
+  uverr err = async_req_await(req);
+  if (err == UV_ECANCELED) lh_throw_cancel();
+  return err;
 }
 
 void async_await(uv_req_t* req) {
@@ -102,6 +110,13 @@ static bool in_scope_of(const cancel_scope_t* scope, const cancel_scope_t* top )
   return (scope == top);
 }
 
+void async_scoped_cancel_under(const cancel_scope_t* scope) {
+  async_uv_cancel(scope);
+}
+
+void async_scoped_cancel() {
+  async_scoped_cancel_under(cancel_scope());
+}
 
 
 /*-----------------------------------------------------------------
@@ -224,11 +239,38 @@ static void _async_release(lh_value localv) {
   free(local);
 }
 
+
+
+static void _cancel_cb(uv_timer_t* timer) {
+  if (timer == NULL) return;
+  uv_req_t* uvreq = (uv_req_t*)timer->data;
+  nodec_timer_free(timer);
+  async_req_resume(uvreq, UV_ECANCELED);
+}
+
+static lh_value _async_uv_cancel(lh_resume resume, lh_value localv, lh_value scopev) {
+  async_local_t* local = (async_local_t*)lh_ptr_value(localv);
+  const cancel_scope_t* scope = lh_cancel_scope_ptr_value(scopev);
+  for( async_request_t* req = local->requests.next; req != NULL; req = req->next ) {
+    if (in_scope_of(req->scope, scope) && req->uvreq != NULL) {
+      // try primitive cancelation first; guarantees the callback is called with UV_ECANCELED
+      uverr err = uv_cancel(req->uvreq);
+      if (err != 0) {
+        // cancel failed; cancel it through the eventloop
+        _uv_set_timeout(local->loop, &_cancel_cb, req->uvreq, 0);  
+        // todo: dont ignore errors here?
+      }
+    }
+  }
+  return lh_release_resume(resume, localv, lh_value_null);
+}
+
 // The main async handler
 static const lh_operation _async_ops[] = {
   { LH_OP_GENERAL, LH_OPTAG(async,req_await), &_async_req_await },
   { LH_OP_TAIL_NOOP, LH_OPTAG(async,uv_loop), &_async_uv_loop },
   { LH_OP_TAIL_NOOP, LH_OPTAG(async,req_register), &_async_req_register },
+  { LH_OP_TAIL_NOOP, LH_OPTAG(async,uv_cancel), &_async_uv_cancel },
   { LH_OP_NULL, lh_op_null, NULL }
 };
 static const lh_handlerdef _async_def = { LH_EFFECT(async), NULL, _async_release, NULL, _async_ops };
@@ -270,11 +312,17 @@ static lh_value _channel_async_req_register(lh_resume r, lh_value localv, lh_val
   return lh_tail_resume(r, localv, lh_value_null);
 }
 
+// Cancel inside a scope
+static lh_value _channel_async_uv_cancel(lh_resume r, lh_value localv, lh_value arg) {
+  async_uv_cancel(lh_cancel_scope_ptr_value(arg));     // pass through to parent
+  return lh_tail_resume(r, localv, lh_value_null);
+}
 
 static const lh_operation _channel_async_ops[] = {
   { LH_OP_GENERAL, LH_OPTAG(async,req_await), &_channel_async_req_await },
   { LH_OP_TAIL, LH_OPTAG(async,uv_loop), &_channel_async_uv_loop },
   { LH_OP_TAIL, LH_OPTAG(async,req_register), &_channel_async_req_register },
+  { LH_OP_TAIL, LH_OPTAG(async,uv_cancel), &_channel_async_uv_cancel },
   { LH_OP_NULL, lh_op_null, NULL }
 };
 const lh_handlerdef _channel_async_hdef = { LH_EFFECT(async), NULL, NULL, NULL, _channel_async_ops };

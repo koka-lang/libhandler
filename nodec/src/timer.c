@@ -10,6 +10,15 @@ found in the file "license.txt" at the root of this distribution.
 #include <assert.h>
 
 
+uverr _uv_set_timeout(uv_loop_t* loop, uv_timer_cb cb, void* arg, uint64_t timeout) {
+  uv_timer_t* timer = (uv_timer_t*)calloc(1, sizeof(uv_timer_t));
+  if (timer == NULL) return UV_ENOMEM;
+  uv_timer_init(loop, timer);
+  timer->data = arg;
+  return uv_timer_start(timer, cb, timeout, 0);
+}
+
+
 uv_timer_t* nodec_timer_alloc() {
   uv_timer_t* timer = nodec_zalloc(uv_timer_t);
   check_uv_err(uv_timer_init(async_loop(), timer));

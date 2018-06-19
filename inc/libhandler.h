@@ -311,6 +311,13 @@ const char* lh_effect_name(lh_effect effect);
   const struct lh_optag_ LH_OPTAG_DEF(effect,op2) = { LH_EFFECT(effect), 1 }; \
   const struct lh_optag_ LH_OPTAG_DEF(effect,op3) = { LH_EFFECT(effect), 2 }; 
 
+#define LH_DEFINE_EFFECT4(effect,op1,op2,op3,op4) \
+  const char* LH_EFFECT(effect)[6] = {  #effect, #effect "/" #op1, #effect "/" #op2, #effect "/" #op3, #effect "/" #op4, NULL }; \
+  const struct lh_optag_ LH_OPTAG_DEF(effect,op1) = { LH_EFFECT(effect), 0 }; \
+  const struct lh_optag_ LH_OPTAG_DEF(effect,op2) = { LH_EFFECT(effect), 1 }; \
+  const struct lh_optag_ LH_OPTAG_DEF(effect,op3) = { LH_EFFECT(effect), 2 }; \
+  const struct lh_optag_ LH_OPTAG_DEF(effect,op4) = { LH_EFFECT(effect), 3 }; 
+
 #define LH_DEFINE_OP0(effect,op,restype) \
   restype effect##_##op() { lh_value res = lh_yield(LH_OPTAG(effect,op), lh_value_null); return lh_##restype##_value(res); } 
 
