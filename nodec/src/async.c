@@ -117,13 +117,13 @@ typedef void(async_resume_fun)(lh_resume r, lh_value local, uv_req_t* req, int e
 // the resume behaviour: normally it resumes but we can also emit results into 
 // a channel for example.
 struct _async_request_t {
-  struct async_request_t* next;
-  struct async_request_t* prev;
-  lh_resume               resume;
-  lh_value                local;
-  const cancel_scope_t*   scope;
-  uv_req_t*               uvreq;
-  async_resume_fun*       resumefun;
+  async_request_t*      next;
+  async_request_t*      prev;
+  lh_resume             resume;
+  lh_value              local;
+  const cancel_scope_t* scope;
+  uv_req_t*             uvreq;
+  async_resume_fun*     resumefun;
 };
 
 static async_request_t* async_request_alloc(uv_req_t* uvreq) {
@@ -148,7 +148,16 @@ static void async_request_resume(async_request_t* req, uv_req_t* uvreq, int err)
   if (req->uvreq != NULL) {
     uvreq->data = NULL; // resume at most once
     req->uvreq = NULL;
-    // todo: unregister request?
+    // unregister ourselves from outstanding requests
+    // previous always exists using a dummy head element
+    async_request_t* prev = req->prev;
+    if (prev != NULL) {
+      prev->next = req->next;
+      if (req->next != NULL) req->next->prev = prev; // link back
+      req->next = NULL;
+      req->prev = NULL;
+    }
+    // and resume
     async_resume_fun* resumefun = req->resumefun;
     lh_resume resume = req->resume;
     lh_value local = req->local;
@@ -159,7 +168,7 @@ static void async_request_resume(async_request_t* req, uv_req_t* uvreq, int err)
 
 
 
-// The entry point for regular request callbacks which will resume
+// The main entry point for regular request callbacks which will resume
 // to the point where `async_await` was called on that request.
 void async_req_resume(uv_req_t* uvreq, int err) {
   async_request_t* req = (async_request_t*)uvreq->data;
@@ -173,8 +182,8 @@ void async_req_resume(uv_req_t* uvreq, int err) {
 -----------------------------------------------------------------*/
 
 typedef struct _async_local_t {
-  uv_loop_t*       loop;      // current event loop
-  async_request_t* requests;  // outstanding requests
+  uv_loop_t*      loop;      // current event loop
+  async_request_t requests;  // empty request to be the head of the queue of outstanding requests
 } async_local_t;
 
 // Await an asynchronous request
@@ -185,7 +194,6 @@ static lh_value _async_req_await(lh_resume resume, lh_value local, lh_value arg)
   assert(req->uvreq->data == req);
   req->local = local;
   req->resume = resume;
-  // todo: register request
   if (req->resumefun==NULL) req->resumefun = &async_resume_default;
   return lh_value_null;  // this exits our async handler back to the main event loop
 }
@@ -199,14 +207,20 @@ static lh_value _async_uv_loop(lh_resume r, lh_value localv, lh_value arg) {
 // Register an outstanding request
 static lh_value _async_req_register(lh_resume r, lh_value localv, lh_value arg) {
   async_local_t* local = (async_local_t*)lh_ptr_value(localv);
-  // todo
+  async_request_t* req = lh_async_request_ptr_value(arg);
+  assert(req != NULL);
+  // insert in front
+  req->next = local->requests.next;
+  if (req->next != NULL) req->next->prev = req;             // link back
+  req->prev = &local->requests;   
+  local->requests.next = req;
   return lh_tail_resume(r, localv, lh_value_null);
 }
 
 static void _async_release(lh_value localv) {
   async_local_t* local = (async_local_t*)lh_ptr_value(localv);
   assert(local != NULL);
-  assert(local->requests == NULL);
+  assert(local->requests.next == NULL);
   free(local);
 }
 
@@ -220,10 +234,11 @@ static const lh_operation _async_ops[] = {
 static const lh_handlerdef _async_def = { LH_EFFECT(async), NULL, _async_release, NULL, _async_ops };
 
 lh_value async_handler(uv_loop_t* loop, lh_value(*action)(lh_value), lh_value arg) {
-  async_local_t* local = (async_local_t*)malloc(sizeof(async_local_t));
+  async_local_t* local = (async_local_t*)calloc(1,sizeof(async_local_t));
   if (local == NULL) return lh_value_null;
   local->loop = loop;
-  local->requests = NULL;
+  local->requests.next = NULL;
+  local->requests.prev = NULL;
   return lh_handle(&_async_def, lh_value_ptr(local), action, arg);
 }
 
@@ -259,7 +274,7 @@ static lh_value _channel_async_req_register(lh_resume r, lh_value localv, lh_val
 static const lh_operation _channel_async_ops[] = {
   { LH_OP_GENERAL, LH_OPTAG(async,req_await), &_channel_async_req_await },
   { LH_OP_TAIL, LH_OPTAG(async,uv_loop), &_channel_async_uv_loop },
-  { LH_OP_TAIL, LH_OPTAG(async,req_register), &_async_req_register },
+  { LH_OP_TAIL, LH_OPTAG(async,req_register), &_channel_async_req_register },
   { LH_OP_NULL, lh_op_null, NULL }
 };
 const lh_handlerdef _channel_async_hdef = { LH_EFFECT(async), NULL, NULL, NULL, _channel_async_ops };

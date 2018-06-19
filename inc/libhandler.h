@@ -382,7 +382,7 @@ LH_DECLARE_EFFECT0(defer)
 
 /*-----------------------------------------------------------------
   Implicit Parameters:
-  {implicit(name,value){ ... }}
+  {with_implicit(name,value){ ... }}
 -----------------------------------------------------------------*/
 lh_value _lh_implicit_get(lh_resume r, lh_value local, lh_value arg);
 
