@@ -305,6 +305,11 @@ const char* lh_effect_name(lh_effect effect);
   const struct lh_optag_ LH_OPTAG_DEF(effect,op1) = { LH_EFFECT(effect), 0 }; \
   const struct lh_optag_ LH_OPTAG_DEF(effect,op2) = { LH_EFFECT(effect), 1 }; 
 
+#define LH_DEFINE_EFFECT3(effect,op1,op2,op3) \
+  const char* LH_EFFECT(effect)[5] = {  #effect, #effect "/" #op1, #effect "/" #op2, #effect "/" #op3, NULL }; \
+  const struct lh_optag_ LH_OPTAG_DEF(effect,op1) = { LH_EFFECT(effect), 0 }; \
+  const struct lh_optag_ LH_OPTAG_DEF(effect,op2) = { LH_EFFECT(effect), 1 }; \
+  const struct lh_optag_ LH_OPTAG_DEF(effect,op3) = { LH_EFFECT(effect), 2 }; 
 
 #define LH_DEFINE_OP0(effect,op,restype) \
   restype effect##_##op() { lh_value res = lh_yield(LH_OPTAG(effect,op), lh_value_null); return lh_##restype##_value(res); } 
@@ -370,10 +375,10 @@ LH_DECLARE_EFFECT0(defer)
 #define defer(release_fun,local)      LH_DEFER(release_fun,local)
 
 
-#define LH_ON_EXN(release_fun,local)  const lh_handlerdef _lh_deferdef = { LH_EFFECT(defer), NULL, release_fun, NULL, NULL }; \
-                                      LH_LINEAR(&_lh_deferdef,local,false)
+#define LH_ON_ABORT(release_fun,local)  const lh_handlerdef _lh_deferdef = { LH_EFFECT(defer), NULL, release_fun, NULL, NULL }; \
+                                        LH_LINEAR(&_lh_deferdef,local,false)
 
-#define on_exn(release_fun,local)     LH_ON_EXN(release_fun,local)
+#define on_abort(release_fun,local)     LH_ON_ABORT(release_fun,local)
 
 /*-----------------------------------------------------------------
   Implicit Parameters:
@@ -381,13 +386,16 @@ LH_DECLARE_EFFECT0(defer)
 -----------------------------------------------------------------*/
 lh_value _lh_implicit_get(lh_resume r, lh_value local, lh_value arg);
 
-#define LH_IMPLICIT(name,local)       const lh_operation _lh_imp_ops[2] = { { LH_OP_TAIL_NOOP, LH_OPTAG(name,get), &_lh_implicit_get }, NULL }; \
-                                      const lh_handlerdef _lh_imp_hdef  = { LH_EFFECT(name), NULL, NULL, NULL, _lh_imp_ops }; \
-                                      LH_LINEAR(&_lh_imp_hdef,local,false)
+#define LH_IMPLICIT(release_fun,local,name) \
+    const lh_operation _lh_imp_ops[2] = { { LH_OP_TAIL_NOOP, LH_OPTAG(name,get), &_lh_implicit_get }, { LH_OP_NULL, lh_op_null, NULL } }; \
+    const lh_handlerdef _lh_imp_hdef  = { LH_EFFECT(name), NULL, release_fun, NULL, _lh_imp_ops }; \
+    LH_LINEAR(&_lh_imp_hdef,local,(release_fun!=NULL))
 
-#define implicit(name,local)          LH_IMPLICIT(name,local)
-#define implicit_declare(name)        LH_DECLARE_EFFECT1(name,get) 
-#define implicit_get(name)            lh_yield(LH_OPTAG(name,get),lh_value_null) 
+#define with_implicit_defer(release_fun,local,name)  LH_IMPLICIT(release_fun,local,name)
+#define with_implicit(local,name)                    with_implicit_defer(NULL,local,name)
+#define implicit_define(name)                   LH_DEFINE_EFFECT1(name,get) 
+#define implicit_declare(name)                  LH_DECLARE_EFFECT1(name,get) 
+#define implicit_get(name)                      lh_yield(LH_OPTAG(name,get),lh_value_null) 
 
 
 /*-----------------------------------------------------------------
@@ -417,6 +425,8 @@ void lh_throw(const lh_exception* e);
 void lh_throw_errno(int eno);
 void lh_throw_str(int code, const char* msg);
 void lh_throw_strdup(int code, const char* msg);
+void lh_throw_cancel();
+bool lh_exception_is_cancel(const lh_exception* exn);
 
 // Convert an exceptional computation to an exceptional value
 // If an exception is thrown, `exn` will be set to a non-null value

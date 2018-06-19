@@ -68,6 +68,13 @@ void lh_throw_errno(int eno) {
   lh_throw_strdup(eno, msg);
 }
 
+static const char* cancel_msg = "cancel";
+void lh_throw_cancel() {
+  lh_throw_str(0, cancel_msg);
+}
+bool lh_exception_is_cancel(const lh_exception* exn) {
+  return (exn != NULL && exn->msg == cancel_msg);
+}
 
 
 static lh_value _handle_exn_throw(lh_resume r, lh_value local, lh_value arg) {
@@ -94,13 +101,21 @@ static lh_value _lh_try(lh_exception** exn, lh_actionfun* action, lh_value arg, 
   #ifdef __cplusplus
   try {
   #endif
-    return exn_try(exn, action, arg);
+    lh_value result = exn_try(exn, action, arg);
+    if (!catchall && *exn!=NULL && lh_exception_is_cancel(*exn)) {
+      // rethrow cancelation
+      lh_exception* cexn = *exn;
+      *exn = NULL;
+      lh_throw(cexn);
+    }
+    return result;
   #ifdef __cplusplus
   } 
   catch (lh_unwind_exception e) {
     throw e;
   }
   catch (std::exception e) {
+    if (!catchall && e.what() == cancel_msg) throw e;     
     *exn = lh_exception_alloc_strdup(EOTHER, e.what());  // TODO: how to store a first class exception?
   }
   catch (...) {

@@ -135,7 +135,7 @@ char* async_fread_full(const char* path) {
     uv_stat_t stat = async_fstat(file);
     size_t    size = stat.st_size;
     buffer = nodec_nalloc(size + 1,char);
-    {on_exn(nodec_freev, lh_value_ptr(buffer)) {
+    {on_abort(nodec_freev, lh_value_ptr(buffer)) {
       uv_buf_t buf = nodec_buf(buffer, size);
       size_t read = 0;
       size_t total = 0;

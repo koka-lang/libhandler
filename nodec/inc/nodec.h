@@ -37,6 +37,13 @@ void       async_await_connect(uv_connect_t* req);
 void       async_await_shutdown(uv_shutdown_t* req);
 void       async_await_write(uv_write_t* req);
 
+// private
+implicit_declare(_cancel_scope)
+lh_value _cancel_scope_alloc();
+
+// execute under a cancelation scope
+#define with_cancel_scope()        with_implicit_defer(nodec_freev,_cancel_scope_alloc(),_cancel_scope)
+
 /* ----------------------------------------------------------------------------
   Asynchronous combinators
 -----------------------------------------------------------------------------*/

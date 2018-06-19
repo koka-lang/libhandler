@@ -135,7 +135,7 @@ void nodec_ip6_addr(const char* ip, int port, struct sockaddr_in6* addr) {
 tcp_channel_t* nodec_tcp_listen_at(const struct sockaddr* addr, int backlog) {
   uv_tcp_t* tcp = nodec_tcp_alloc();
   tcp_channel_t* ch = NULL;
-  {on_exn(nodec_tcp_freev, lh_value_ptr(tcp)) {
+  {on_abort(nodec_tcp_freev, lh_value_ptr(tcp)) {
     nodec_tcp_bind(tcp, addr, 0);
     ch = nodec_tcp_listen(tcp, backlog, true);
   }}
