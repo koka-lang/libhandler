@@ -94,7 +94,11 @@ void channel_freev(lh_value vchannel) {
   channel_free(lh_ptr_value(vchannel));
 }
 
-int channel_emit(channel_t* channel, channel_elem elem) {
+bool  channel_is_full(channel_t* channel) {
+  return (channel->lcount <= 0 && channel->qcount >= channel->qmax);
+}
+
+uverr channel_emit(channel_t* channel, channel_elem elem) {
   if (channel->lcount > 0) {
     // a listener, serve immediately
     // LIFO: good for web services but should perhaps be a parameter?

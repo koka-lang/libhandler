@@ -91,7 +91,12 @@ void nodec_handle_free(uv_handle_t* h) {
   // Todo: this is philosophically "wrong" as the callback is called outside of
   // our framework (i.e. we should do an await). 
   // but we're ok since the callback does just a free.
-  uv_close(h, _close_handle_cb);
+  if (h != NULL && !uv_is_closing(h)) {
+    uv_close(h, _close_handle_cb);
+  }
+  else {
+    _close_handle_cb(h);
+  }
 }   
 
 void nodec_stream_free(uv_stream_t* stream) {

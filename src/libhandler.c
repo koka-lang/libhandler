@@ -311,6 +311,10 @@ static void fatal(int err, const char* msg, ...) {
     fputs("libhandler: fatal error: ", stderr);
     fputs(buf, stderr);
     fputs("\n", stderr);
+    #ifdef _DEBUG
+    char buf[128];
+    gets(&buf);
+    #endif
     exit(1);
   }
 }

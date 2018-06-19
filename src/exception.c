@@ -84,7 +84,7 @@ static const lh_handlerdef exn_def = { LH_EFFECT(exn), NULL, NULL, NULL, _exn_op
 
 // Convert an exceptional computation to an exceptional value
 static lh_value exn_try(lh_exception** exn, lh_value(*action)(lh_value), lh_value arg ) {
-  *exn = NULL;
+  if (exn!=NULL) *exn = NULL;
   return lh_handle(&exn_def, lh_value_any_ptr(exn), action, arg);
 }
 

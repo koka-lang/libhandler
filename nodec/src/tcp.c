@@ -41,7 +41,7 @@ void nodec_tcp_freev(lh_value tcp) {
 }
 
 uv_tcp_t* nodec_tcp_alloc() {
-  uv_tcp_t* tcp = nodec_alloc(uv_tcp_t);
+  uv_tcp_t* tcp = nodec_zalloc(uv_tcp_t);
   check_uv_err( uv_tcp_init(async_loop(), tcp) );  
   return tcp;
 }
@@ -54,6 +54,7 @@ void nodec_tcp_bind(uv_tcp_t* handle, const struct sockaddr* addr, unsigned int 
 static void _listen_cb(uv_stream_t* server, int status) {
   fprintf(stderr, "connection came in!\n");
   uv_tcp_t* client = NULL;
+  channel_t* ch = NULL;
   int err = 0;
   if (status != 0) {
     err = status;
@@ -61,18 +62,22 @@ static void _listen_cb(uv_stream_t* server, int status) {
   else if (server==NULL) {
     err = UV_EINVAL;
   }
+  else if ((ch = (channel_t*)server->data) == NULL) {
+    err = UV_EINVAL;
+  }
+  else if (channel_is_full(ch)) {
+    err = UV_ENOSPC; // stop accepting connections if the queue is full
+  }
   else {
-    client = (uv_tcp_t*)malloc(sizeof(uv_tcp_t));
-    if (client==NULL) err = UV_ENOMEM;
-    else {
-      nodec_zero(uv_tcp_t, client);
-      err = uv_tcp_init(server->loop, client);
+    client = (uv_tcp_t*)calloc(1,sizeof(uv_tcp_t));
+    if (client == NULL) {
+      err = UV_ENOMEM;
     }
-    if (err==0) {
-      err = uv_accept(server, (uv_stream_t*)client);
+    else {
+      err = uv_tcp_init(server->loop, client);
       if (err == 0) {
-        channel_t* ch = (channel_t*)server->data;
-        if (ch!=NULL) {
+        err = uv_accept(server, (uv_stream_t*)client);
+        if (err == 0) {
           // here we emit into the channel
           // this will either queue the element, or call a listener
           // entering a listener is ok since that will be a resume 
@@ -80,7 +85,7 @@ static void _listen_cb(uv_stream_t* server, int status) {
           // TODO: we should have a size limited queue and check the emit return value
           channel_elem elem = { lh_value_ptr(client),lh_value_null,0 };
           fprintf(stderr, "emit\n");
-          channel_emit(ch, elem);
+          err = channel_emit(ch, elem);  // if err==UV_NOSPC the channel was full
         }
       }
     }
@@ -91,7 +96,7 @@ static void _listen_cb(uv_stream_t* server, int status) {
       nodec_stream_free((uv_stream_t*)client);
       client = NULL;
     }
-    fprintf(stderr, "connection error: %i\n", err);
+    fprintf(stderr, "connection error: %i: %s\n", err, uv_strerror(err));
   }
 }
 
@@ -102,12 +107,19 @@ static void _channel_release_tcp(lh_value tcpv) {
   nodec_tcp_free(tcp);
 }
 
+static void _channel_release_client(channel_elem elem) {
+  uv_stream_t* client = (uv_stream_t*)lh_ptr_value(elem.data);
+  if (client != NULL) {
+    nodec_stream_free(client);    
+  }
+}
+
 tcp_channel_t* nodec_tcp_listen(uv_tcp_t* tcp, int backlog, bool channel_owns_tcp) {
   if (backlog <= 0) backlog = 512;
   check_uv_err(uv_listen((uv_stream_t*)tcp, backlog, &_listen_cb));
-  tcp_channel_t* ch = (tcp_channel_t*)channel_alloc_ex(backlog,
+  tcp_channel_t* ch = (tcp_channel_t*)channel_alloc_ex(8, // TODO: should be small?
                           (channel_owns_tcp ? &_channel_release_tcp : NULL), 
-                              lh_value_ptr(tcp), NULL); 
+                              lh_value_ptr(tcp), &_channel_release_client );  
   tcp->data = ch;
   return ch;
 }
@@ -120,11 +132,11 @@ void nodec_ip6_addr(const char* ip, int port, struct sockaddr_in6* addr) {
   check_uv_err(uv_ip6_addr(ip, port, addr));
 }
 
-tcp_channel_t* nodec_tcp_listen_at(const struct sockaddr* addr, int backlog, unsigned int bind_flags) {
+tcp_channel_t* nodec_tcp_listen_at(const struct sockaddr* addr, int backlog) {
   uv_tcp_t* tcp = nodec_tcp_alloc();
   tcp_channel_t* ch = NULL;
   {on_exn(nodec_tcp_freev, lh_value_ptr(tcp)) {
-    nodec_tcp_bind(tcp, addr, bind_flags);
+    nodec_tcp_bind(tcp, addr, 0);
     ch = nodec_tcp_listen(tcp, backlog, true);
   }}
   return ch;
@@ -137,39 +149,161 @@ uv_stream_t* async_tcp_channel_receive(tcp_channel_t* ch) {
 }
 
 /*-----------------------------------------------------------------
-  A TCP server
+  HTTP errors|
+-----------------------------------------------------------------*/
+const char* http_error_headers =
+"HTTP/1.1 %i %s\r\n"
+"Server : NodeC\r\n"
+"Content-Length : %i\r\n"
+"Content-Type : text/html; charset=utf-8\r\n"
+"Connection : Closed\r\n"
+"\r\n";
+
+const char* http_error_body =
+"<!DOCTYPE html>"
+"<html>\n"
+"<head>\n"
+"  <meta charset=\"utf-8\">\n"
+"</head>\n"
+"<body>\n"
+"  <p>Error %i (%s): %s.</p>\n"
+"</body>\n"
+"</html>\n";
+
+typedef int http_status;
+
+typedef struct _http_err_reason {
+  http_status status;
+  const char* reason;
+} http_err_reason;
+
+static http_err_reason http_reasons[] = {
+  {200, "OK" },
+  {500, "Internal Server Error" },
+  {400, "Bad Request" },
+  {401, "Unauthorized" },
+  {100, "Continue"},
+  {101, "Switching Protocols"},
+  {201, "Created"},
+  {202, "Accepted"},
+  {203, "Non - Authoritative Information"},
+  {204, "No Content"},
+  {205, "Reset Content" },
+  {206, "Partial Content" },
+  {300, "Multiple Choices" },
+  {301, "Moved Permanently"},
+  {302, "Found"},
+  {303, "See Other"},
+  {304, "Not Modified"},
+  {305, "Use Proxy"},
+  {307, "Temporary Redirect"},
+  {402, "Payment Required"},
+  {403, "Forbidden"},
+  {404, "Not Found"},
+  {405, "Method Not Allowed"},
+  {406, "Not Acceptable"},
+  {407, "Proxy Authentication Required"},
+  {408, "Request Time - out"},
+  {409, "Conflict"},
+  {410, "Gone"},
+  {411, "Length Required"},
+  {412, "Precondition Failed"},
+  {413, "Request Entity Too Large"},
+  {414, "Request - URI Too Large"},
+  {415, "Unsupported Media Type"},
+  {416, "Requested range not satisfiable"},
+  {417, "Expectation Failed"},
+  {501, "Not Implemented"},
+  {502, "Bad Gateway"},
+  {503, "Service Unavailable"},
+  {504, "Gateway Time - out"},
+  {505, "HTTP Version not supported"},
+  {-1, NULL }
+};
+
+static void async_write_http_err(uv_stream_t* client, http_status code, const char* msg) {
+  const char* reason = "Unknown";
+  for (http_err_reason* r = http_reasons; r->reason != NULL; r++) {
+    if (r->status == code) {
+      reason = r->reason;
+      break;
+    }
+  }
+  char body[256];
+  snprintf(body, 255, http_error_body, code, reason, msg);
+  body[255] = 0;
+  char headers[256];
+  snprintf(headers, 255, http_error_headers, code, reason, strlen(body));
+  headers[255] = 0;
+  const char* strs[2] = { headers, body };
+  async_write_strs(client, strs, 2 );
+}
+
+static lh_value async_write_http_exnv(lh_value exnv) {
+  lh_exception* exn = (lh_exception*)lh_ptr_value(exnv);
+  if (exn == NULL || exn->data==NULL) return lh_value_null;
+  uv_stream_t* client = exn->data;
+  async_write_http_err(client, 500, exn->msg);
+  return lh_value_null;
+}
+
+/*-----------------------------------------------------------------
+    A TCP/HTTP server
 -----------------------------------------------------------------*/
 
-typedef struct _tcp_serve_args {
+typedef struct _http_serve_args {
   tcp_channel_t*      ch;
   nodec_tcp_servefun* serve;
-} tcp_serve_args;
+} http_serve_args;
 
-static lh_value tcp_servev(lh_value argsv) {
+typedef struct _http_client_args {
+  int           id;
+  uv_stream_t*  client;
+  nodec_tcp_servefun* serve;
+} http_client_args;
+
+static lh_value http_serve_client(lh_value argsv) {
+  http_client_args* args = (http_client_args*)lh_ptr_value(argsv);
+  args->serve(args->id, args->client);
+  return lh_value_null;
+}
+
+static lh_value http_servev(lh_value argsv) {
   static int ids = 0;
   int id = ids++;
-  tcp_serve_args* args = (tcp_serve_args*)lh_ptr_value(argsv);
+  http_serve_args* args = (http_serve_args*)lh_ptr_value(argsv);
   tcp_channel_t* ch = args->ch;
   nodec_tcp_servefun* serve = args->serve;
   do {
     uv_stream_t* client = async_tcp_channel_receive(ch);
     {with_stream(client) {
-      serve(id, client);
+      lh_exception* exn;
+      http_client_args cargs = { id, client, serve };
+      lh_try( &exn, &http_serve_client, lh_value_any_ptr(&cargs));
+      if (exn != NULL) {
+        // send an exception response
+        // wrap in try itself in case writing gives an error too!
+        lh_exception* wrap = lh_exception_alloc(exn->code, exn->msg);
+        wrap->data = client;
+        lh_try(NULL, &async_write_http_exnv, lh_value_any_ptr(wrap));
+        lh_exception_free(wrap);
+        lh_exception_free(exn);
+      }
     }}
   } while (false);  // should be until termination
   return lh_value_null;
 }
 
-void async_tcp_server_at(const struct sockaddr* addr, int backlog, unsigned int flags, int n, nodec_tcp_servefun* servefun) {
-  tcp_channel_t* ch = nodec_tcp_listen_at(addr, backlog, flags);
+void async_http_server_at(const struct sockaddr* addr, int backlog, int n, nodec_tcp_servefun* servefun) {
+  tcp_channel_t* ch = nodec_tcp_listen_at(addr, backlog);
   {with_tcp_channel(ch) {
-    {with_alloc(tcp_serve_args, sargs) {
+    {with_alloc(http_serve_args, sargs) {
       sargs->ch = ch;
       sargs->serve = servefun;
       {with_nalloc(n, lh_actionfun*, actions) {
         {with_nalloc(n, lh_value, args) {
           for (int i = 0; i < n; i++) {
-            actions[i] = &tcp_servev;
+            actions[i] = &http_servev;
             args[i] = lh_value_any_ptr(sargs);
           }
           interleave(n, actions, args);

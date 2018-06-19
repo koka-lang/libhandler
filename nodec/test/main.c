@@ -71,7 +71,7 @@ const char* response_body =
 "</html>\n";
 
 
-static void test_tcp_serve(int strand_id, uv_stream_t* client) {
+static void test_http_serve(int strand_id, uv_stream_t* client) {
   fprintf(stderr, "strand %i entered\n", strand_id);
   // input
   const char* input = async_read_chunk(client, 1024, NULL);
@@ -79,8 +79,9 @@ static void test_tcp_serve(int strand_id, uv_stream_t* client) {
     printf("strand %i received:%zi bytes\n%s", strand_id, strlen(input), input);
   }}
   // work
-  printf("waiting %i secs...\n", 3 + strand_id); 
-  async_delay(3000 + strand_id*1000);
+  printf("waiting %i secs...\n", 1 + strand_id); 
+  async_delay(1000 + strand_id*1000);
+  //check_uv_err(UV_EADDRINUSE);
 
   // response
   {with_nalloc(128, char, content_len) {
@@ -94,18 +95,18 @@ static void test_tcp_serve(int strand_id, uv_stream_t* client) {
 
 static void test_tcp() {
   define_ip4_addr("127.0.0.1", 8080,addr);
-  async_tcp_server_at( addr, 0, 0, 3, &test_tcp_serve );
+  async_http_server_at( addr, 0, 3, &test_http_serve );
 }
 
 static void test_tcp_raw() {
   define_ip4_addr("127.0.0.1", 8080, addr);
-  tcp_channel_t* ch = nodec_tcp_listen_at(addr, 0, 0);
+  tcp_channel_t* ch = nodec_tcp_listen_at(addr, 0);
   {with_tcp_channel(ch){
     int max_connects = 3;
     while (max_connects-- > 0) {
       uv_stream_t* client = tcp_channel_receive(ch);
       {with_stream(client){
-        test_tcp_serve(max_connects, client);
+        test_http_serve(max_connects, client);
       }}
     }
   }}
