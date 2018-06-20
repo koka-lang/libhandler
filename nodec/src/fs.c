@@ -33,24 +33,8 @@ static void async_fs_resume(uv_fs_t* uvreq) {
 }
 
 
-static uv_fs_t* nodec_fs_alloc() {
-  return nodec_zalloc(uv_fs_t);
-}
-
-static void nodec_fs_free(uv_fs_t* req) {
-  if (req != NULL) {
-    uv_fs_req_cleanup(req);
-    nodec_free(req);
-  }
-}
-
-static void nodec_fs_freev(lh_value req) {
-  nodec_fs_free((uv_fs_t*)lh_ptr_value(req));
-}
-
-#define with_fs_req(req,loop)  uv_fs_t*   req = nodec_fs_alloc(); \
-                               uv_loop_t* loop = async_loop(); \
-                               defer(nodec_fs_freev,lh_value_ptr(req))
+#define with_fs_req(req,loop)  uv_loop_t* loop = async_loop(); \
+                               with_req(uv_fs_t,req)
 
 
 
@@ -125,7 +109,7 @@ size_t async_fread(uv_file file, uv_buf_t* buf, int64_t file_offset) {
 
 static void async_file_closev(lh_value vfile) {
   uv_file file = lh_int_value(vfile);
-  //if (file >= 0) async_fclose(file);
+  if (file >= 0) async_fclose(file);
 }
 
 

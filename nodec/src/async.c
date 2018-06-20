@@ -125,6 +125,35 @@ void async_scoped_cancel() {
 
 
 /*-----------------------------------------------------------------
+   Free requests
+-----------------------------------------------------------------*/
+static void nodec_req_force_free(uv_req_t* uvreq) {
+  if (uvreq != NULL) {
+    if (uvreq->type == UV_FS) {
+      uv_fs_req_cleanup((uv_fs_t*)uvreq);
+    }
+    nodec_free(uvreq);
+  }
+}
+
+void nodec_req_force_freev(lh_value uvreq) {
+  nodec_req_force_free(lh_ptr_value(uvreq));
+}
+
+// When deallocating a request, a `-1` in the data field will not deallocate 
+// quite yet.
+void nodec_req_free(uv_req_t* uvreq) {
+  if ((uvreq != NULL && uvreq->data != (void*)(-1))) {
+    nodec_req_force_free(uvreq);
+  }
+}
+
+void nodec_req_freev(lh_value uvreq) {
+  nodec_req_free(lh_ptr_value(uvreq));
+}
+
+
+/*-----------------------------------------------------------------
   Asynchronous requests
 -----------------------------------------------------------------*/
 
@@ -169,8 +198,12 @@ static void async_request_resume(async_request_t* req, uv_req_t* uvreq, int err)
   assert(uvreq->data == req);
   assert(req->uvreq == NULL || req->uvreq == uvreq);
   if (req->uvreq != NULL) {
-    uvreq->data = NULL; // resume at most once
+    // resume at most once
     req->uvreq = NULL;
+    // when we cancel explicitly, the callback will be invoked twice
+    // and the first exit should not trigger deallocation of the uv request
+    // this is signified by putting `-1` in its data field (instead of NULL)
+    uvreq->data = (err == UV_ETHROWCANCEL ? (void*)(-1) : NULL);
     // unregister ourselves from outstanding requests
     // previous always exists using a dummy head element
     async_request_t* prev = req->prev;
@@ -196,7 +229,16 @@ static void async_request_resume(async_request_t* req, uv_req_t* uvreq, int err)
 // to the point where `async_await` was called on that request.
 void async_req_resume(uv_req_t* uvreq, int err) {
   async_request_t* req = (async_request_t*)uvreq->data;
-  if (req != NULL) async_request_resume(req, uvreq, err);
+  if (req != NULL) {
+    if (req != (void*)(-1)) {
+      // regular resumption
+      async_request_resume(req, uvreq, err);
+    }
+    else {
+      // already (explicitly) canceled; deallocate the request now and don't resume
+      nodec_req_force_free(uvreq);
+    }
+  }
 }
 
 
@@ -250,7 +292,7 @@ static void _async_release(lh_value localv) {
 
 
 
-static void _cancel_cb(uv_timer_t* timer) {
+static void _explicit_cancel_cb(uv_timer_t* timer) {
   if (timer == NULL) return;
   uv_req_t* uvreq = (uv_req_t*)timer->data;
   nodec_timer_free(timer);
@@ -266,8 +308,11 @@ static lh_value _async_uv_cancel(lh_resume resume, lh_value localv, lh_value sco
       req->canceled = true;
       uverr err = uv_cancel(req->uvreq);
       if (err != 0) {
-        // cancel failed; cancel it through the eventloop
-        _uv_set_timeout(local->loop, &_cancel_cb, req->uvreq, 0);  
+        // cancel failed; cancel it explicitly (through the eventloop instead using a 0 timeout)
+        // this is risky as async_req_resume can be invoked twice and the first return might 
+        // trigger deallocation of the uv_req_t structure which would be too early. Therefore,
+        // we set its `data` field to `-1` and check for that before deallocating a request.
+        _uv_set_timeout(local->loop, &_explicit_cancel_cb, req->uvreq, 0);  
         // todo: dont ignore errors here?
       }
     }

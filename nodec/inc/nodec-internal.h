@@ -22,6 +22,20 @@ void                _channel_async_req_resume(lh_resume r, lh_value local, uv_re
 void       async_req_resume(uv_req_t* uvreq, uverr err);
 void       async_fs_resume(uv_fs_t* req);
 
+void       nodec_req_force_free(uv_req_t* uvreq);
+void       nodec_req_force_freev(lh_value uvreq);
+
+void       nodec_req_free(uv_req_t* uvreq);
+void       nodec_req_freev(lh_value uvreq);
+
+#define with_req(req_tp,name) \
+  req_tp* name = nodec_zalloc(req_tp); \
+  defer(nodec_req_freev,lh_value_ptr(name))
+
+#define with_free_req(req_tp,name) \
+  req_tp* name = nodec_zalloc(req_tp); \
+  defer(nodec_req_force_freev,lh_value_ptr(name))
+
 // Check the an error value and throw if it is not zero.
 void       check_uv_err(uverr err);
 void       check_uv_errmsg(uverr err, const char* msg);

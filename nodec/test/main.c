@@ -151,9 +151,9 @@ static void entry() {
   printf("in the main loop\n");
   //test_files();
   //test_interleave();
-  test_cancel();
+  //test_cancel();
   //test_tcp_raw();
-  //test_tcp();
+  test_tcp();
 }
 
 
