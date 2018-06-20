@@ -125,33 +125,41 @@ size_t async_fread(uv_file file, uv_buf_t* buf, int64_t file_offset) {
 
 static void async_file_closev(lh_value vfile) {
   uv_file file = lh_int_value(vfile);
-  if (file >= 0) async_fclose(file);
+  //if (file >= 0) async_fclose(file);
 }
 
-char* async_fread_full(const char* path) {
-  char*   buffer = NULL;
-  uv_file file = async_fopen(path, O_RDONLY, 0);
-  {defer(async_file_closev, file) {
-    uv_stat_t stat = async_fstat(file);
-    size_t    size = stat.st_size;
-    buffer = nodec_nalloc(size + 1,char);
-    {on_abort(nodec_freev, lh_value_ptr(buffer)) {
-      uv_buf_t buf = nodec_buf(buffer, size);
-      size_t read = 0;
-      size_t total = 0;
-      while (total < size){
-        size_t read = async_fread(file, &buf, -1);
-        if (read == 0) break;
-        total += read;
-        if (total > size) {
-          total = size;
-        }
-        else {
-          buf = nodec_buf(buffer + total, size - total);
-        }
+
+lh_value _async_fread_full(lh_value filev) {
+  uv_file file = lh_int_value(filev);
+  uv_stat_t stat = async_fstat(file);
+  size_t    size = stat.st_size;
+  char*     buffer = nodec_nalloc(size + 1, char);
+  {on_abort(nodec_freev, lh_value_ptr(buffer)) {
+    uv_buf_t buf = nodec_buf(buffer, size);
+    size_t read = 0;
+    size_t total = 0;
+    while (total < size) {
+      size_t read = async_fread(file, &buf, -1);
+      if (read == 0) break;
+      total += read;
+      if (total > size) {
+        total = size;
       }
-      buffer[total] = 0;
-    }}
+      else {
+        buf = nodec_buf(buffer + total, size - total);
+      }
+    }
+    buffer[total] = 0;
   }}
-  return buffer;
+  return lh_value_ptr(buffer);
+}
+
+
+char* async_fread_full(const char* path) {
+  uv_file file = async_fopen(path, O_RDONLY, 0);
+  lh_value result = lh_finally(
+    _async_fread_full, lh_value_int(file),
+    async_file_closev, lh_value_int(file)
+  );
+  return (char*)lh_ptr_value(result);
 }

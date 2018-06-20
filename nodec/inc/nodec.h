@@ -52,6 +52,9 @@ void async_scoped_cancel();
 
 void interleave(size_t n, lh_actionfun* actions[], lh_value arg_results[]);
 
+lh_value async_timeout(lh_actionfun* action, lh_value arg, uint64_t timeout, bool* timedout);
+lh_value async_firstof(lh_actionfun* action1, lh_value arg1, lh_actionfun* action2, lh_value arg2, bool* first);
+
 // Asynchronously wait for `timeout` milli seconds.
 void async_delay(uint64_t timeout);
 

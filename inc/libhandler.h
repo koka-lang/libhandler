@@ -442,4 +442,6 @@ lh_value lh_try(lh_exception** exn, lh_actionfun* action, lh_value arg);
 // Also catch 'uncatchable' exceptions (like cancelation)
 lh_value lh_try_all(lh_exception** exn, lh_actionfun* action, lh_value arg);
 
+lh_value lh_finally(lh_actionfun* action, lh_value arg, lh_releasefun* faction, lh_value farg);
+
 #endif // __libhandler_h

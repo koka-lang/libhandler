@@ -76,6 +76,27 @@ static void nodec_free_if_notnull(lh_value pv) {
   if (pv!=lh_value_null) nodec_freev(pv);
 }
 
+void interleave_n(size_t n, lh_actionfun* actions[], lh_value arg_results[], lh_exception* exceptions[]) {
+  if (n == 0 || actions == NULL) return;
+
+  lh_exception* exn = NULL;
+  lh_value* local_args = NULL;
+  lh_exception** local_exns = NULL;
+  if (arg_results==NULL) {
+    local_args = nodec_calloc(n, sizeof(lh_value));
+    arg_results = local_args;
+  }
+  {defer(&nodec_free_if_notnull, lh_value_ptr(local_args)) {
+    if (exceptions==NULL) {
+      local_exns = nodec_calloc(n, sizeof(lh_exception*));
+      exceptions = local_exns;
+    }
+    {defer(&nodec_free_if_notnull, lh_value_ptr(local_exns)) {
+      _interleave_n(n, actions, arg_results, exceptions);
+    }}
+  }}
+}
+
 void interleave(size_t n, lh_actionfun* actions[], lh_value arg_results[]) {
   if (n == 0 || actions == NULL) return;
   if (n == 1) {
@@ -84,28 +105,63 @@ void interleave(size_t n, lh_actionfun* actions[], lh_value arg_results[]) {
   }
   else {
     lh_exception* exn = NULL;
-    lh_value* local_args = NULL;
-    lh_exception* local_exns = NULL;
-    if (arg_results==NULL) {
-      local_args = nodec_calloc(n, sizeof(lh_value));
-      arg_results = local_args;
-    }
-    {defer(&nodec_free_if_notnull,lh_value_ptr(local_args)){
-      {with_ncalloc(n, lh_exception*, exceptions) {
-        _interleave_n(n, actions, arg_results, exceptions);
-        // rethrow the first exception and release the others
-        for (size_t i = 0; i < n; i++) {
-          if (exceptions[i] != NULL) {
-            if (exn == NULL) {
-              exn = exceptions[i];
-            }
-            else {
-              lh_exception_free(exceptions[i]);
-            }
+    {with_ncalloc(n, lh_exception*, exceptions) {
+      interleave_n(n, actions, arg_results, exceptions);
+      // rethrow the first exception and release the others
+      for (size_t i = 0; i < n; i++) {
+        if (exceptions[i] != NULL) {
+          if (exn == NULL) {
+            exn = exceptions[i];
+          }
+          else {
+            lh_exception_free(exceptions[i]);
           }
         }
-      }}      
+      }
     }}
     if (exn != NULL) lh_throw(exn);
   }
+}
+
+lh_value async_firstof(lh_actionfun* action1, lh_value arg1, lh_actionfun* action2, lh_value arg2, bool* first ) {
+  lh_actionfun* actions[2]     = { action1, action2 };
+  lh_value      arg_results[2] = { arg1, arg2 };
+  lh_exception* exceptions[2]  = { NULL, NULL };
+  interleave_n(2, actions, arg_results, exceptions);
+  if (exceptions[0] != NULL) {
+    if (first) *first = false;
+    lh_exception_free(exceptions[0]);
+    if (exceptions[1]!=NULL) lh_throw(exceptions[1]);
+    return arg_results[1];
+  }
+  else {
+    if (first) *first = true;
+    if (exceptions[1]!=NULL) lh_exception_free(exceptions[1]);
+    if (exceptions[0]!=NULL) lh_throw(exceptions[0]);
+    return arg_results[0];
+  }
+}
+
+typedef struct _timeout_action_args {
+  lh_actionfun* action;
+  lh_value      arg;
+} timeout_action_args;
+
+static lh_value _timeout_action(lh_value actionargsv) {
+  timeout_action_args* args = (timeout_action_args*)lh_ptr_value(actionargsv);
+  lh_value result = args->action(args->arg);
+  async_scoped_cancel();
+  return result;
+}
+
+static lh_value _timeout_wait(lh_value timeoutv) {
+  uint64_t timeout = lh_longlong_value(timeoutv);
+  async_delay(timeout);
+  async_scoped_cancel();
+  return lh_value_null;
+}
+
+lh_value async_timeout(lh_actionfun* action, lh_value arg, uint64_t timeout, bool* timedout) {
+  timeout_action_args args = { action, arg };
+  return async_firstof(_timeout_wait, lh_value_longlong(timeout), _timeout_action, lh_value_any_ptr(&args), timedout);
 }

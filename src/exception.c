@@ -132,3 +132,12 @@ lh_value lh_try(lh_exception** exn, lh_actionfun* action, lh_value arg) {
 lh_value lh_try_all(lh_exception** exn, lh_actionfun* action, lh_value arg) {
   return _lh_try(exn, action, arg, true);
 }
+
+
+lh_value lh_finally(lh_actionfun* action, lh_value arg, lh_releasefun* faction, lh_value farg) {
+  lh_exception* exn;
+  lh_value result = lh_try_all(&exn, action, arg);
+  faction(farg);
+  if (exn!=NULL) lh_throw(exn);
+  return result;
+}

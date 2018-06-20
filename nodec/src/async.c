@@ -3,6 +3,11 @@
 #include <uv.h>
 #include <assert.h> 
 
+/* todos:
+- default handling operations (so cancel_async becomes more efficient)
+- single timer for setImmediate and yielding (to make them more lightweight)
+*/
+
 // forwards
 
 struct _cancel_scope_t;
@@ -44,7 +49,7 @@ uv_loop_t* async_loop() {
 uverr asyncx_await(uv_req_t* uvreq) {
   async_request_t* req = async_request_alloc(uvreq);
   uverr err = async_req_await(req);
-  if (err == UV_ECANCELED) lh_throw_cancel();
+  if (err == UV_ETHROWCANCEL) lh_throw_cancel();
   return err;
 }
 
@@ -138,6 +143,7 @@ struct _async_request_t {
   lh_value              local;
   const cancel_scope_t* scope;
   uv_req_t*             uvreq;
+  bool                  canceled;
   async_resume_fun*     resumefun;
 };
 
@@ -159,6 +165,8 @@ static void async_resume_default(lh_resume resume, lh_value local, uv_req_t* req
 
 
 static void async_request_resume(async_request_t* req, uv_req_t* uvreq, int err) {
+  assert(uvreq!=NULL);
+  assert(uvreq->data == req);
   assert(req->uvreq == NULL || req->uvreq == uvreq);
   if (req->uvreq != NULL) {
     uvreq->data = NULL; // resume at most once
@@ -176,8 +184,9 @@ static void async_request_resume(async_request_t* req, uv_req_t* uvreq, int err)
     async_resume_fun* resumefun = req->resumefun;
     lh_resume resume = req->resume;
     lh_value local = req->local;
+    int uverr = (req->canceled ? UV_ETHROWCANCEL : err);
     free(req);
-    (*resumefun)(resume, local, uvreq, err);
+    (*resumefun)(resume, local, uvreq, uverr);
   }
 }
 
@@ -245,16 +254,17 @@ static void _cancel_cb(uv_timer_t* timer) {
   if (timer == NULL) return;
   uv_req_t* uvreq = (uv_req_t*)timer->data;
   nodec_timer_free(timer);
-  async_req_resume(uvreq, UV_ECANCELED);
+  async_req_resume(uvreq, UV_ETHROWCANCEL);
 }
 
 static lh_value _async_uv_cancel(lh_resume resume, lh_value localv, lh_value scopev) {
   async_local_t* local = (async_local_t*)lh_ptr_value(localv);
   const cancel_scope_t* scope = lh_cancel_scope_ptr_value(scopev);
   for( async_request_t* req = local->requests.next; req != NULL; req = req->next ) {
-    if (in_scope_of(req->scope, scope) && req->uvreq != NULL) {
+    if (in_scope_of(req->scope, scope) && req->uvreq != NULL && !req->canceled) {
       // try primitive cancelation first; guarantees the callback is called with UV_ECANCELED
-      uverr err = uv_cancel(req->uvreq);
+      req->canceled = true;
+      uverr err = UV_EINVAL; // uv_cancel(req->uvreq);
       if (err != 0) {
         // cancel failed; cancel it through the eventloop
         _uv_set_timeout(local->loop, &_cancel_cb, req->uvreq, 0);  
@@ -262,7 +272,7 @@ static lh_value _async_uv_cancel(lh_resume resume, lh_value localv, lh_value sco
       }
     }
   }
-  return lh_release_resume(resume, localv, lh_value_null);
+  return lh_tail_resume(resume, localv, lh_value_null);
 }
 
 // The main async handler

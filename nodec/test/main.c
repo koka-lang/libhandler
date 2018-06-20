@@ -49,6 +49,36 @@ static void test_interleave() {
   interleave(3, actions, NULL);
 }
 
+
+/*-----------------------------------------------------------------
+  Test cancel
+-----------------------------------------------------------------*/
+
+static lh_value test_cancel1(lh_value arg) {
+  printf("starting work...\n");
+  test_interleave();
+  printf("and waiting a bit.. (1s)\n");
+  async_delay(1000);
+  printf("done work\n");
+}
+
+static void test_cancel_timeout(uint64_t timeout) {
+  bool timedout = false;
+  lh_value res = async_timeout(&test_cancel1, lh_value_null, timeout, &timedout);
+  if (timedout) {
+    printf("timed out\n");
+  }
+  else {
+    printf("finished with: %i\n", lh_int_value(res));
+  }
+}
+
+static void test_cancel() {
+  test_cancel_timeout(1000);
+  test_cancel_timeout(1500);
+}
+
+
 /*-----------------------------------------------------------------
   TCP
 -----------------------------------------------------------------*/
@@ -121,8 +151,9 @@ static void entry() {
   printf("in the main loop\n");
   //test_files();
   //test_interleave();
+  test_cancel();
   //test_tcp_raw();
-  test_tcp();
+  //test_tcp();
 }
 
 

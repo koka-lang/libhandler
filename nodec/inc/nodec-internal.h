@@ -35,4 +35,6 @@ uverr   asyncx_await_fs(uv_fs_t* req);
 void    nodec_timer_free(uv_timer_t* timer);
 uverr   _uv_set_timeout(uv_loop_t* loop, uv_timer_cb cb, void* arg, uint64_t timeout);
 
+#define UV_ETHROWCANCEL  (-10000)
+
 #endif
