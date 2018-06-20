@@ -264,7 +264,7 @@ static lh_value _async_uv_cancel(lh_resume resume, lh_value localv, lh_value sco
     if (in_scope_of(req->scope, scope) && req->uvreq != NULL && !req->canceled) {
       // try primitive cancelation first; guarantees the callback is called with UV_ECANCELED
       req->canceled = true;
-      uverr err = UV_EINVAL; // uv_cancel(req->uvreq);
+      uverr err = uv_cancel(req->uvreq);
       if (err != 0) {
         // cancel failed; cancel it through the eventloop
         _uv_set_timeout(local->loop, &_cancel_cb, req->uvreq, 0);  
