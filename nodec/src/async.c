@@ -228,6 +228,7 @@ static void async_request_resume(async_request_t* req, uv_req_t* uvreq, int err)
 // The main entry point for regular request callbacks which will resume
 // to the point where `async_await` was called on that request.
 void async_req_resume(uv_req_t* uvreq, int err) {
+  assert(uvreq != NULL);
   async_request_t* req = (async_request_t*)uvreq->data;
   if (req != NULL) {
     if (req != (void*)(-1)) {
