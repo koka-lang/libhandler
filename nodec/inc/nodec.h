@@ -87,16 +87,22 @@ void        async_shutdownv(lh_value streamv);
 
 #define with_stream(s)        defer(async_shutdownv,lh_value_ptr(s))
 
+struct _read_stream_t;
+typedef struct _read_stream_t read_stream_t;
 
-size_t      async_read_buf(uv_stream_t* stream, uv_buf_t buffer, size_t offset );
-void        async_write_bufs(uv_stream_t* stream, uv_buf_t bufs[], unsigned int buf_count);
+read_stream_t*  async_read_start(uv_stream_t* stream, size_t read_max, size_t alloc_init, size_t alloc_max);
+void            async_read_stop(uv_stream_t* stream);
 
-// Convenience
-char*       async_read_chunk(uv_stream_t* stream, size_t max_len, size_t* nread);
-size_t      async_read(uv_stream_t* stream, uv_buf_t* buffer, size_t max_len, size_t initial_size);
-char*       async_read_str(uv_stream_t* stream, size_t max_len, size_t* nread);
+size_t      async_read_buf(read_stream_t* rs, uv_buf_t* buf);
+uv_buf_t    async_read_buf_available(read_stream_t* rs);
+char*       async_read_str(read_stream_t* rs);
+
+uv_buf_t    async_read_full(read_stream_t* rs);
+char*       async_read_str_full(read_stream_t* rs);
+
 
 void        async_write(uv_stream_t* stream, const char* s);
+void        async_write_bufs(uv_stream_t* stream, uv_buf_t bufs[], unsigned int buf_count);
 void        async_write_strs(uv_stream_t* stream, const char* strings[], unsigned int string_count );
 void        async_write_data(uv_stream_t* stream, const void* data, size_t len);
 void        async_write_buf(uv_stream_t* stream, uv_buf_t buf);

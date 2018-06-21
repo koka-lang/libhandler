@@ -104,7 +104,8 @@ const char* response_body =
 static void test_http_serve(int strand_id, uv_stream_t* client) {
   fprintf(stderr, "strand %i entered\n", strand_id);
   // input
-  const char* input = async_read_chunk(client, 1024, NULL);
+  read_stream_t* rs = async_read_start(client, 0, 0, 0);
+  const char* input = async_read_str(rs);
   {with_free(input) {
     printf("strand %i received:%zi bytes\n%s", strand_id, strlen(input), input);
   }}

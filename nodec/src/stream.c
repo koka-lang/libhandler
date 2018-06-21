@@ -28,63 +28,154 @@ uv_buf_t nodec_buf(const void* data, size_t len) {
   return uv_buf_init((char*)data, (uv_buf_len_t)(len));
 }
 
-/*
+
+
+/* ----------------------------------------------------------------------------
+Await shutdown
+-----------------------------------------------------------------------------*/
+
+static void async_await_shutdown(uv_shutdown_t* req) {
+  async_await((uv_req_t*)req);
+}
+
+static void async_shutdown_resume(uv_shutdown_t* req, uverr status) {
+  async_req_resume((uv_req_t*)req, status);
+}
+
+
+/* ----------------------------------------------------------------------------
+Await write requests
+-----------------------------------------------------------------------------*/
+static void async_await_write(uv_write_t* req) {
+  async_await((uv_req_t*)req);
+}
+
+static void async_write_resume(uv_write_t* req, uverr status) {
+  async_req_resume((uv_req_t*)req, status);
+}
+
+
+/* ----------------------------------------------------------------------------
+  Read chunks
+-----------------------------------------------------------------------------*/
+
+typedef struct _chunk_t {
+  struct _chunk_t* next;
+  uv_buf_t     buf;
+} chunk_t;
+
+typedef struct _chunks_t {
+  chunk_t*     first;
+  chunk_t*     last;
+  size_t       alloc_size;
+  size_t       alloc_max;
+} chunks_t;
+
+static uverr chunks_push(chunks_t* chunks, const uv_buf_t buf, size_t nread) {
+  chunk_t* chunk = (chunk_t*)malloc(sizeof(chunk_t));
+  if (chunk == NULL) return UV_ENOMEM;
+  // initalize
+  chunk->next = NULL;
+  chunk->buf = buf;
+  // link it 
+  if (chunks->last != NULL) {
+    chunks->last->next = chunk;
+  }
+  else {
+    chunks->first = chunk;
+  }
+  chunks->last = chunk;
+  // ensure buf len is correct
+  // assert(buf.len == nread);
+  chunk->buf.len = (uv_buf_len_t)nread;  // Todo: this might waste space? should we realloc?
+  return 0;
+}
+
+static void chunks_free(chunks_t* chunks) {
+  chunk_t* chunk = chunks->first; 
+  while(chunk != NULL) {
+    nodec_free(chunk->buf.base);
+    chunk_t* next = chunk->next;
+    nodec_free(chunk);
+    chunk = next;
+  }
+  chunks->first = chunks->last = NULL;
+}
+
+
+size_t chunks_read_buf(chunks_t* chunks, uv_buf_t* buf) {
+  if (chunks->first == NULL) return 0;
+  size_t nread = 0;
+  chunk_t* chunk = chunks->first;
+  if (buf->base != NULL && buf->len < chunk->buf.len) {
+    // too small, pre-allocated buffer
+    nread = buf->len;
+    size_t todo = chunk->buf.len - nread;
+    memcpy(buf->base, chunk->buf.base, nread);
+    memmove(chunk->buf.base, chunk->buf.base + nread, todo);
+    chunk->buf.len = (uv_buf_len_t)todo;
+  }
+  else {
+    uv_buf_t src = chunk->buf;
+    nread = src.len;
+    // unlink the first chunk
+    chunks->first = chunk->next;
+    if (chunks->first == NULL) chunks->last = NULL;
+    nodec_free(chunk);
+    if (buf->base == NULL) {
+      // not, pre-allocated, just return as is :-)
+      *buf = src;
+    }
+    else {
+      // pre-allocated with enough space
+      memcpy(buf->base, src.base, nread);
+      nodec_free(src.base);
+    }
+  }
+  return nread;
+}
+
+
+/* ----------------------------------------------------------------------------
+  Read streams
+-----------------------------------------------------------------------------*/
+
 typedef struct _read_stream_t {
   uv_stream_t* stream;  // backlink (stream->data == this)
-  size_t       read_max;
-  size_t       read_chunk;
-  uv_buf_t*    read_bufs;
-  size_t       read_bufs_count;
-  size_t       read_bufs_size;
-  size_t       offset;  // offset into the first buffer
+  chunks_t     chunks;
   size_t       available;
-  size_t       total;
-  uverr        err;
+  size_t       read_max;
+  size_t       read_total;
+  size_t       alloc_size;
+  size_t       alloc_max;
+  bool         read_to_eof;
   bool         eof;
+  uverr        err;
   uv_req_t*    req;
 } read_stream_t;
 
 static void read_stream_free(read_stream_t* rs) {
   if (rs == NULL) return;
-  for (size_t i = 0; i < rs->read_bufs_count; i++) {
-    nodec_free(rs->read_bufs[i].base);
-  }
-  nodec_free(rs->read_bufs);
+  chunks_free(&rs->chunks);
   nodec_free(rs);
 }
 
-static void read_stream_push(read_stream_t* rs, const uv_buf_t* buf, size_t nread) {
-  if (nread == 0 || buf==NULL || buf->base==NULL) return;
-  if (rs->err != 0 || rs->eof) {
-    nodec_free(buf);
-    return;
-  }
-  if (rs->total >= rs->read_max) {
-    rs->err = UV_E2BIG;
-    nodec_free(buf);
-    return;
-  }
-
-  // expand buffers array if needed
-  if (rs->read_bufs_size <= rs->read_bufs_count) {
-    size_t    newsize = (rs->read_bufs_size == 0 ? 2 : 2 * rs->read_bufs_size);
-    uv_buf_t* newbufs = nodec_realloc(rs->read_bufs, newsize * sizeof(uv_buf_t));
-    if (newbufs == NULL) {
-      rs->err = UV_ENOMEM;
-      nodec_free(buf);
-      return;
+static void read_stream_push(read_stream_t* rs, const uv_buf_t buf, size_t nread) {
+  if (nread == 0 || buf.base==NULL) return;
+  if (rs->err == 0) {
+    if (rs->read_total >= rs->read_max) {
+      rs->err = UV_E2BIG;
     }
-    rs->read_bufs = newbufs;
-    rs->read_bufs_size = newsize;
+    else {
+      rs->err = chunks_push(&rs->chunks, buf, nread);
+    }
   }
-  // make sure the buffer length is the `nread`
-  assert(buf->len == nread);
-  // insert in buffers array
-  rs->read_bufs[rs->read_bufs_count] = *buf;
-  rs->read_bufs[rs->read_bufs_count].len = nread;  // paranoia
-  rs->read_bufs_count++;
+  if (rs->err != 0) {
+    nodec_free(buf.base);
+    return;
+  }
   rs->available += nread;
-  rs->total += nread;
+  rs->read_total += nread;
   return;
 }
 
@@ -102,14 +193,18 @@ static void read_stream_freereq(read_stream_t* rs) {
   }
 }
 
+static void read_stream_freereqv(lh_value rsv) {
+  read_stream_freereq(lh_ptr_value(rsv));
+}
+
 static bool async_read_stream_await(read_stream_t* rs) {
   if (rs == NULL) return true;
   if (rs->available == 0 && rs->err == 0 && !rs->eof) {
-    // otherwise await an event
+    // await an event
     if (rs->req != NULL) lh_throw_str(UV_EINVAL, "only one strand can await a read stream");
     uv_req_t* req = nodec_zalloc(uv_req_t);
     rs->req = req;
-    {defer(read_stream_freereq, lh_value_ptr(rs)) {
+    {defer(read_stream_freereqv, lh_value_ptr(rs)) {
       async_await(req);
     }}
   }
@@ -124,119 +219,133 @@ static void _read_stream_alloc_cb(uv_handle_t* handle, size_t suggested_size, uv
   if (handle == NULL) return;
   read_stream_t* rs = (read_stream_t*)handle->data;
   if (rs == NULL) return;
-  size_t len = (rs->read_chunk > 0 ? rs->read_chunk : suggested_size);
+  // allocate
+  size_t len = (rs->alloc_size > 0 ? rs->alloc_size : suggested_size);
   buf->base = malloc(len+1);  // always allow a zero at the end
-  if (buf->base != NULL) buf->len = len;
+  if (buf->base != NULL) buf->len = (uv_buf_len_t)len;
+  // increase alloc size
+  if (rs->alloc_size > 0 && rs->alloc_size < rs->alloc_max) {
+    size_t newsize = 2 * rs->alloc_size;
+    rs->alloc_size = (newsize > rs->alloc_max || newsize < rs->alloc_size ? rs->alloc_max : newsize);
+  }
 }
 
 static void _read_stream_cb(uv_stream_t* stream, ssize_t nread, const uv_buf_t* buf) {
-  if (nread == 0) {
-    // EAGAIN or EWOULDBLOCK, but not EOF
-    // Todo: do nothing? or resume?
-    return;
-  }
-  
-  read_stream_t* rs = (read_stream_t*)stream->data;
-  if (rs == NULL) {
-    // already stopped
-    if (buf != NULL && buf->base != NULL) nodec_free(buf->base);
-    return;
-  }
+  read_stream_t* rs = (read_stream_t*)stream->data;  
+  if (nread <= 0 || rs == NULL) {
+    if (buf != NULL && buf->base != NULL) {
+      nodec_free(buf->base);
+      //buf->base = NULL;
+    }    
+  }  
 
-  if (nread > 0) {
-    // data available
-    read_stream_push(rs,buf,(size_t)nread);      
-    read_stream_try_resume(rs);
-  }
-  else if (nread < 0) {
-    // done reading (error or UV_EOF)
-    rs->err = (uverr)(nread == UV_EOF ? 0 : nread);
-    if (nread == UV_EOF) rs->eof = true;
-    uv_read_stop(stream);       // no more reading
-    read_stream_try_resume(rs);
+  if (rs != NULL) {
+    if (nread > 0) {
+      // data available
+      read_stream_push(rs, *buf, (size_t)nread);
+      if (!rs->read_to_eof) read_stream_try_resume(rs);
+    }
+    else if (nread < 0) {
+      // done reading (error or UV_EOF)
+      rs->err = (uverr)(nread == UV_EOF ? 0 : nread);
+      if (nread == UV_EOF) rs->eof = true;
+      uv_read_stop(stream);       // no more reading
+      read_stream_try_resume(rs);
+    }
+    else {
+      // E_AGAIN or E_WOULDBLOCK (but not EOF)
+      // Todo: just ignore? or try resume?
+    }
   }
 }
 
-read_stream_t* async_read(uv_stream_t* stream, size_t max, size_t chunk) {
+
+
+read_stream_t* async_read_start(uv_stream_t* stream, size_t read_max, size_t alloc_init, size_t alloc_max) {
   assert(stream->data == NULL); // can start reading only once!
   if (stream->data != NULL) return (read_stream_t*)stream->data;
   read_stream_t* rs = nodec_zalloc(read_stream_t);  // owned by stream
-  rs->read_max = (max > 0 ? max : 1024 * 1024 * 1024);  // 1Gb by default
-  rs->read_chunk = chunk;
+  rs->read_max = (read_max > 0 ? read_max : 1024 * 1024 * 1024);  // 1Gb by default
+  rs->alloc_size = (alloc_init == 0 ? 1024 : alloc_init);
+  rs->alloc_max = (alloc_max == 0 ? 64*1024 : alloc_max);
   stream->data = rs;
   check_uv_err(uv_read_start(stream, &_read_stream_alloc_cb, &_read_stream_cb));
+  return rs;
+}
+
+void async_read_stop(uv_stream_t* stream) {
+  if (stream->data == NULL) return;
+  read_stream_t* rs = stream->data;
+  rs->eof = true;
+  uv_read_stop(stream);
+}
+
+// Read into a pre-allocated buffer, or allocated on demand, and
+// return the bytes read, or 0 on end-of-file.
+static size_t read_stream_read_buf(read_stream_t* rs, uv_buf_t* buf) {
+  if (rs->available == 0) {
+    check_uv_err(rs->err);
+    return 0;
+  }
+  else {
+    size_t nread = chunks_read_buf(&rs->chunks, buf);
+    assert(nread <= rs->available);
+    rs->available -= nread;
+    return nread;
+  }
+}
+
+// read all available data
+static uv_buf_t read_stream_read_available(read_stream_t* rs) {
+  if (rs->available == 0) {
+    check_uv_err(rs->err);
+    return nodec_buf(NULL, 0);
+  }
+  else if (rs->chunks.first == rs->chunks.last && rs->chunks.first->buf.len == rs->available) {
+    // just one chunk that contains all available data; just return it directly
+    uv_buf_t buf = nodec_buf(NULL, 0);
+    size_t nread = read_stream_read_buf(rs, &buf);
+    assert(rs->available == 0);
+    assert(buf.len == nread);
+    return buf;
+  }
+  else {
+    // preallocate and read into that
+    uv_buf_t buf = nodec_buf(nodec_malloc(rs->available + 1), rs->available);
+    size_t   total = 0;
+    size_t   nread = 0;
+    do {
+      uv_buf_t view = nodec_buf(buf.base + total, buf.len - total);
+      nread = read_stream_read_buf(rs, &view);
+      total += nread;
+    } while (nread > 0);
+    assert(total == buf.len);
+    assert(rs->available == 0);
+    buf.len = (uv_buf_len_t)total;
+    return buf;
+  }
 }
 
 // Read into a pre-allocated buffer, or allocated on demand, and
 // return the bytes read, or 0 on end-of-file.
 size_t async_read_buf(read_stream_t* rs, uv_buf_t* buf ) {
-  bool eof = async_read_stream_await(rs);
-  if (eof) return 0;
-
-  assert(rs->available > 0 && rs->read_bufs_count > 0);
-  size_t   nread = 0;
-  uv_buf_t src = rs->read_bufs[0];
-  if (buf->base == NULL) {
-    // copy the first buf to the result
-    nread = src.len;
-    *buf = src;
-    rs->read_bufs[0].base = NULL;
-  }
-  else  {
-    // user allocated buffer
-    nread = (src.len > buf->len ? buf->len : src.len); //min
-    memcpy(buf->base, src.base, nread );
-    if (src.len > buf->len) {
-      size_t todo = src.len - buf->len;
-      memmove(src.base, src.base + buf->len, todo);
-      src.len = todo;
-      rs->read_bufs[0] = src;
-    }
-    else {
-      nodec_free(rs->read_bufs[0].base);
-      rs->read_bufs[0].base = NULL;
-    }
-  }
-  // fix up bufs
-  // todo: should maintain a head element so no memmove is needed?
-  if (rs->read_bufs[0].base == NULL) {
-    for (size_t i = 1; i < rs->read_bufs_count; i++) {
-      rs->read_bufs[i - 1] = rs->read_bufs[i];
-    }
-    rs->read_bufs_count--;
-  }
-  assert(nread > rs->available);
-  rs->available -= nread;
-  return nread;
+  async_read_stream_await(rs);
+  return read_stream_read_buf(rs,buf);
 }
 
-// Read into a preallocated buffer until full, or until eof
-size_t async_read_buf_full(read_stream_t* rs, uv_buf_t buf) {
-  size_t nread = 0;
-  do {
-    nread = async_read_buf(rs, &buf);
-    assert(nread <= buf.len);
-    buf.base += nread;
-    buf.len -= nread;
-  } while (nread > 0 && buf.len > 0);
+// Read available data 
+uv_buf_t async_read_buf_available(read_stream_t* rs) {
+  async_read_stream_await(rs);
+  return read_stream_read_available(rs);
 }
 
 // Return a single buffer that contains the entire stream contents
 uv_buf_t async_read_full(read_stream_t* rs) {
+  rs->read_to_eof = true; // reduces resumes
   while (!async_read_stream_await(rs)) {
     // wait until eof
   }
-  uv_buf_t buf = nodec_buf(NULL,0); 
-  size_t nread = 0;
-  if (rs->read_bufs_count == 1) {
-    nread = async_read_buf(rs, &buf);
-  }
-  else {
-    buf.base = nodec_malloc(rs->available + 1);
-    buf.len = rs->available;
-    nread = (buf.len==0 ? 0 : async_read_buf_full(rs, buf));
-  }
-  return buf;
+  return read_stream_read_available(rs);
 }
 
 // Return the entire stream as a string
@@ -255,52 +364,7 @@ char* async_read_str(read_stream_t* rs) {
   buf.base[buf.len] = 0;
   return (char*)buf.base;
 }
-*/
 
-/* ----------------------------------------------------------------------------
-  Stream requests for reading
------------------------------------------------------------------------------*/
-
-// We use our own request for waiting on stream handle reads
-typedef struct _stream_req_t {
-  uv_req_t* uvreq;   
-  uv_buf_t  buf;    // the bufffer to write to
-  size_t    nread;  // bytes read
-  uverr  err;       // error code
-} stream_req_t;
-
-// Resume to the `async_await_stream`
-static void stream_req_resume(stream_req_t* req, uv_stream_t* stream) {
-  async_req_resume(req->uvreq, req->err);
-}
-
-static void async_await_stream(stream_req_t* req) {
-  async_await(req->uvreq);
-}
-
-/* ----------------------------------------------------------------------------
-  Await shutdown
------------------------------------------------------------------------------*/
-
-static void async_await_shutdown(uv_shutdown_t* req) {
-  async_await((uv_req_t*)req);
-}
-
-static void async_shutdown_resume(uv_shutdown_t* req, uverr status) {
-  async_req_resume((uv_req_t*)req, status);
-}
-
-
-/* ----------------------------------------------------------------------------
-  Await write requests
------------------------------------------------------------------------------*/
-static void async_await_write(uv_write_t* req) {
-  async_await((uv_req_t*)req);
-}
-
-static void async_write_resume(uv_write_t* req, uverr status) {
-  async_req_resume((uv_req_t*)req, status);
-}
 
 
 
@@ -310,8 +374,7 @@ static void async_write_resume(uv_write_t* req, uverr status) {
 
 static void _close_handle_cb(uv_handle_t* h) {
   if ((h->type == UV_STREAM || h->type==UV_TCP) && h->data!=NULL) {
-    nodec_req_free(((stream_req_t*)h->data)->uvreq);
-    nodec_free(h->data);
+    read_stream_free((read_stream_t*)h->data);
   }
   nodec_free(h);
 }
@@ -345,131 +408,6 @@ void async_shutdown(uv_stream_t* stream) {
 
 void async_shutdownv(lh_value streamv) {
   async_shutdown((uv_stream_t*)lh_ptr_value(streamv));
-}
-
-
-/* ----------------------------------------------------------------------------
-  Reading from a stream
------------------------------------------------------------------------------*/
-
-static void _read_alloc_cb(uv_handle_t* handle, size_t suggested_size, uv_buf_t* buf) {
-  stream_req_t* req = (stream_req_t*)handle->data;
-  *buf = req->buf;
-}
-
-static void _read_cb(uv_stream_t* stream, ssize_t nread, const uv_buf_t* buf) {
-  if (nread == 0) {
-    // EAGAIN or EWOULDBLOCK, not EOF
-    // do nothing?
-  }
-  else if (nread > 0) {
-    // data available
-    stream_req_t* req = (stream_req_t*)stream->data;
-    assert(req != NULL);
-    if (req != NULL) {
-      req->nread += nread;
-      req->buf = *buf;
-      stream_req_resume(req, stream);
-    }
-  }
-  else if (nread < 0) {
-    // done reading (error or UV_EOF)
-    stream_req_t* req = (stream_req_t*)stream->data;
-    assert(req != NULL);
-    if (req != NULL) {
-      req->err = (uverr)(nread == UV_EOF ? 0 : nread);
-      stream_req_resume(req, stream);
-    }
-  }
-}
-
-
-static _stream_req_zero(lh_value sreqv) {
-  nodec_zero(stream_req_t, (stream_req_t*)lh_ptr_value(sreqv));
-}
-
-// Most primitive: read from `stream` to a pre-allocated `buffer` starting at `offset`.
-size_t async_read_buf(uv_stream_t* stream, uv_buf_t buffer, size_t offset ) {
-  stream_req_t* req = (stream_req_t*)stream->data;
-  if (req==NULL) {
-    stream->data = req = nodec_zalloc(stream_req_t); // now owned by stream
-    int err = uv_read_start(stream, _read_alloc_cb, _read_cb);
-    if (err==UV_EOF) {
-      // directly invoked callback! todo: can this ever happen?
-      return 0;
-    }
-    check_uv_err(err);
-  }
-  req->buf = (offset>=buffer.len ? nodec_buf(NULL, 0) : nodec_buf(buffer.base+offset, buffer.len - offset));
-  size_t nread = 0;
-  {defer(&_stream_req_zero, lh_value_ptr(req)) {
-    {with_free_req(uv_req_t, uvreq) {
-      req->uvreq = uvreq;
-      async_await_stream(req);
-    }}
-    nread = req->nread;
-  }}
-  return nread;
-}
-
-// Read at most `max_len` or upto end-of-data from `stream` into a buffer `buffer`.
-// (Re)allocates as needed starting with `initial_size` if the initial `buffer` was empty.
-// Reallocates at the end too to fit exactly the data that was read. The buffer memory
-// will be one more byte than `buffer->len` and it is used to zero terminate the data.
-size_t async_read(uv_stream_t* stream, uv_buf_t* buffer, size_t max_len, size_t initial_size ) {
-  const size_t max_increase = 4*1024*1024;     // 4MB
-  if (max_len==0) max_len = 1024*1024*1024;    // 1GB
-  if (initial_size==0) initial_size = 8*1024; //  8KB
-  if (buffer->base == NULL) {
-    if (buffer->len == 0) {
-      buffer->len = (uv_buf_len_t)(max_len < initial_size ? max_len : initial_size);
-    }
-    buffer->base = nodec_malloc(buffer->len + 1);
-  }
-  else {
-    buffer->len--; // space for the final zero
-  }
-  size_t nread = 0;
-  size_t total = 0;
-  while (total < max_len && (nread = async_read_buf(stream, *buffer, total)) > 0) {
-    total += nread;
-    if (buffer->len <= total && buffer->len < max_len) {
-      //realloc 
-      // todo: check newsize overflow?
-      size_t newsize = (buffer->len > max_increase ? buffer->len + max_increase : buffer->len * 2);      
-      if (newsize > max_len) newsize = max_len;
-      *buffer = nodec_buf(nodec_realloc(buffer->base, newsize + 1),newsize);
-    }
-  }
-  buffer->base[total] = 0;  // safe as we allocate always +1
-  if (buffer->len>total) {
-    *buffer = nodec_buf(nodec_realloc(buffer->base, total+1),total); // reduce allocated area
-  }
-  return total;
-}
-
-// Read the initial data that is available upto `max_len` and return it as a string.
-// Can keep reading until `*nread` becomes `0`. 
-// The returned string is heap allocated and never NULL (and the caller should
-// `nodec_free` it.
-char* async_read_chunk(uv_stream_t* stream, size_t max_len, size_t* nread) {
-  if (max_len==0) max_len = 8*1024;
-  uv_buf_t buf = nodec_buf( nodec_nalloc(max_len+1, char), max_len);
-  size_t n = async_read_buf(stream, buf, 0);
-  buf.base[n] = 0;
-  if (buf.len>n) {
-    buf = nodec_buf(nodec_realloc(buf.base, n+1), n); // reduce allocated area
-  }
-  if (nread != NULL) *nread = n;
-  return buf.base;
-}
-
-// Read upto `max_len` bytes or to the end-of-data as a string.
-char* async_read_str(uv_stream_t* stream, size_t max_len, size_t* nread) {
-  uv_buf_t buf = uv_buf_init(NULL, 0);
-  size_t n = async_read(stream, &buf, max_len, 0);
-  if (nread != NULL) *nread = n;
-  return buf.base;
 }
 
 
