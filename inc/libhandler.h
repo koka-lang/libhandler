@@ -36,6 +36,8 @@ typedef long long lh_value;
 #endif
 lh_value lh_check_value_ptr(const void* p); // checks if no pointers to the stack are passed in an lh_value
 
+#define lh_value_value(v)     (v)
+
 #define lh_int_value(v)       ((int)v)
 #define lh_value_int(i)       ((lh_value)(i))
 
@@ -401,7 +403,7 @@ lh_value _lh_implicit_get(lh_resume r, lh_value local, lh_value arg);
 #define with_implicit_defer(release_fun,local,name)  LH_IMPLICIT(release_fun,local,name)
 #define with_implicit(local,name)                    with_implicit_defer(NULL,local,name)
 #define implicit_define(name)                   LH_DEFINE_EFFECT1(name,get) 
-#define implicit_declare(name)                  LH_DECLARE_EFFECT1(name,get) 
+#define implicit_declare(name)                  LH_DECLARE_EFFECT1(name,get) LH_DECLARE_OP(name,get) 
 #define implicit_get(name)                      lh_yield(LH_OPTAG(name,get),lh_value_null) 
 
 

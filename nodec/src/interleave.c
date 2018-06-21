@@ -127,7 +127,9 @@ lh_value async_firstof(lh_actionfun* action1, lh_value arg1, lh_actionfun* actio
   lh_actionfun* actions[2]     = { action1, action2 };
   lh_value      arg_results[2] = { arg1, arg2 };
   lh_exception* exceptions[2]  = { NULL, NULL };
-  interleave_n(2, actions, arg_results, exceptions);
+  {with_cancel_scope() {
+    interleave_n(2, actions, arg_results, exceptions);
+  }}
   if (exceptions[0] != NULL) {
     if (first) *first = false;
     lh_exception_free(exceptions[0]);

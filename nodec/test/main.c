@@ -126,7 +126,7 @@ static void test_http_serve(int strand_id, uv_stream_t* client) {
 
 static void test_tcp() {
   define_ip4_addr("127.0.0.1", 8080,addr);
-  async_http_server_at( addr, 0, 3, 1500, &test_http_serve );
+  async_http_server_at( addr, 0, 3, 30000, &test_http_serve );
 }
 
 static void test_tcp_raw() {
