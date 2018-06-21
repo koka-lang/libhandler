@@ -166,7 +166,7 @@ const char* http_error_body =
 "  <meta charset=\"utf-8\">\n"
 "</head>\n"
 "<body>\n"
-"  <p>Error %i (%s): %s.</p>\n"
+"  <p>Error %i (%s)%s%s.</p>\n"
 "</body>\n"
 "</html>\n";
 
@@ -230,7 +230,7 @@ static void async_write_http_err(uv_stream_t* client, http_status code, const ch
     }
   }
   char body[256];
-  snprintf(body, 255, http_error_body, code, reason, msg);
+  snprintf(body, 255, http_error_body, code, reason, (msg == NULL ? "" : ": "), (msg == NULL ? "" : msg));
   body[255] = 0;
   char headers[256];
   snprintf(headers, 255, http_error_headers, code, reason, strlen(body));
@@ -253,11 +253,13 @@ static lh_value async_write_http_exnv(lh_value exnv) {
 
 typedef struct _http_serve_args {
   tcp_channel_t*      ch;
+  uint64_t            timeout;
   nodec_tcp_servefun* serve;
 } http_serve_args;
 
 typedef struct _http_client_args {
   int           id;
+  uint64_t      timeout;
   uv_stream_t*  client;
   nodec_tcp_servefun* serve;
 } http_client_args;
@@ -268,24 +270,31 @@ static lh_value http_serve_client(lh_value argsv) {
   return lh_value_null;
 }
 
+static lh_value http_serve_timeout(lh_value argsv) {
+  http_client_args* args = (http_client_args*)lh_ptr_value(argsv);
+  bool timedout = false;
+  async_timeout(&http_serve_client, argsv, args->timeout, &timedout);
+  if (timedout) lh_throw_str(408, "request time-out");
+  return lh_value_null;
+}
+
 static lh_value http_servev(lh_value argsv) {
   static int ids = 0;
   int id = ids++;
-  http_serve_args* args = (http_serve_args*)lh_ptr_value(argsv);
-  tcp_channel_t* ch = args->ch;
-  nodec_tcp_servefun* serve = args->serve;
+  http_serve_args args = *((http_serve_args*)lh_ptr_value(argsv));  
   do {
-    uv_stream_t* client = async_tcp_channel_receive(ch);
+    uv_stream_t* client = async_tcp_channel_receive(args.ch);
     {with_stream(client) {
       lh_exception* exn;
-      http_client_args cargs = { id, client, serve };
-      lh_try( &exn, &http_serve_client, lh_value_any_ptr(&cargs));
+      http_client_args cargs = { id, args.timeout, client, args.serve };
+      lh_try( &exn, &http_serve_client, lh_value_any_ptr(&cargs)); // ignore timeout for now
       if (exn != NULL) {
         // send an exception response
         // wrap in try itself in case writing gives an error too!
         lh_exception* wrap = lh_exception_alloc(exn->code, exn->msg);
         wrap->data = client;
-        lh_try(NULL, &async_write_http_exnv, lh_value_any_ptr(wrap));
+        lh_exception* ignore_exn;
+        lh_try(&ignore_exn, &async_write_http_exnv, lh_value_any_ptr(wrap));
         lh_exception_free(wrap);
         lh_exception_free(exn);
       }
@@ -294,11 +303,12 @@ static lh_value http_servev(lh_value argsv) {
   return lh_value_null;
 }
 
-void async_http_server_at(const struct sockaddr* addr, int backlog, int n, nodec_tcp_servefun* servefun) {
+void async_http_server_at(const struct sockaddr* addr, int backlog, int n, uint64_t timeout, nodec_tcp_servefun* servefun) {
   tcp_channel_t* ch = nodec_tcp_listen_at(addr, backlog);
   {with_tcp_channel(ch) {
     {with_alloc(http_serve_args, sargs) {
       sargs->ch = ch;
+      sargs->timeout = (timeout==0 ? 30000 : timeout);
       sargs->serve = servefun;
       {with_nalloc(n, lh_actionfun*, actions) {
         {with_nalloc(n, lh_value, args) {
