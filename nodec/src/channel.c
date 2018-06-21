@@ -141,7 +141,8 @@ static void _channel_req_listener_fun(lh_value arg, channel_elem elem) {
   async_req_resume(&req->req, 0 /* error for our channel */);
 }
 
-channel_elem channel_receive(channel_t* channel) {
+
+static channel_elem channel_receive_ex(channel_t* channel, bool nocancel) {
   channel_elem result;
   nodec_zero(channel_elem, &result);
   if (channel->qcount>0) {
@@ -165,9 +166,29 @@ channel_elem channel_receive(channel_t* channel) {
       channel->listeners[channel->lcount].fun = &_channel_req_listener_fun;
       channel->lcount++;
       // and await our request 
-      async_await(&req->req);               // reqular await, triggered on channel_req_listener
-      result = req->elem;
+      if (nocancel) {
+        uverr err = asyncx_nocancel_await(&req->req);
+        if (err == UV_ETHROWCANCEL) {
+          // dont cancel, keep result zero'd
+        }
+        else {
+          check_uv_err(err);
+          result = req->elem;
+        }
+      }
+      else {
+        async_await(&req->req);               // reqular await, triggered on channel_req_listener
+        result = req->elem;
+      }
     }}
   }
   return result;
+}
+
+channel_elem channel_receive(channel_t* channel) {
+  return channel_receive_ex(channel, false);
+}
+
+channel_elem channel_receive_nocancel(channel_t* channel) {
+  return channel_receive_ex(channel, true);
 }

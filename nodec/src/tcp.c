@@ -288,7 +288,7 @@ static lh_value http_servev(lh_value argsv) {
     {with_stream(client) {
       lh_exception* exn;
       http_client_args cargs = { id, args.timeout, client, args.serve };
-      lh_try( &exn, &http_serve_client, lh_value_any_ptr(&cargs)); //ignore timeout for now
+      lh_try( &exn, &http_serve_timeout, lh_value_any_ptr(&cargs)); //ignore timeout for now
       if (exn != NULL) {
         // send an exception response
         // wrap in try itself in case writing gives an error too!

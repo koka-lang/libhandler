@@ -65,8 +65,12 @@ static void _interleave_n(size_t n, lh_actionfun** actions, lh_value* arg_result
         _handle_interleave_strand(channel, &args);
       }
       while (*todo > 0) {
-        channel_elem res = channel_receive(channel);
-        lh_release_resume((lh_resume)lh_ptr_value(res.data), res.arg, lh_value_int(res.err));
+        // a receive should never be canceled since it should wait until
+        // it children are canceled (and then continue). 
+        channel_elem res = channel_receive_nocancel(channel);
+        if (res.data != lh_value_null) { // can happen on cancel
+          lh_release_resume((lh_resume)lh_ptr_value(res.data), res.arg, lh_value_int(res.err));
+        }
       }
     }}
   }}

@@ -110,7 +110,7 @@ static void test_http_serve(int strand_id, uv_stream_t* client) {
     printf("strand %i received:%zi bytes\n%s", strand_id, strlen(input), input);
   }}
   // work
-  printf("waiting %i secs...\n", 1 + strand_id); 
+  printf("waiting %i secs...\n", 2 + strand_id); 
   async_delay(1000 + strand_id*1000);
   //check_uv_err(UV_EADDRINUSE);
 
@@ -126,7 +126,7 @@ static void test_http_serve(int strand_id, uv_stream_t* client) {
 
 static void test_tcp() {
   define_ip4_addr("127.0.0.1", 8080,addr);
-  async_http_server_at( addr, 0, 3, 30000, &test_http_serve );
+  async_http_server_at( addr, 0, 3, 2500, &test_http_serve );
 }
 
 static void test_tcp_raw() {

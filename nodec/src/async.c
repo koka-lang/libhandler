@@ -46,9 +46,13 @@ uv_loop_t* async_loop() {
   return async_uv_loop();
 }
 
-uverr asyncx_await(uv_req_t* uvreq) {
+uverr asyncx_nocancel_await(uv_req_t* uvreq) {
   async_request_t* req = async_request_alloc(uvreq);
-  uverr err = async_req_await(req);
+  return async_req_await(req);
+}
+
+uverr asyncx_await(uv_req_t* uvreq) {
+  uverr err = asyncx_nocancel_await(uvreq);
   if (err == UV_ETHROWCANCEL) lh_throw_cancel();
   return err;
 }
