@@ -384,9 +384,21 @@ static const lh_operation _channel_async_ops[] = {
   { LH_OP_TAIL, LH_OPTAG(async,uv_cancel), &_channel_async_uv_cancel },
   { LH_OP_NULL, lh_op_null, NULL }
 };
-const lh_handlerdef _channel_async_hdef = { LH_EFFECT(async), NULL, NULL, NULL, _channel_async_ops };
+static const lh_handlerdef _channel_async_hdef = { LH_EFFECT(async), NULL, NULL, NULL, _channel_async_ops };
 
+// The channel async handler
+// Resume by emmitting a local resume into a channel
+void _channel_async_req_resume(lh_resume r, lh_value local, uv_req_t* req, int err) {
+  assert(r != NULL);
+  assert(local != lh_value_null);
+  if (r != NULL) {
+    channel_emit((channel_t*)lh_ptr_value(local), lh_value_ptr(r), local, err);
+  }
+}
 
+lh_value _channel_async_handler(channel_t* channel, lh_actionfun* action, lh_value arg) {
+  return lh_handle(&_channel_async_hdef, lh_value_ptr(channel), action, arg);
+}
 
 /*-----------------------------------------------------------------
 Main wrapper

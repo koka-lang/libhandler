@@ -83,9 +83,8 @@ static void _listen_cb(uv_stream_t* server, int status) {
           // entering a listener is ok since that will be a resume 
           // under an async/try handler again.
           // TODO: we should have a size limited queue and check the emit return value
-          channel_elem elem = { lh_value_ptr(client),lh_value_null,0 };
           fprintf(stderr, "emit\n");
-          err = channel_emit(ch, elem);  // if err==UV_NOSPC the channel was full
+          err = channel_emit(ch, lh_value_ptr(client), lh_value_null, 0);  // if err==UV_NOSPC the channel was full
         }
       }
     }
@@ -107,8 +106,8 @@ static void _channel_release_tcp(lh_value tcpv) {
   nodec_tcp_free(tcp);
 }
 
-static void _channel_release_client(channel_elem elem) {
-  uv_stream_t* client = (uv_stream_t*)lh_ptr_value(elem.data);
+static void _channel_release_client(lh_value data, lh_value arg, int err) {
+  uv_stream_t* client = (uv_stream_t*)lh_ptr_value(data);
   if (client != NULL) {
     nodec_stream_free(client);    
   }
@@ -143,9 +142,10 @@ tcp_channel_t* nodec_tcp_listen_at(const struct sockaddr* addr, int backlog) {
 }
 
 uv_stream_t* async_tcp_channel_receive(tcp_channel_t* ch) {
-  channel_elem e = channel_receive(ch);
+  lh_value data = lh_value_null;
+  channel_receive(ch, &data, NULL);
   //printf("got a connection!\n");
-  return (uv_stream_t*)lh_ptr_value(e.data);
+  return (uv_stream_t*)lh_ptr_value(data);
 }
 
 

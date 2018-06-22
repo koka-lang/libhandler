@@ -14,20 +14,7 @@ Interleave
 -----------------------------------------------------------------*/
 
 
-// The channel async handler
-// Resume by emmitting a local resume into a channel
-void _channel_async_req_resume(lh_resume r, lh_value local, uv_req_t* req, int err) {
-  assert(r != NULL);
-  assert(local != lh_value_null);
-  if (r != NULL) {
-    channel_elem elem = { lh_value_ptr(r), local, lh_value_int(err) };
-    channel_emit((channel_t*)lh_ptr_value(local), elem);
-  }
-}
 
-static lh_value _channel_async_handler(channel_t* channel, lh_value(*action)(lh_value), lh_value arg) {
-  return lh_handle(&_channel_async_hdef, lh_value_ptr(channel), action, arg);
-}
 
 typedef struct _interleave_strand_args {
   lh_actionfun*  action;
@@ -67,9 +54,11 @@ static void _interleave_n(size_t n, lh_actionfun** actions, lh_value* arg_result
       while (*todo > 0) {
         // a receive should never be canceled since it should wait until
         // it children are canceled (and then continue). 
-        channel_elem res = channel_receive_nocancel(channel);
-        if (res.data != lh_value_null) { // can happen on cancel
-          lh_release_resume((lh_resume)lh_ptr_value(res.data), res.arg, lh_value_int(res.err));
+        lh_value resumev;
+        lh_value arg;
+        int err = channel_receive_nocancel(channel, &resumev, &arg);
+        if (resumev != lh_value_null) { // can happen on cancel
+          lh_release_resume((lh_resume)lh_ptr_value(resumev), arg, lh_value_int(err));
         }
       }
     }}

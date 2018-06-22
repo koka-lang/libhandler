@@ -177,14 +177,7 @@ void async_main( nc_entryfun_t* entry );
 /* ----------------------------------------------------------------------------
   Channels
 -----------------------------------------------------------------------------*/
-
-typedef struct _channel_elem {
-  lh_value data;
-  lh_value arg;
-  int      err;
-} channel_elem;
-
-typedef void (channel_release_elem_fun)(channel_elem elem);
+typedef void (channel_release_elem_fun)(lh_value data, lh_value arg, int err);
 
 channel_t*    channel_alloc(ssize_t queue_max);
 channel_t*    channel_alloc_ex(ssize_t queue_max, lh_releasefun* release, lh_value release_arg, channel_release_elem_fun* release_elem );
@@ -192,8 +185,8 @@ void          channel_free(channel_t* channel);
 void          channel_freev(lh_value vchannel);
 #define with_channel(name) channel_t* name = channel_alloc(-1); defer(&channel_freev,lh_value_ptr(name))
 
-uverr         channel_emit(channel_t* channel, channel_elem elem);
-channel_elem  channel_receive(channel_t* channel);
+uverr         channel_emit(channel_t* channel, lh_value data, lh_value arg, int err);
+int           channel_receive(channel_t* channel, lh_value* data, lh_value* arg);
 bool          channel_is_full(channel_t* channel);
 
 // Convenience

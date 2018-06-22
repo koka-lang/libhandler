@@ -13,8 +13,8 @@ found in the file "license.txt" at the root of this distribution.
 // ---------------------------------------------------------------------------------
 // Private: todo: is there a better way to define internally only visible routines?
 
-const lh_handlerdef _channel_async_hdef;
-void                _channel_async_req_resume(lh_resume r, lh_value local, uv_req_t* req, uverr err);
+lh_value   _channel_async_handler(channel_t* channel, lh_actionfun* action, lh_value arg);
+void       _channel_async_req_resume(lh_resume r, lh_value local, uv_req_t* req, uverr err);
 
 // These are callback functions to resume requests:
 // Calling this will resume the `async_await` call on that request. 
@@ -50,7 +50,7 @@ uverr   asyncx_await_fs(uv_fs_t* req);
 void    nodec_timer_free(uv_timer_t* timer);
 uverr   _uv_set_timeout(uv_loop_t* loop, uv_timer_cb cb, void* arg, uint64_t timeout);
 
-channel_elem channel_receive_nocancel(channel_t* channel);
+int     channel_receive_nocancel(channel_t* channel, lh_value* data, lh_value* arg);
 
 #define UV_ETHROWCANCEL  (-10000)
 #define UV_EHTTP         (-20000)

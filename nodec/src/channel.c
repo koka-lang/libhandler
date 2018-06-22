@@ -12,6 +12,11 @@ found in the file "license.txt" at the root of this distribution.
 /*-----------------------------------------------------------------
     Channels
 -----------------------------------------------------------------*/
+typedef struct _channel_elem {
+  lh_value data;
+  lh_value arg;
+  int      err;
+} channel_elem;
 
 typedef void (channel_listener_fun)(lh_value arg, channel_elem result);
 typedef struct _channel_listener {
@@ -67,7 +72,8 @@ void channel_free(channel_t* channel) {
       for (ssize_t i = 0; i < channel->qcount; i++) {
         ssize_t idx = i + channel->qhead;
         if (idx >= channel->qsize) idx = idx - channel->qsize;
-        channel->release_elem(channel->queue[idx]);
+        channel_elem* elem = &channel->queue[idx];
+        channel->release_elem(elem->data, elem->arg, elem->err);
       }
     }
     nodec_free(channel->queue);
@@ -98,7 +104,8 @@ bool  channel_is_full(channel_t* channel) {
   return (channel->lcount <= 0 && channel->qcount >= channel->qmax);
 }
 
-uverr channel_emit(channel_t* channel, channel_elem elem) {
+uverr channel_emit(channel_t* channel, lh_value data, lh_value arg, int err) {
+  channel_elem elem = { data, arg, err };
   if (channel->lcount > 0) {
     // a listener, serve immediately
     // LIFO: good for web services but should perhaps be a parameter?
@@ -185,10 +192,17 @@ static channel_elem channel_receive_ex(channel_t* channel, bool nocancel) {
   return result;
 }
 
-channel_elem channel_receive(channel_t* channel) {
-  return channel_receive_ex(channel, false);
+int channel_receive(channel_t* channel, lh_value* data, lh_value* arg ) {
+  channel_elem elem = channel_receive_ex(channel, false);
+  if (data != NULL) *data = elem.data;
+  if (arg != NULL) *arg = elem.arg;
+  return elem.err;
 }
 
-channel_elem channel_receive_nocancel(channel_t* channel) {
-  return channel_receive_ex(channel, true);
+int channel_receive_nocancel(channel_t* channel, lh_value* data, lh_value* arg) {
+  channel_elem elem = channel_receive_ex(channel, true);
+  if (data != NULL) *data = elem.data;
+  if (arg != NULL) *arg = elem.arg;
+  return elem.err;
+
 }
