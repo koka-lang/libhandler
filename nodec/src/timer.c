@@ -9,16 +9,6 @@ found in the file "license.txt" at the root of this distribution.
 #include <uv.h>
 #include <assert.h>
 
-
-uverr _uv_set_timeout(uv_loop_t* loop, uv_timer_cb cb, void* arg, uint64_t timeout) {
-  uv_timer_t* timer = (uv_timer_t*)calloc(1, sizeof(uv_timer_t));
-  if (timer == NULL) return UV_ENOMEM;
-  uv_timer_init(loop, timer);
-  timer->data = arg;
-  return uv_timer_start(timer, cb, timeout, 0);
-}
-
-
 uv_timer_t* nodec_timer_alloc() {
   uv_timer_t* timer = nodec_zero_alloc(uv_timer_t);
   check_uverr(uv_timer_init(async_loop(), timer));
@@ -30,12 +20,45 @@ static void _timer_close_cb(uv_handle_t* timer) {
 }
 
 void nodec_timer_free(uv_timer_t* timer) {
-  if (timer!=NULL) uv_close((uv_handle_t*)timer, &_timer_close_cb);
+  if (timer!=NULL) {
+    uv_timer_stop(timer);
+    uv_close((uv_handle_t*)timer, &_timer_close_cb);
+  }
 }
 
 void nodec_timer_freev(lh_value timerv) {
   nodec_timer_free((uv_timer_t*)lh_ptr_value(timerv));
 }
+
+
+
+
+typedef struct _timeout_args {
+  uv_timeoutfun* cb;
+  void*          arg;
+} timeout_args;
+
+static void _timeout_cb(uv_timer_t* timer) {
+  if (timer==NULL) return;
+  timeout_args args = *((timeout_args*)timer->data);
+  nodec_free(timer->data);
+  nodec_timer_free(timer);
+  args.cb(args.arg);
+}
+
+uverr _uv_set_timeout(uv_loop_t* loop, uv_timeoutfun* cb, void* arg, uint64_t timeout) {
+  uv_timer_t* timer = nodecx_alloc(uv_timer_t);
+  if (timer == NULL) return UV_ENOMEM;
+  timeout_args* args = nodecx_alloc(timeout_args);
+  if (args==NULL) { nodec_free(timer); return UV_ENOMEM; }
+  nodec_zero(uv_timer_t, timer);
+  uv_timer_init(loop, timer);
+  args->cb = cb;
+  args->arg = arg;
+  timer->data = args;
+  return uv_timer_start(timer, &_timeout_cb, timeout, 0);
+}
+
 
 static void _async_timer_resume(uv_timer_t* timer) {
   uv_req_t* req = (uv_req_t*)timer->data;

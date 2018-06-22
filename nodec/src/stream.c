@@ -199,6 +199,11 @@ static void read_stream_try_resume(read_stream_t* rs) {
   async_req_resume(req, rs->err);
 }
 
+static void _read_stream_try_resumev(void* rsv) {
+  read_stream_try_resume((read_stream_t*)rsv);
+}
+
+
 static void read_stream_freereq(read_stream_t* rs) {
   if (rs != NULL && rs->req != NULL) {
     nodec_req_free(rs->req);  // on explicit cancelation, don't immediately free
@@ -219,6 +224,7 @@ static bool async_read_stream_await(read_stream_t* rs) {
     rs->req = req;
     {defer(read_stream_freereqv, lh_value_ptr(rs)) {
       async_await(req);
+      fprintf(stderr,"back from await\n");
     }}
   }
   if (rs->available > 0) return false;
@@ -243,6 +249,7 @@ static void _read_stream_alloc_cb(uv_handle_t* handle, size_t suggested_size, uv
   }
 }
 
+
 static void _read_stream_cb(uv_stream_t* stream, ssize_t nread, const uv_buf_t* buf) {
   read_stream_t* rs = (read_stream_t*)stream->data;  
   if (nread <= 0 || rs == NULL) {
@@ -257,8 +264,7 @@ static void _read_stream_cb(uv_stream_t* stream, ssize_t nread, const uv_buf_t* 
       // data available
       read_stream_push(rs, *buf, (size_t)nread);
       if (!rs->read_to_eof || rs->eof) {
-        read_stream_try_resume(rs);
-        //fprintf(stderr, "returned\n");
+        read_stream_try_resume(rs);          
       }
     }
     else if (nread < 0) {
@@ -281,11 +287,11 @@ read_stream_t* async_read_start(uv_stream_t* stream, size_t read_max, size_t all
   assert(stream->data == NULL); // can start reading only once!
   if (stream->data != NULL) return (read_stream_t*)stream->data;
   read_stream_t* rs = nodec_zero_alloc(read_stream_t);  // owned by stream
+  stream->data = rs;
   rs->stream = stream; // backlink
   rs->read_max = (read_max > 0 ? read_max : 1024 * 1024 * 1024);  // 1Gb by default
   rs->alloc_size = (alloc_init == 0 ? 1024 : alloc_init);  // start small but double at every new read
   rs->alloc_max = (alloc_max == 0 ? 64*1024 : alloc_max);
-  stream->data = rs;
   check_uverr(uv_read_start(stream, &_read_stream_alloc_cb, &_read_stream_cb));
   return rs;
 }
@@ -394,7 +400,7 @@ char* async_read_str(read_stream_t* rs) {
 -----------------------------------------------------------------------------*/
 
 static void _close_handle_cb(uv_handle_t* h) {
-  if ((h->type == UV_STREAM || h->type==UV_TCP) && h->data!=NULL) {
+  if ((h->type == UV_STREAM || h->type==UV_TCP || h->type==UV_TTY) && h->data!=NULL) {
     read_stream_free((read_stream_t*)h->data);
   }
   nodec_free(h);
@@ -416,6 +422,7 @@ void nodec_stream_free(uv_stream_t* stream) {
   nodec_handle_free((uv_handle_t*)stream);  
 }
 
+
 void async_shutdown(uv_stream_t* stream) {
   if (stream==NULL) return;
   if (stream->write_queue_size>0) {
@@ -424,6 +431,10 @@ void async_shutdown(uv_stream_t* stream) {
       async_await_shutdown(req);
     }}
   } 
+  else if (stream->data != NULL) {
+    // read stream
+    async_read_stop(stream);
+  }
   nodec_stream_free(stream);
 }
 

@@ -296,10 +296,8 @@ static void _async_release(lh_value localv) {
 }
 
 
-static void _explicit_cancel_cb(uv_timer_t* timer) {
-  if (timer == NULL) return;
-  uv_req_t* uvreq = (uv_req_t*)timer->data;
-  nodec_timer_free(timer);
+static void _explicit_cancel_cb(void* data) {
+  uv_req_t* uvreq = (uv_req_t*)data;
   async_req_resume(uvreq, UV_ETHROWCANCEL);
 }
 

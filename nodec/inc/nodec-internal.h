@@ -43,9 +43,9 @@ uverr   asyncx_nocancel_await(uv_req_t* uvreq);
 uverr   asyncx_await(uv_req_t* req);
 uverr   asyncx_await_fs(uv_fs_t* req);
 
-// Set a timeout callback
-void    nodec_timer_free(uv_timer_t* timer);
-uverr   _uv_set_timeout(uv_loop_t* loop, uv_timer_cb cb, void* arg, uint64_t timeout);
+// Set a timeout callback 
+typedef void uv_timeoutfun(void* arg);
+uverr   _uv_set_timeout(uv_loop_t* loop, uv_timeoutfun* cb, void* arg, uint64_t timeout);
 
 int     channel_receive_nocancel(channel_t* channel, lh_value* data, lh_value* arg);
 

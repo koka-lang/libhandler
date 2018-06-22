@@ -222,7 +222,7 @@ uv_stream_t*  tcp_channel_receive(tcp_channel_t* ch);
 # define nodec_malloc(sz)     (check_nonnull(malloc(sz)))
 # define nodec_calloc(n,sz)   (check_nonnull(calloc(n,sz)))
 # define nodec_realloc(p,sz)  (check_nonnull(realloc(p,sz)))
-# define nodec_free(p)        if(p!=NULL) free(p)
+# define nodec_free           _nodec_free
 #else
 # define nodecx_malloc  _nodecx_malloc
 # define nodecx_calloc  _nodecx_calloc

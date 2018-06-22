@@ -89,7 +89,7 @@
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
       <SDLCheck>true</SDLCheck>
-      <AdditionalIncludeDirectories>..\..\libuv\include;..\..\inc;..\..\nodec\inc;.</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\..\..\libuv\include;..\..\inc;..\..\nodec\inc;.</AdditionalIncludeDirectories>
     </ClCompile>
     <CustomBuildStep>
       <Command>copy ..\..\libuv\libuv.dll $(OutDir)</Command>
@@ -97,13 +97,17 @@
     <CustomBuildStep>
       <Outputs>$(outDir)\libuv.dll</Outputs>
     </CustomBuildStep>
+    <Link>
+      <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;Ws2_32.lib;iphlpapi.lib;psapi.lib;userenv.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <IgnoreSpecificDefaultLibraries>libcmtd.lib</IgnoreSpecificDefaultLibraries>
+    </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
       <SDLCheck>true</SDLCheck>
-      <AdditionalIncludeDirectories>..\..\libuv\include;..\..\inc;..\..\nodec\inc;.</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\..\..\libuv\include;..\..\inc;..\..\nodec\inc;.</AdditionalIncludeDirectories>
     </ClCompile>
     <CustomBuildStep>
       <Command>copy ..\..\libuv\libuv.dll $(OutDir)</Command>
@@ -111,6 +115,10 @@
     <CustomBuildStep>
       <Outputs>$(outDir)\libuv.dll</Outputs>
     </CustomBuildStep>
+    <Link>
+      <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;Ws2_32.lib;iphlpapi.lib;psapi.lib;userenv.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <IgnoreSpecificDefaultLibraries>libcmtd.lib</IgnoreSpecificDefaultLibraries>
+    </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
@@ -119,11 +127,13 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <AdditionalIncludeDirectories>..\..\libuv\include;..\..\inc;..\..\nodec\inc;.</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\..\..\libuv\include;..\..\inc;..\..\nodec\inc;.</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
+      <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;Ws2_32.lib;iphlpapi.lib;psapi.lib;userenv.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <IgnoreSpecificDefaultLibraries>libcmtd.lib</IgnoreSpecificDefaultLibraries>
     </Link>
     <CustomBuildStep>
       <Command>copy ..\..\libuv\libuv.dll $(OutDir)</Command>
@@ -139,11 +149,13 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <AdditionalIncludeDirectories>..\..\libuv\include;..\..\inc;..\..\nodec\inc;.</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\..\..\libuv\include;..\..\inc;..\..\nodec\inc;.</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
+      <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;Ws2_32.lib;iphlpapi.lib;psapi.lib;userenv.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <IgnoreSpecificDefaultLibraries>libcmtd.lib</IgnoreSpecificDefaultLibraries>
     </Link>
     <CustomBuildStep>
       <Command>copy ..\..\libuv\libuv.dll $(OutDir)</Command>
@@ -164,16 +176,7 @@
     <ClCompile Include="..\..\nodec\test\main.c" />
   </ItemGroup>
   <ItemGroup>
-    <Library Include="..\..\libuv\libuv.lib" />
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="..\..\libuv\libuv.dll">
-      <FileType>Document</FileType>
-      <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</DeploymentContent>
-      <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</DeploymentContent>
-      <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</DeploymentContent>
-      <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</DeploymentContent>
-    </None>
+    <Library Include="..\..\..\libuv\Debug\lib\libuv.lib" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
