@@ -56,7 +56,7 @@ uverr asyncx_stat(const char* path, uv_stat_t* stat ) {
 
 uv_stat_t async_stat(const char* path) {
   uv_stat_t stat;
-  check_uv_errmsg(asyncx_stat(path, &stat), path);
+  check_uverr_msg(asyncx_stat(path, &stat), path);
   return stat;
 }
 
@@ -76,7 +76,7 @@ uverr asyncx_fopen(const char* path, int flags, int mode, uv_file* file) {
   *file = -1;
   uverr err = 0;
   {with_fs_req(req, loop) {
-    check_uv_errmsg(uv_fs_open(loop, req, path, flags, mode, &async_fs_resume), path);
+    check_uverr_msg(uv_fs_open(loop, req, path, flags, mode, &async_fs_resume), path);
     err = asyncx_await_fs(req);
     if (err == 0) *file = (uv_file)(req->result);
   }}
@@ -85,7 +85,7 @@ uverr asyncx_fopen(const char* path, int flags, int mode, uv_file* file) {
 
 uv_file async_fopen(const char* path, int flags, int mode) {
   uv_file file = -1;
-  check_uv_errmsg(asyncx_fopen(path, flags, mode, &file), path);
+  check_uverr_msg(asyncx_fopen(path, flags, mode, &file), path);
   return file;
 }
 

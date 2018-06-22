@@ -256,7 +256,10 @@ static void _read_stream_cb(uv_stream_t* stream, ssize_t nread, const uv_buf_t* 
     if (nread > 0) {
       // data available
       read_stream_push(rs, *buf, (size_t)nread);
-      if (!rs->read_to_eof || rs->eof) read_stream_try_resume(rs);
+      if (!rs->read_to_eof || rs->eof) {
+        read_stream_try_resume(rs);
+        //fprintf(stderr, "returned\n");
+      }
     }
     else if (nread < 0) {
       // done reading (error or UV_EOF)
@@ -270,20 +273,25 @@ static void _read_stream_cb(uv_stream_t* stream, ssize_t nread, const uv_buf_t* 
       // Todo: just ignore? or try resume?
     }
   }
+  return;
 }
-
 
 
 read_stream_t* async_read_start(uv_stream_t* stream, size_t read_max, size_t alloc_init, size_t alloc_max) {
   assert(stream->data == NULL); // can start reading only once!
   if (stream->data != NULL) return (read_stream_t*)stream->data;
   read_stream_t* rs = nodec_zero_alloc(read_stream_t);  // owned by stream
+  rs->stream = stream; // backlink
   rs->read_max = (read_max > 0 ? read_max : 1024 * 1024 * 1024);  // 1Gb by default
   rs->alloc_size = (alloc_init == 0 ? 1024 : alloc_init);  // start small but double at every new read
   rs->alloc_max = (alloc_max == 0 ? 64*1024 : alloc_max);
   stream->data = rs;
   check_uverr(uv_read_start(stream, &_read_stream_alloc_cb, &_read_stream_cb));
   return rs;
+}
+
+void async_read_restart(read_stream_t* rs) {
+  check_uverr(uv_read_start(rs->stream, &_read_stream_alloc_cb, &_read_stream_cb));  
 }
 
 void async_read_stop(uv_stream_t* stream) {

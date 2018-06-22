@@ -18,6 +18,11 @@ typedef struct _channel_s channel_t;
 // Error codes: non-zero is an error. libuv error codes are negative.
 typedef int uverr;
 
+// Check the an error value and throw if it is not zero.
+void     check_uverr(uverr err);
+void     check_uverr_msg(uverr err, const char* msg);
+
+
 // Initialize a libuv buffer which is a record with a data pointer and its length.
 uv_buf_t nodec_buf(void* data, size_t len);
 
@@ -94,6 +99,7 @@ struct _read_stream_t;
 typedef struct _read_stream_t read_stream_t;
 
 read_stream_t*  async_read_start(uv_stream_t* stream, size_t read_max, size_t alloc_init, size_t alloc_max);
+void            async_read_restart(read_stream_t* rs);
 void            async_read_stop(uv_stream_t* stream);
 
 size_t      async_read_buf(read_stream_t* rs, uv_buf_t* buf);
@@ -259,5 +265,7 @@ char* nodec_strndup(const char* s, size_t max);
 #define with_zero_alloc(tp,name)      with_zero_alloc_n(1,tp,name)
 
 #define nodec_zero(tp,ptr)        memset(ptr,0,sizeof(tp));
+
+
 
 #endif // __nodec_h

@@ -77,7 +77,7 @@ void check_uverr(uverr uverr) {
 }
 
 // Check an error result, throwing on error
-void check_uv_errmsg(uverr uverr, const char* msg) {
+void check_uverr_msg(uverr uverr, const char* msg) {
   if (uverr < 0) {
     char buf[256];
     snprintf(buf, 255, "%s: %s", uv_strerror(uverr), msg);

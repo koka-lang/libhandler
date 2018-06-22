@@ -143,6 +143,25 @@ static void test_tcp_raw() {
   }}
 }
 
+/*-----------------------------------------------------------------
+  TTY
+-----------------------------------------------------------------*/
+static void test_tty() {
+  uv_tty_t tty_in; 
+  nodec_zero(uv_tty_t, &tty_in);
+  check_uverr(uv_tty_init(async_loop(), &tty_in, 0, true));
+  read_stream_t* rs = async_read_start((uv_stream_t*)&tty_in, 0, 128, 128);
+  const char* s = async_read_str(rs);
+  {with_free(s) {
+    printf("I got: %s\n", s);
+  }}
+  s = async_read_str(rs);
+  {with_free(s) {
+    //printf("I got: %s\n", s);
+  }}
+  async_shutdown((uv_stream_t*)&tty_in);
+}
+
 
 /*-----------------------------------------------------------------
   Main
@@ -155,6 +174,7 @@ static void entry() {
   //test_cancel();
   //test_tcp_raw();
   test_tcp();
+  //test_tty();
 }
 
 

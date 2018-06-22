@@ -23,7 +23,7 @@ void check_uv_err_addr(int err, const struct sockaddr* addr) {
       }
     }
     buf[255] = 0;
-    check_uv_errmsg(err, buf);
+    check_uverr_msg(err, buf);
   }
 }
 

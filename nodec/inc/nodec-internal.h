@@ -36,9 +36,6 @@ void       nodec_req_freev(lh_value uvreq);
   req_tp* name = nodec_zero_alloc(req_tp); \
   defer(nodec_req_force_freev,lh_value_ptr(name))
 
-// Check the an error value and throw if it is not zero.
-void       check_uverr(uverr err);
-void       check_uv_errmsg(uverr err, const char* msg);
 
 // Await an asynchronous request but return an explicit error value instead of throwing.
 // Use with care since these still throw on cancelation requests.
