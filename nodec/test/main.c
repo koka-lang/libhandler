@@ -174,8 +174,8 @@ static void entry() {
   //test_interleave();
   //test_cancel();
   //test_tcp_raw();
-  //test_tcp();
-  test_tty();
+  test_tcp();
+  //test_tty();
 }
 
 
