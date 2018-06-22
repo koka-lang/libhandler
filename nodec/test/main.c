@@ -129,6 +129,31 @@ static void test_tcp() {
   async_http_server_at( addr, 0, 3, 2500, &test_http_serve );
 }
 
+
+static lh_value test_tcpv(lh_value _arg) {
+  test_tcp();
+  async_scoped_cancel(); // cancel tty waiter
+  return lh_value_null;
+}
+
+static lh_value test_ttyv(lh_value _arg) {
+  {with_tty() {
+    async_tty_write("press enter to quit the server...");
+    const char* s = async_tty_readline();
+    nodec_free(s);
+    async_tty_write("canceling server...");
+    async_scoped_cancel();
+  }}
+  return lh_value_null;
+}
+
+static void test_tcp_tty() {
+  bool first;
+  async_firstof(&test_tcpv, lh_value_null, &test_ttyv, lh_value_null, &first);
+  printf(first ? "http server exited" : "http server was terminated by the user");
+}
+
+
 static void test_tcp_raw() {
   define_ip4_addr("127.0.0.1", 8080, addr);
   tcp_channel_t* ch = nodec_tcp_listen_at(addr, 0);
@@ -191,7 +216,8 @@ static void entry() {
   //test_cancel();
   //test_tcp_raw();
   //test_tcp();
-  test_tty();
+  //test_tty();
+  test_tcp_tty();
 }
 
 
