@@ -32,6 +32,7 @@
     <ClCompile Include="..\..\nodec\src\stream.c" />
     <ClCompile Include="..\..\nodec\src\tcp.c" />
     <ClCompile Include="..\..\nodec\src\timer.c" />
+    <ClCompile Include="..\..\nodec\src\tty.c" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{C17F698B-0CF9-4034-9F70-CCB61DE46812}</ProjectGuid>

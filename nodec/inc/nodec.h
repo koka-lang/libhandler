@@ -173,6 +173,21 @@ void async_http_server_at(const struct sockaddr* addr, int backlog, int max_inte
 
 
 /* ----------------------------------------------------------------------------
+  TTY
+-----------------------------------------------------------------------------*/
+
+lh_value _nodec_tty_allocv();
+void     _nodec_tty_freev(lh_value ttyv);
+
+implicit_declare(tty)
+
+#define with_tty()  with_implicit_defer(_nodec_tty_freev,_nodec_tty_allocv(),tty)
+
+char* async_tty_readline();
+void  async_tty_write(const char* s);
+
+
+/* ----------------------------------------------------------------------------
   Other
 -----------------------------------------------------------------------------*/
 

@@ -146,7 +146,7 @@ static void test_tcp_raw() {
 /*-----------------------------------------------------------------
   TTY
 -----------------------------------------------------------------*/
-static void test_tty() {
+static void test_tty_raw() {
   uv_tty_t* tty_in = nodec_zero_alloc(uv_tty_t); 
   {with_stream(tty_in) {
     check_uverr(uv_tty_init(async_loop(), tty_in, 0, true));
@@ -163,6 +163,22 @@ static void test_tty() {
   }}
 }
 
+static void test_tty() {
+  {with_tty() {
+    async_tty_write("\033[41;37m");
+    async_tty_write("what is your name? ");
+    const char* s = async_tty_readline();
+    {with_free(s) {
+      printf("I got: %s\n", s);
+    }}
+    async_tty_write("and your age? ");
+    s = async_tty_readline();
+    {with_free(s) {
+      printf("Now I got: %s\n", s);
+    }}
+  }}
+}
+
 
 /*-----------------------------------------------------------------
   Main
@@ -174,8 +190,8 @@ static void entry() {
   //test_interleave();
   //test_cancel();
   //test_tcp_raw();
-  test_tcp();
-  //test_tty();
+  //test_tcp();
+  test_tty();
 }
 
 

@@ -331,7 +331,7 @@ void async_read_restart(read_stream_t* rs) {
   check_uverr(uv_read_start(rs->stream, &_read_stream_alloc_cb, &_read_stream_cb));  
 }
 
-void async_read_stop(uv_stream_t* stream) {
+void nodec_read_stop(uv_stream_t* stream) {
   if (stream->data == NULL) return;
   read_stream_t* rs = stream->data;
   rs->eof = true;
@@ -486,6 +486,10 @@ void nodec_handle_free(uv_handle_t* h) {
 }   
 
 void nodec_stream_free(uv_stream_t* stream) {
+  if (stream->data != NULL) {
+    // read stream
+    nodec_read_stop(stream);
+  }
   nodec_handle_free((uv_handle_t*)stream);  
 }
 
@@ -498,10 +502,6 @@ void async_shutdown(uv_stream_t* stream) {
       async_await_shutdown(req);
     }}
   } 
-  else if (stream->data != NULL) {
-    // read stream
-    async_read_stop(stream);
-  }
   nodec_stream_free(stream);
 }
 
