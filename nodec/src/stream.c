@@ -57,6 +57,13 @@ static void async_write_resume(uv_write_t* req, uverr status) {
 
 /* ----------------------------------------------------------------------------
   Read chunks
+  Reading from a stream is a bit complex as the API from libuv is not
+  ideal for our situation; in particular, it relies on a callback that 
+  is called repeatedly and cannot be stopped without performance drawbacks.
+  (see: https://groups.google.com/forum/#!topic/libuv/rH8Gye57Ung)
+  To work around this we start reading and put partial read data in 
+  a list of buffers (`chunks`) and provide asynchronous functions to read
+  from these chunks potentially waiting until data is read.
 -----------------------------------------------------------------------------*/
 
 typedef struct _chunk_t {
@@ -71,8 +78,9 @@ typedef struct _chunks_t {
   size_t       alloc_max;
 } chunks_t;
 
+// push a buffer on the chunks queue
 static uverr chunks_push(chunks_t* chunks, const uv_buf_t buf, size_t nread) {
-  chunk_t* chunk = (chunk_t*)malloc(sizeof(chunk_t));
+  chunk_t* chunk = nodecx_alloc(chunk_t);
   if (chunk == NULL) return UV_ENOMEM;
   // initalize
   chunk->next = NULL;
@@ -91,6 +99,7 @@ static uverr chunks_push(chunks_t* chunks, const uv_buf_t buf, size_t nread) {
   return 0;
 }
 
+// Free all memory for a chunks queue
 static void chunks_free(chunks_t* chunks) {
   chunk_t* chunk = chunks->first; 
   while(chunk != NULL) {
@@ -102,13 +111,13 @@ static void chunks_free(chunks_t* chunks) {
   chunks->first = chunks->last = NULL;
 }
 
-
+// Read one chunk into a pre-allocated buffer, or move it in place.
 size_t chunks_read_buf(chunks_t* chunks, uv_buf_t* buf) {
   if (chunks->first == NULL) return 0;
   size_t nread = 0;
   chunk_t* chunk = chunks->first;
   if (buf->base != NULL && buf->len < chunk->buf.len) {
-    // too small, pre-allocated buffer
+    // pre-allocated buffer that is too small for the first chunk
     nread = buf->len;
     size_t todo = chunk->buf.len - nread;
     memcpy(buf->base, chunk->buf.base, nread);
@@ -123,7 +132,7 @@ size_t chunks_read_buf(chunks_t* chunks, uv_buf_t* buf) {
     if (chunks->first == NULL) chunks->last = NULL;
     nodec_free(chunk);
     if (buf->base == NULL) {
-      // not, pre-allocated, just return as is :-)
+      // not pre-allocated, just return as is :-)
       *buf = src;
     }
     else {
@@ -138,20 +147,21 @@ size_t chunks_read_buf(chunks_t* chunks, uv_buf_t* buf) {
 
 /* ----------------------------------------------------------------------------
   Read streams
+  These are returned from `async_read_start` and can the be used to read from.
 -----------------------------------------------------------------------------*/
 
 typedef struct _read_stream_t {
-  uv_stream_t* stream;  // backlink (stream->data == this)
-  chunks_t     chunks;
-  size_t       available;
-  size_t       read_max;
-  size_t       read_total;
-  size_t       alloc_size;
-  size_t       alloc_max;
-  bool         read_to_eof;
-  bool         eof;
-  uverr        err;
-  uv_req_t*    req;
+  uv_stream_t* stream;        // backlink (stream->data == this)
+  chunks_t     chunks;        // the currently read buffers
+  size_t       available;     // how much data is now available
+  size_t       read_max;      // maximum bytes we are going to read
+  size_t       read_total;    // total bytes read until now (available <= total)
+  size_t       alloc_size;    // current chunk allocation size (<= alloc_max), doubled on every new read
+  size_t       alloc_max;     // maximal chunk allocation size (usually about 64kb)
+  bool         read_to_eof;   // set to true to improve perfomance for reading a stream up to eof
+  bool         eof;           // true if end-of-file reached
+  uverr        err;           // !=0 on error
+  uv_req_t*    req;           // request object for waiting
 } read_stream_t;
 
 static void read_stream_free(read_stream_t* rs) {
@@ -176,6 +186,9 @@ static void read_stream_push(read_stream_t* rs, const uv_buf_t buf, size_t nread
   }
   rs->available += nread;
   rs->read_total += nread;
+  if (rs->read_total >= rs->read_max) {
+    rs->eof = true;
+  }
   return;
 }
 
@@ -202,14 +215,14 @@ static bool async_read_stream_await(read_stream_t* rs) {
   if (rs->available == 0 && rs->err == 0 && !rs->eof) {
     // await an event
     if (rs->req != NULL) lh_throw_str(UV_EINVAL, "only one strand can await a read stream");
-    uv_req_t* req = nodec_zalloc(uv_req_t);
+    uv_req_t* req = nodec_zero_alloc(uv_req_t);
     rs->req = req;
     {defer(read_stream_freereqv, lh_value_ptr(rs)) {
       async_await(req);
     }}
   }
   if (rs->available > 0) return false;
-  check_uv_err(rs->err);
+  check_uverr(rs->err);
   if (rs->eof) return true;
   assert(false); 
   return false;
@@ -221,7 +234,7 @@ static void _read_stream_alloc_cb(uv_handle_t* handle, size_t suggested_size, uv
   if (rs == NULL) return;
   // allocate
   size_t len = (rs->alloc_size > 0 ? rs->alloc_size : suggested_size);
-  buf->base = malloc(len+1);  // always allow a zero at the end
+  buf->base = nodecx_malloc(len+1);  // always allow a zero at the end
   if (buf->base != NULL) buf->len = (uv_buf_len_t)len;
   // increase alloc size
   if (rs->alloc_size > 0 && rs->alloc_size < rs->alloc_max) {
@@ -243,7 +256,7 @@ static void _read_stream_cb(uv_stream_t* stream, ssize_t nread, const uv_buf_t* 
     if (nread > 0) {
       // data available
       read_stream_push(rs, *buf, (size_t)nread);
-      if (!rs->read_to_eof) read_stream_try_resume(rs);
+      if (!rs->read_to_eof || rs->eof) read_stream_try_resume(rs);
     }
     else if (nread < 0) {
       // done reading (error or UV_EOF)
@@ -264,12 +277,12 @@ static void _read_stream_cb(uv_stream_t* stream, ssize_t nread, const uv_buf_t* 
 read_stream_t* async_read_start(uv_stream_t* stream, size_t read_max, size_t alloc_init, size_t alloc_max) {
   assert(stream->data == NULL); // can start reading only once!
   if (stream->data != NULL) return (read_stream_t*)stream->data;
-  read_stream_t* rs = nodec_zalloc(read_stream_t);  // owned by stream
+  read_stream_t* rs = nodec_zero_alloc(read_stream_t);  // owned by stream
   rs->read_max = (read_max > 0 ? read_max : 1024 * 1024 * 1024);  // 1Gb by default
-  rs->alloc_size = (alloc_init == 0 ? 1024 : alloc_init);
+  rs->alloc_size = (alloc_init == 0 ? 1024 : alloc_init);  // start small but double at every new read
   rs->alloc_max = (alloc_max == 0 ? 64*1024 : alloc_max);
   stream->data = rs;
-  check_uv_err(uv_read_start(stream, &_read_stream_alloc_cb, &_read_stream_cb));
+  check_uverr(uv_read_start(stream, &_read_stream_alloc_cb, &_read_stream_cb));
   return rs;
 }
 
@@ -284,7 +297,7 @@ void async_read_stop(uv_stream_t* stream) {
 // return the bytes read, or 0 on end-of-file.
 static size_t read_stream_read_buf(read_stream_t* rs, uv_buf_t* buf) {
   if (rs->available == 0) {
-    check_uv_err(rs->err);
+    check_uverr(rs->err);
     return 0;
   }
   else {
@@ -298,7 +311,7 @@ static size_t read_stream_read_buf(read_stream_t* rs, uv_buf_t* buf) {
 // read all available data
 static uv_buf_t read_stream_read_available(read_stream_t* rs) {
   if (rs->available == 0) {
-    check_uv_err(rs->err);
+    check_uverr(rs->err);
     return nodec_buf(NULL, 0);
   }
   else if (rs->chunks.first == rs->chunks.last && rs->chunks.first->buf.len == rs->available) {
@@ -399,7 +412,7 @@ void async_shutdown(uv_stream_t* stream) {
   if (stream==NULL) return;
   if (stream->write_queue_size>0) {
     {with_req(uv_shutdown_t, req) {
-      check_uv_err(uv_shutdown(req, stream, &async_shutdown_resume));
+      check_uverr(uv_shutdown(req, stream, &async_shutdown_resume));
       async_await_shutdown(req);
     }}
   } 
@@ -442,7 +455,7 @@ void async_write_bufs(uv_stream_t* stream, uv_buf_t bufs[], unsigned int buf_cou
   if (bufs==NULL || buf_count<=0) return;
   {with_req(uv_write_t, req) {    
     // Todo: verify it is ok to have bufs on the stack or if we need to heap alloc them first for safety
-    check_uv_err(uv_write(req, stream, bufs, buf_count, &async_write_resume));
+    check_uverr(uv_write(req, stream, bufs, buf_count, &async_write_resume));
     async_await_write(req);
   }}
 }

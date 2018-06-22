@@ -73,8 +73,11 @@ void      async_fclose(uv_file file);
 size_t    async_fread(uv_file file, uv_buf_t* buf, int64_t offset);
 
 // File system convenience functions
-
 char*     async_fread_full(const char* path);
+
+typedef lh_value(nodec_file_fun)(uv_file file, lh_value arg);
+lh_value  async_with_fopen(const char* path, int flags, int mode, nodec_file_fun* action, lh_value arg);
+
 
 /* ----------------------------------------------------------------------------
   Streams
@@ -198,39 +201,55 @@ uv_stream_t*  tcp_channel_receive(tcp_channel_t* ch);
 # undef _malloca // suppress warning
 # define _CRTDBG_MAP_ALLOC
 # include <crtdbg.h>
-# define nodec_malloc malloc
-# define nodec_calloc calloc
-# define nodec_realloc realloc
-# define nodec_free free
+# define nodecx_malloc  malloc
+# define nodecx_calloc  calloc
+# define nodecx_realloc realloc
+# define nodecx_free    free
+# define nodec_malloc(sz)     (check_nonnull(malloc(sz)))
+# define nodec_calloc(n,sz)   (check_nonnull(calloc(n,sz)))
+# define nodec_realloc(p,sz)  (check_nonnull(realloc(p,sz)))
+# define nodec_free(p)        if(p!=NULL) free(p)
 #else
-# define nodec_malloc _nodec_malloc
-# define nodec_calloc _nodec_calloc
+# define nodecx_malloc  _nodecx_malloc
+# define nodecx_calloc  _nodecx_calloc
+# define nodecx_realloc _nodecx_realloc
+# define nodecx_free    free
+# define nodec_malloc  _nodec_malloc
+# define nodec_calloc  _nodec_calloc
 # define nodec_realloc _nodec_realloc
-# define nodec_free _nodec_free
+# define nodec_free    _nodec_free
 #endif
 
 void  nodec_register_malloc(lh_mallocfun* _malloc, lh_callocfun* _calloc, lh_reallocfun* _realloc, lh_freefun* _free);
 void  nodec_check_memory();
+void* check_nonnull(void* p);   // throws on a non-null pointer
 
+void* _nodecx_malloc(size_t size);
+void* _nodecx_calloc(size_t count, size_t size);
+void* _nodecx_realloc(void* p, size_t newsize);
 void* _nodec_malloc(size_t size);
 void* _nodec_calloc(size_t count, size_t size);
 void* _nodec_realloc(void* p, size_t newsize);
 void  _nodec_free(void* p);
+
 void  nodec_freev(lh_value p);
 char* nodec_strdup(const char* s);
 char* nodec_strndup(const char* s, size_t max);
 
-#define nodec_alloc(tp)         ((tp*)(nodec_malloc(sizeof(tp))))
-#define nodec_nalloc(n,tp)      ((tp*)(nodec_malloc((n)*sizeof(tp))))
-#define nodec_ncalloc(n,tp)     ((tp*)(nodec_calloc(n,sizeof(tp))))
-#define nodec_zalloc(tp)        nodec_ncalloc(1,tp)
+#define nodecx_alloc(tp)          ((tp*)(nodecx_malloc(sizeof(tp))))
 
-#define with_free(name)         defer(nodec_freev,lh_value_ptr(name))
-#define with_alloc(tp,name)     tp* name = nodec_alloc(tp); with_free(name)
-#define with_nalloc(n,tp,name)  tp* name = nodec_nalloc(n,tp); with_free(name)
-#define with_ncalloc(n,tp,name) tp* name = nodec_ncalloc(n,tp); with_free(name)
-#define with_zalloc(tp,name)    with_ncalloc(1,tp,name)
+#define nodec_alloc(tp)           ((tp*)(nodec_malloc(sizeof(tp))))
+#define nodec_alloc_n(n,tp)       ((tp*)(nodec_malloc((n)*sizeof(tp))))
+#define nodec_zero_alloc_n(n,tp)  ((tp*)(nodec_calloc(n,sizeof(tp))))
+#define nodec_zero_alloc(tp)      nodec_zero_alloc_n(1,tp)
+#define nodec_realloc_n(p,n,tp)   ((tp*)(nodec_realloc(p,(n)*sizeof(tp))))
 
-#define nodec_zero(tp,ptr)      memset(ptr,0,sizeof(tp));
+#define with_free(name)               defer(nodec_freev,lh_value_ptr(name))
+#define with_alloc(tp,name)           tp* name = nodec_alloc(tp); with_free(name)
+#define with_alloc_n(n,tp,name)       tp* name = nodec_alloc_n(n,tp); with_free(name)
+#define with_zero_alloc_n(n,tp,name)  tp* name = nodec_zero_alloc_n(n,tp); with_free(name)
+#define with_zero_alloc(tp,name)      with_zero_alloc_n(1,tp,name)
+
+#define nodec_zero(tp,ptr)        memset(ptr,0,sizeof(tp));
 
 #endif // __nodec_h

@@ -47,7 +47,7 @@ uverr asyncx_stat(const char* path, uv_stat_t* stat ) {
   nodec_zero(uv_stat_t,stat);
   uverr err = 0;
   {with_fs_req(req, loop){
-    check_uv_err(uv_fs_stat(loop, req, path, &async_fs_resume));
+    check_uverr(uv_fs_stat(loop, req, path, &async_fs_resume));
     err = asyncx_await_fs(req);
     if (err == 0) *stat = req->statbuf;
   }}
@@ -64,7 +64,7 @@ uv_stat_t async_fstat(uv_file file) {
   uv_stat_t stat; 
   nodec_zero(uv_stat_t, &stat);
   {with_fs_req(req, loop) {
-    check_uv_err(uv_fs_fstat(loop, req, file, &async_fs_resume));
+    check_uverr(uv_fs_fstat(loop, req, file, &async_fs_resume));
     async_await_fs(req);
     stat = req->statbuf;
   }}  
@@ -92,7 +92,7 @@ uv_file async_fopen(const char* path, int flags, int mode) {
 void async_fclose(uv_file file) {
   if (file < 0) return;
   {with_fs_req(req, loop) {
-    check_uv_err(uv_fs_close(loop, req, file, &async_fs_resume));
+    check_uverr(uv_fs_close(loop, req, file, &async_fs_resume));
     async_await_fs(req);
   }}
 }
@@ -100,7 +100,7 @@ void async_fclose(uv_file file) {
 size_t async_fread(uv_file file, uv_buf_t* buf, int64_t file_offset) {
   size_t read = 0;
   {with_fs_req(req, loop) {
-    check_uv_err(uv_fs_read(loop, req, file, buf, 1, file_offset, &async_fs_resume));
+    check_uverr(uv_fs_read(loop, req, file, buf, 1, file_offset, &async_fs_resume));
     async_await_fs(req);
     read = (size_t)req->result;
   }}
@@ -112,12 +112,32 @@ static void async_file_closev(lh_value vfile) {
   if (file >= 0) async_fclose(file);
 }
 
+typedef struct __fopen_args {
+  lh_value arg;
+  uv_file  file;
+  nodec_file_fun* action;
+} _fopen_args;
 
-lh_value _async_fread_full(lh_value filev) {
-  uv_file file = lh_int_value(filev);
+static lh_value _fopen_action(lh_value argsv) {
+  _fopen_args* args = (_fopen_args*)lh_ptr_value(argsv);
+  return args->action(args->file, args->arg);
+}
+
+lh_value async_with_fopen(const char* path, int flags, int mode, nodec_file_fun* action, lh_value arg ) {
+  _fopen_args args;
+  args.arg = arg;
+  args.action = action;
+  args.file = async_fopen(path, flags, 0);
+  return lh_finally(
+    &_fopen_action, lh_value_any_ptr(&args),
+    &async_file_closev, lh_value_int(args.file)
+  );
+}
+
+lh_value _async_fread_full(uv_file file, lh_value _arg) {
   uv_stat_t stat = async_fstat(file);
   size_t    size = stat.st_size;
-  char*     buffer = nodec_nalloc(size + 1, char);
+  char*     buffer = nodec_alloc_n(size + 1, char);
   {on_abort(nodec_freev, lh_value_ptr(buffer)) {
     uv_buf_t buf = nodec_buf(buffer, size);
     size_t read = 0;
@@ -140,10 +160,6 @@ lh_value _async_fread_full(lh_value filev) {
 
 
 char* async_fread_full(const char* path) {
-  uv_file file = async_fopen(path, O_RDONLY, 0);
-  lh_value result = lh_finally(
-    _async_fread_full, lh_value_int(file),
-    async_file_closev, lh_value_int(file)
-  );
+  lh_value result = async_with_fopen(path, O_RDONLY, 0, &_async_fread_full, lh_value_null);  
   return (char*)lh_ptr_value(result);
 }

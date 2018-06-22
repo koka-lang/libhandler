@@ -20,8 +20,8 @@ uverr _uv_set_timeout(uv_loop_t* loop, uv_timer_cb cb, void* arg, uint64_t timeo
 
 
 uv_timer_t* nodec_timer_alloc() {
-  uv_timer_t* timer = nodec_zalloc(uv_timer_t);
-  check_uv_err(uv_timer_init(async_loop(), timer));
+  uv_timer_t* timer = nodec_zero_alloc(uv_timer_t);
+  check_uverr(uv_timer_init(async_loop(), timer));
   return timer;
 }
 
@@ -48,7 +48,7 @@ void async_delay(uint64_t timeout) {
     {with_free_req(uv_req_t, req) {  // use a dummy request so we can await the timer handle
                                      // and always free since we always close the timer too 
       timer->data = req;
-      check_uv_err(uv_timer_start(timer, &_async_timer_resume, timeout, 0));
+      check_uverr(uv_timer_start(timer, &_async_timer_resume, timeout, 0));
       async_await(req);
     }}
   }}

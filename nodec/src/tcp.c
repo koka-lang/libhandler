@@ -41,8 +41,8 @@ void nodec_tcp_freev(lh_value tcp) {
 }
 
 uv_tcp_t* nodec_tcp_alloc() {
-  uv_tcp_t* tcp = nodec_zalloc(uv_tcp_t);
-  check_uv_err( uv_tcp_init(async_loop(), tcp) );  
+  uv_tcp_t* tcp = nodec_zero_alloc(uv_tcp_t);
+  check_uverr( uv_tcp_init(async_loop(), tcp) );  
   return tcp;
 }
 
@@ -116,7 +116,7 @@ static void _channel_release_client(channel_elem elem) {
 
 tcp_channel_t* nodec_tcp_listen(uv_tcp_t* tcp, int backlog, bool channel_owns_tcp) {
   if (backlog <= 0) backlog = 512;
-  check_uv_err(uv_listen((uv_stream_t*)tcp, backlog, &_listen_cb));
+  check_uverr(uv_listen((uv_stream_t*)tcp, backlog, &_listen_cb));
   tcp_channel_t* ch = (tcp_channel_t*)channel_alloc_ex(8, // TODO: should be small?
                           (channel_owns_tcp ? &_channel_release_tcp : NULL), 
                               lh_value_ptr(tcp), &_channel_release_client );  
@@ -125,11 +125,11 @@ tcp_channel_t* nodec_tcp_listen(uv_tcp_t* tcp, int backlog, bool channel_owns_tc
 }
 
 void nodec_ip4_addr(const char* ip, int port, struct sockaddr_in* addr) {
-  check_uv_err(uv_ip4_addr(ip, port, addr));
+  check_uverr(uv_ip4_addr(ip, port, addr));
 }
 
 void nodec_ip6_addr(const char* ip, int port, struct sockaddr_in6* addr) {
-  check_uv_err(uv_ip6_addr(ip, port, addr));
+  check_uverr(uv_ip6_addr(ip, port, addr));
 }
 
 tcp_channel_t* nodec_tcp_listen_at(const struct sockaddr* addr, int backlog) {
@@ -311,8 +311,8 @@ void async_http_server_at(const struct sockaddr* addr, int backlog, int n, uint6
       sargs->ch = ch;
       sargs->timeout = (timeout==0 ? 30000 : timeout);
       sargs->serve = servefun;
-      {with_nalloc(n, lh_actionfun*, actions) {
-        {with_nalloc(n, lh_value, args) {
+      {with_alloc_n(n, lh_actionfun*, actions) {
+        {with_alloc_n(n, lh_value, args) {
           for (int i = 0; i < n; i++) {
             actions[i] = &http_servev;
             args[i] = lh_value_any_ptr(sargs);

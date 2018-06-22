@@ -104,7 +104,7 @@ typedef void* lh_reallocfun(void* p, size_t size);
 typedef void* lh_freefun(void* p);
 
 // Operation functions are called when that operation is `yield`ed to. 
-typedef lh_value(lh_opfun)(lh_resume r, lh_value local, lh_value arg);
+typedef lh_value (lh_opfun)(lh_resume r, lh_value local, lh_value arg);
 
 
 // Operation kinds. When defining the operations that a handler can handle, 

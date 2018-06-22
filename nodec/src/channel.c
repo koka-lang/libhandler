@@ -154,11 +154,11 @@ static channel_elem channel_receive_ex(channel_t* channel, bool nocancel) {
   }
   else {
     // await the next emit
-    uv_channel_req_t* req = nodec_ncalloc(1, uv_channel_req_t);
+    uv_channel_req_t* req = nodec_zero_alloc_n(1, uv_channel_req_t);
     {with_free(req){
       if (channel->lcount >= channel->lsize) {
         ssize_t newsize = (channel->lsize > 0 ? 2 * channel->lsize : 2);
-        channel->listeners = (channel->listeners == NULL ? nodec_nalloc(newsize, channel_listener)
+        channel->listeners = (channel->listeners == NULL ? nodec_alloc_n(newsize, channel_listener)
           : (channel_listener*)nodec_realloc(channel->listeners, newsize*sizeof(channel_listener)));
         channel->lsize = newsize;
       }
@@ -172,7 +172,7 @@ static channel_elem channel_receive_ex(channel_t* channel, bool nocancel) {
           // dont cancel, keep result zero'd
         }
         else {
-          check_uv_err(err);
+          check_uverr(err);
           result = req->elem;
         }
       }

@@ -6,38 +6,83 @@
 /*-----------------------------------------------------------------
   Wrappers for malloc
 -----------------------------------------------------------------*/
+// Set up different allocation functions
+static lh_mallocfun*  custom_malloc = NULL;
+static lh_callocfun*  custom_calloc = NULL;
+static lh_reallocfun* custom_realloc = NULL;
+static lh_freefun*    custom_free = NULL;
+
+void nodec_register_malloc(lh_mallocfun* _malloc, lh_callocfun* _calloc, lh_reallocfun* _realloc, lh_freefun* _free) {
+  lh_register_malloc(_malloc, _calloc, _realloc, _free);
+  custom_malloc = _malloc;
+  custom_calloc = _calloc;
+  custom_realloc = _realloc;
+  custom_free = _free;
+}
 
 void  nodec_freev(lh_value p) {
   nodec_free(lh_ptr_value(p));
 }
 
-void* _nodec_malloc(size_t size) {
-  return lh_malloc(size);
+void* _nodecx_malloc(size_t size) {
+  return (custom_malloc==NULL ? malloc(size) : custom_malloc(size));
 }
 
-void* _nodec_calloc(size_t count, size_t size) {
-  return lh_calloc(count, size);
+void* _nodecx_calloc(size_t count, size_t size) {
+  return (custom_calloc == NULL ? calloc(count, size) : custom_calloc(count, size));
 }
 
-void* _nodec_realloc(void* p, size_t newsize) {
-  return lh_realloc(p, newsize);
+void* _nodecx_realloc(void* p, size_t newsize) {
+  return (custom_realloc == NULL ? realloc(p,newsize) : custom_realloc(p,newsize));
 }
 
 void  _nodec_free(void* p) {
-  lh_free(p);
+  if (p != NULL) {
+    if (custom_free == NULL) free(p); else custom_free(p);
+  }
+}
+
+
+void* check_nonnull(void* p) {
+  if (p == NULL) check_uverr(UV_ENOMEM);
+  return p;
+}
+
+void* _nodec_malloc(size_t size) {
+  return check_nonnull(_nodecx_malloc(size));
+}
+
+void* _nodec_calloc(size_t count, size_t size) {
+  return check_nonnull(_nodecx_calloc(count,size));
+}
+
+void* _nodec_realloc(void* p, size_t newsize) {
+  return check_nonnull(_nodecx_realloc(p,newsize));
+}
+
+static char* _nodec_strndup(const char* s, size_t max) {
+  size_t n = (max == SIZE_MAX ? max : max + 1);
+  char* t = nodec_alloc_n(n,char);
+  #ifdef _MSC_VER
+  strncpy_s(t, n, s, max);
+  #else
+  strncpy(t, s, max);
+  #endif
+  t[max] = 0;
+  return t;
 }
 
 char* nodec_strdup(const char* s) {
-  return lh_strdup(s);
+  if (s == NULL) return NULL;
+  size_t n = strlen(s);
+  return _nodec_strndup(s, n);
 }
 
 char* nodec_strndup(const char* s, size_t max) {
-  return lh_strndup(s, max);
+  if (s == NULL) return NULL;
+  return _nodec_strndup(s, max);
 }
 
-void nodec_register_malloc(lh_mallocfun* _malloc, lh_callocfun* _calloc, lh_reallocfun* _realloc, lh_freefun* _free) {
-  lh_register_malloc(_malloc, _calloc, _realloc, _free);
-}
 
 /*-----------------------------------------------------------------
   Memory checks

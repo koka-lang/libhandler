@@ -112,10 +112,10 @@ static void test_http_serve(int strand_id, uv_stream_t* client) {
   // work
   printf("waiting %i secs...\n", 2 + strand_id); 
   async_delay(1000 + strand_id*1000);
-  //check_uv_err(UV_EADDRINUSE);
+  //check_uverr(UV_EADDRINUSE);
 
   // response
-  {with_nalloc(128, char, content_len) {
+  {with_alloc_n(128, char, content_len) {
     snprintf(content_len, 128, "Content-Length: %zi\r\n\r\n", strlen(response_body));
     printf("strand %i: response body is %zi bytes\n", strand_id, strlen(response_body));
     const char* response[3] = { response_headers, content_len, response_body };
@@ -150,11 +150,11 @@ static void test_tcp_raw() {
 
 static void entry() {
   printf("in the main loop\n");
-  //test_files();
+  test_files();
   //test_interleave();
   //test_cancel();
   //test_tcp_raw();
-  test_tcp();
+  //test_tcp();
 }
 
 

@@ -30,7 +30,7 @@ int async_uv_await_fs(uv_fs_t* req) {
 }
 
 // Check an error result, throwing on error
-void check_uv_err(int uverr) {
+void check_uverr(int uverr) {
   if (uverr < 0) {
     lh_throw(lh_exception_alloc_strdup(uverr, uv_strerror(uverr)));
   }
@@ -209,7 +209,7 @@ static void lh_channel_receive(lh_channel* channel, lh_channel_elem* result) {
     int err = async_uv_await(&req->req);               // reqular await, triggered on channel_req_listener
     *result = req->elem;
     free(req);
-    check_uv_err(err);
+    check_uverr(err);
   }
 }
 
@@ -373,7 +373,7 @@ static int async_fstatx(uv_file file, uv_stat_t* stat) {
 
 uv_stat_t async_fstat(uv_file file) {
   uv_stat_t stat;
-  check_uv_err(async_fstatx(file, &stat));
+  check_uverr(async_fstatx(file, &stat));
   return stat;
 }
 
@@ -408,7 +408,7 @@ static int async_fclosex(uv_file file) {
 }
 
 void async_fclose(uv_file file) {
-  check_uv_err(async_fclosex(file));
+  check_uverr(async_fclosex(file));
 }
 
 static int async_freadx(uv_file file, uv_buf_t* buf, int64_t offset, ssize_t* read) {
@@ -426,7 +426,7 @@ static int async_freadx(uv_file file, uv_buf_t* buf, int64_t offset, ssize_t* re
 
 ssize_t async_fread(uv_file file, uv_buf_t* buf, int64_t offset) {
   ssize_t read = 0;
-  check_uv_err(async_freadx(file, buf, offset, &read));
+  check_uverr(async_freadx(file, buf, offset, &read));
   return read;
 }
 

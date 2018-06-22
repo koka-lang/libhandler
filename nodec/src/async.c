@@ -58,7 +58,7 @@ uverr asyncx_await(uv_req_t* uvreq) {
 }
 
 void async_await(uv_req_t* req) {
-  check_uv_err(asyncx_await(req));
+  check_uverr(asyncx_await(req));
 }
 
 
@@ -70,7 +70,7 @@ Throw on errors
 
 
 // Check an error result, throwing on error
-void check_uv_err(uverr uverr) {
+void check_uverr(uverr uverr) {
   if (uverr < 0) {
     lh_throw(lh_exception_alloc_strdup(uverr, uv_strerror(uverr)));
   }
@@ -181,7 +181,7 @@ struct _async_request_t {
 };
 
 static async_request_t* async_request_alloc(uv_req_t* uvreq) {
-  async_request_t* req = nodec_zalloc(async_request_t);
+  async_request_t* req = nodec_zero_alloc(async_request_t);
   uvreq->data = req;
   req->uvreq = uvreq;
   req->scope = cancel_scope();

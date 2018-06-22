@@ -29,15 +29,15 @@ void       nodec_req_free(uv_req_t* uvreq);
 void       nodec_req_freev(lh_value uvreq);
 
 #define with_req(req_tp,name) \
-  req_tp* name = nodec_zalloc(req_tp); \
+  req_tp* name = nodec_zero_alloc(req_tp); \
   defer(nodec_req_freev,lh_value_ptr(name))
 
 #define with_free_req(req_tp,name) \
-  req_tp* name = nodec_zalloc(req_tp); \
+  req_tp* name = nodec_zero_alloc(req_tp); \
   defer(nodec_req_force_freev,lh_value_ptr(name))
 
 // Check the an error value and throw if it is not zero.
-void       check_uv_err(uverr err);
+void       check_uverr(uverr err);
 void       check_uv_errmsg(uverr err, const char* msg);
 
 // Await an asynchronous request but return an explicit error value instead of throwing.
@@ -50,7 +50,7 @@ uverr   asyncx_await_fs(uv_fs_t* req);
 void    nodec_timer_free(uv_timer_t* timer);
 uverr   _uv_set_timeout(uv_loop_t* loop, uv_timer_cb cb, void* arg, uint64_t timeout);
 
-channel_elem channel_receive_ex(channel_t* channel, bool nocancel);
+channel_elem channel_receive_nocancel(channel_t* channel);
 
 #define UV_ETHROWCANCEL  (-10000)
 

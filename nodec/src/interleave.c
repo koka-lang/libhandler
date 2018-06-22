@@ -109,7 +109,7 @@ void interleave(size_t n, lh_actionfun* actions[], lh_value arg_results[]) {
   }
   else {
     lh_exception* exn = NULL;
-    {with_ncalloc(n, lh_exception*, exceptions) {
+    {with_zero_alloc_n(n, lh_exception*, exceptions) {
       interleave_n(n, actions, arg_results, exceptions);
       // rethrow the first exception and release the others
       for (size_t i = 0; i < n; i++) {
