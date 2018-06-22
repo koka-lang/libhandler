@@ -53,5 +53,6 @@ uverr   _uv_set_timeout(uv_loop_t* loop, uv_timer_cb cb, void* arg, uint64_t tim
 channel_elem channel_receive_nocancel(channel_t* channel);
 
 #define UV_ETHROWCANCEL  (-10000)
+#define UV_EHTTP         (-20000)
 
 #endif

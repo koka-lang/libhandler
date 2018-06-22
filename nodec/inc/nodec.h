@@ -147,8 +147,23 @@ tcp_channel_t*  nodec_tcp_listen_at(const struct sockaddr* addr, int backlog);
 
 typedef void    (nodec_tcp_servefun)(int id, uv_stream_t* client);
 
-void            async_http_server_at(const struct sockaddr* addr, int backlog, 
-                                      int max_interleaving, uint64_t timeout, nodec_tcp_servefun* servefun);
+void async_tcp_server_at(const struct sockaddr* addr, int backlog, int max_interleaving, 
+                          uint64_t timeout, nodec_tcp_servefun* servefun, lh_actionfun* on_exn);
+
+
+/* ----------------------------------------------------------------------------
+  HTTP
+-----------------------------------------------------------------------------*/
+typedef int http_status;
+
+void lh_throw_http_err(http_status status);
+void lh_throw_http_err_str(http_status status, const char* msg);
+void lh_throw_http_err_strdup(http_status status, const char* msg);
+
+void async_http_server_at(const struct sockaddr* addr, int backlog, int max_interleaving, 
+                          uint64_t timeout, nodec_tcp_servefun* servefun);
+
+
 
 /* ----------------------------------------------------------------------------
   Other

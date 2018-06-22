@@ -148,154 +148,70 @@ uv_stream_t* async_tcp_channel_receive(tcp_channel_t* ch) {
   return (uv_stream_t*)lh_ptr_value(e.data);
 }
 
+
 /*-----------------------------------------------------------------
-  HTTP errors|
+    A TCP server
 -----------------------------------------------------------------*/
-const char* http_error_headers =
-"HTTP/1.1 %i %s\r\n"
-"Server : NodeC\r\n"
-"Content-Length : %i\r\n"
-"Content-Type : text/html; charset=utf-8\r\n"
-"Connection : Closed\r\n"
-"\r\n";
 
-const char* http_error_body =
-"<!DOCTYPE html>"
-"<html>\n"
-"<head>\n"
-"  <meta charset=\"utf-8\">\n"
-"</head>\n"
-"<body>\n"
-"  <p>Error %i (%s)%s%s.</p>\n"
-"</body>\n"
-"</html>\n";
-
-typedef int http_status;
-
-typedef struct _http_err_reason {
-  http_status status;
-  const char* reason;
-} http_err_reason;
-
-static http_err_reason http_reasons[] = {
-  {200, "OK" },
-  {500, "Internal Server Error" },
-  {400, "Bad Request" },
-  {401, "Unauthorized" },
-  {100, "Continue"},
-  {101, "Switching Protocols"},
-  {201, "Created"},
-  {202, "Accepted"},
-  {203, "Non - Authoritative Information"},
-  {204, "No Content"},
-  {205, "Reset Content" },
-  {206, "Partial Content" },
-  {300, "Multiple Choices" },
-  {301, "Moved Permanently"},
-  {302, "Found"},
-  {303, "See Other"},
-  {304, "Not Modified"},
-  {305, "Use Proxy"},
-  {307, "Temporary Redirect"},
-  {402, "Payment Required"},
-  {403, "Forbidden"},
-  {404, "Not Found"},
-  {405, "Method Not Allowed"},
-  {406, "Not Acceptable"},
-  {407, "Proxy Authentication Required"},
-  {408, "Request Time - out"},
-  {409, "Conflict"},
-  {410, "Gone"},
-  {411, "Length Required"},
-  {412, "Precondition Failed"},
-  {413, "Request Entity Too Large"},
-  {414, "Request - URI Too Large"},
-  {415, "Unsupported Media Type"},
-  {416, "Requested range not satisfiable"},
-  {417, "Expectation Failed"},
-  {501, "Not Implemented"},
-  {502, "Bad Gateway"},
-  {503, "Service Unavailable"},
-  {504, "Gateway Time - out"},
-  {505, "HTTP Version not supported"},
-  {-1, NULL }
-};
-
-static void async_write_http_err(uv_stream_t* client, http_status code, const char* msg) {
-  const char* reason = "Unknown";
-  for (http_err_reason* r = http_reasons; r->reason != NULL; r++) {
-    if (r->status == code) {
-      reason = r->reason;
-      break;
-    }
-  }
-  char body[256];
-  snprintf(body, 255, http_error_body, code, reason, (msg == NULL ? "" : ": "), (msg == NULL ? "" : msg));
-  body[255] = 0;
-  char headers[256];
-  snprintf(headers, 255, http_error_headers, code, reason, strlen(body));
-  headers[255] = 0;
-  const char* strs[2] = { headers, body };
-  fprintf(stderr, "ERROR: %i (%s): %s\n\n", code, reason, (msg == NULL ? "" : msg));
-  async_write_strs(client, strs, 2 );
-}
-
-static lh_value async_write_http_exnv(lh_value exnv) {
+static lh_value async_log_tcp_exn(lh_value exnv) {
   lh_exception* exn = (lh_exception*)lh_ptr_value(exnv);
-  if (exn == NULL || exn->data==NULL) return lh_value_null;
-  uv_stream_t* client = exn->data;
-  async_write_http_err(client, 500, exn->msg);
+  if (exn == NULL || exn->data == NULL) return lh_value_null;
+  fprintf(stderr, "tcp server error: %i: %s\n", exn->code, (exn->msg == NULL ? "unknown" : exn->msg));
   return lh_value_null;
 }
 
-/*-----------------------------------------------------------------
-    A TCP/HTTP server
------------------------------------------------------------------*/
 
-typedef struct _http_serve_args {
+typedef struct _tcp_serve_args {
   tcp_channel_t*      ch;
   uint64_t            timeout;
   nodec_tcp_servefun* serve;
-} http_serve_args;
+  lh_actionfun*       on_exn;
+} tcp_serve_args;
 
-typedef struct _http_client_args {
+typedef struct _tcp_client_args {
   int           id;
   uint64_t      timeout;
   uv_stream_t*  client;
   nodec_tcp_servefun* serve;
-} http_client_args;
+} tcp_client_args;
 
-static lh_value http_serve_client(lh_value argsv) {
-  http_client_args* args = (http_client_args*)lh_ptr_value(argsv);
+static lh_value tcp_serve_client(lh_value argsv) {
+  tcp_client_args* args = (tcp_client_args*)lh_ptr_value(argsv);
   args->serve(args->id, args->client);
   return lh_value_null;
 }
 
-static lh_value http_serve_timeout(lh_value argsv) {
-  http_client_args* args = (http_client_args*)lh_ptr_value(argsv);
-  bool timedout = false;
-  async_timeout(&http_serve_client, argsv, args->timeout, &timedout);
-  if (timedout) lh_throw_str(408, "request time-out");
-  return lh_value_null;
+static lh_value tcp_serve_timeout(lh_value argsv) {
+  tcp_client_args* args = (tcp_client_args*)lh_ptr_value(argsv);
+  if (args->timeout == 0) {
+    return tcp_serve_client(argsv);
+  }
+  else {
+    bool timedout = false;
+    lh_value result = async_timeout(&tcp_serve_client, argsv, args->timeout, &timedout);
+    if (timedout) lh_throw_http_err(408);
+    return result;
+  }
 }
 
-static lh_value http_servev(lh_value argsv) {
+
+static lh_value tcp_servev(lh_value argsv) {
   static int ids = 0;
   int id = ids++;
-  http_serve_args args = *((http_serve_args*)lh_ptr_value(argsv));  
+  tcp_serve_args args = *((tcp_serve_args*)lh_ptr_value(argsv));  
   do {
     uv_stream_t* client = async_tcp_channel_receive(args.ch);
     {with_stream(client) {
       lh_exception* exn;
-      http_client_args cargs = { id, args.timeout, client, args.serve };
-      lh_try( &exn, &http_serve_timeout, lh_value_any_ptr(&cargs)); //ignore timeout for now
+      tcp_client_args cargs = { id, args.timeout, client, args.serve };
+      lh_try( &exn, &tcp_serve_timeout, lh_value_any_ptr(&cargs)); 
       if (exn != NULL) {
         // send an exception response
         // wrap in try itself in case writing gives an error too!
         lh_exception* wrap = lh_exception_alloc(exn->code, exn->msg);
         wrap->data = client;
         lh_exception* ignore_exn;
-        lh_try(&ignore_exn, &async_write_http_exnv, lh_value_any_ptr(wrap));
+        lh_try(&ignore_exn, args.on_exn, lh_value_any_ptr(wrap));
         lh_exception_free(wrap);
         lh_exception_free(exn);
       }
@@ -304,17 +220,19 @@ static lh_value http_servev(lh_value argsv) {
   return lh_value_null;
 }
 
-void async_http_server_at(const struct sockaddr* addr, int backlog, int n, uint64_t timeout, nodec_tcp_servefun* servefun) {
+void async_tcp_server_at(const struct sockaddr* addr, int backlog, int n, uint64_t timeout, 
+                           nodec_tcp_servefun* servefun, lh_actionfun* on_exn) {
   tcp_channel_t* ch = nodec_tcp_listen_at(addr, backlog);
   {with_tcp_channel(ch) {
-    {with_alloc(http_serve_args, sargs) {
+    {with_alloc(tcp_serve_args, sargs) {
       sargs->ch = ch;
-      sargs->timeout = (timeout==0 ? 30000 : timeout);
+      sargs->timeout = timeout;
       sargs->serve = servefun;
+      sargs->on_exn = (on_exn == NULL ? &async_log_tcp_exn : on_exn);
       {with_alloc_n(n, lh_actionfun*, actions) {
         {with_alloc_n(n, lh_value, args) {
           for (int i = 0; i < n; i++) {
-            actions[i] = &http_servev;
+            actions[i] = &tcp_servev;
             args[i] = lh_value_any_ptr(sargs);
           }
           interleave(n, actions, args);
