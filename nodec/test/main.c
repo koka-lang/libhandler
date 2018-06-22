@@ -151,11 +151,11 @@ static void test_tty() {
   {with_stream(tty_in) {
     check_uverr(uv_tty_init(async_loop(), tty_in, 0, true));
     read_stream_t* rs = async_read_start((uv_stream_t*)tty_in, 0, 255, 255);
-    const char* s = async_read_str(rs);
+    const char* s = async_read_line(rs);
     {with_free(s) {
       printf("I got: %s\n", s);
     }}
-    s = async_read_str(rs);
+    s = async_read_line(rs);
     {with_free(s) {
       printf("Now I got: %s\n", s);
     }}

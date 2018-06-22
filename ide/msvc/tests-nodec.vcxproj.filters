@@ -20,8 +20,6 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <Library Include="..\..\..\libuv\Debug\lib\libuv.lib">
-      <Filter>Resource Files</Filter>
-    </Library>
+    <Library Include="..\..\..\libuv\$(Configuration)\lib\libuv.lib" />
   </ItemGroup>
 </Project>

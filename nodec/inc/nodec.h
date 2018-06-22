@@ -104,11 +104,12 @@ void            async_read_stop(uv_stream_t* stream);
 
 size_t      async_read_buf(read_stream_t* rs, uv_buf_t* buf);
 uv_buf_t    async_read_buf_available(read_stream_t* rs);
-char*       async_read_str(read_stream_t* rs);
-
+uv_buf_t    async_read_buf_line(read_stream_t* rs);
 uv_buf_t    async_read_full(read_stream_t* rs);
-char*       async_read_str_full(read_stream_t* rs);
 
+char*       async_read_str(read_stream_t* rs);
+char*       async_read_str_full(read_stream_t* rs);
+char*       async_read_line(read_stream_t* rs);
 
 void        async_write(uv_stream_t* stream, const char* s);
 void        async_write_bufs(uv_stream_t* stream, uv_buf_t bufs[], unsigned int buf_count);
