@@ -109,9 +109,9 @@ uverr channel_emit(channel_t* channel, lh_value data, lh_value arg, int err) {
   if (channel->lcount > 0) {
     // a listener, serve immediately
     // LIFO: good for web services but should perhaps be a parameter?
-    channel->lcount--;
-    const channel_listener* l = &channel->listeners[channel->lcount];
-    l->fun(l->arg, elem);
+    // channel->lcount--;
+    const channel_listener* l = &channel->listeners[channel->lcount-1];
+    l->fun(l->arg, elem);  // listeners remove themselves from the channel (due to cancelation support)
     return 0;
   }
   else if (channel->qcount >= channel->qmax) {
@@ -173,20 +173,32 @@ static channel_elem channel_receive_ex(channel_t* channel, bool nocancel) {
       channel->listeners[channel->lcount].fun = &_channel_req_listener_fun;
       channel->lcount++;
       // and await our request 
+      uverr err;
       if (nocancel) {
-        uverr err = asyncx_nocancel_await(&req->req);
-        if (err == UV_ETHROWCANCEL) {
-          // dont cancel, keep result zero'd
-        }
-        else {
-          check_uverr(err);
-          result = req->elem;
-        }
-      }
+        err = asyncx_nocancel_await(&req->req);
+      } 
       else {
-        async_await(&req->req);               // reqular await, triggered on channel_req_listener
-        result = req->elem;
+        err = asyncxx_await(&req->req);
       }
+      // remove ourselves; we must do it here instead of in emit due to cancelations
+      bool removed = false;
+      for (ssize_t i = 0; i < channel->lcount; i++) {
+        if (channel->listeners[i].arg == lh_value_ptr(req)) {
+          // found
+          removed = true;
+          channel->lcount--;
+          if (i < channel->lcount) {
+            // move if it wasnt the last one (can happen on cancelation)
+            memmove(&channel->listeners[i], &channel->listeners[i + 1], (channel->lcount - i) * sizeof(channel_listener));
+          }
+          break;
+        }
+      }
+      assert(removed);
+      // check errors
+      check_uverr(err);
+      // and return the result
+      result = req->elem;
     }}
   }
   return result;

@@ -15,7 +15,7 @@ typedef struct _cancel_scope_t cancel_scope_t;
 struct _async_request_t;
 typedef struct _async_request_t async_request_t;
 
-async_request_t* async_request_alloc(uv_req_t* uvreq);
+async_request_t* async_request_alloc(uv_req_t* uvreq, bool nocancel);
 
 /*-----------------------------------------------------------------
 Async effect operations
@@ -46,19 +46,28 @@ uv_loop_t* async_loop() {
   return async_uv_loop();
 }
 
+
 uverr asyncx_nocancel_await(uv_req_t* uvreq) {
-  async_request_t* req = async_request_alloc(uvreq);
+  async_request_t* req = async_request_alloc(uvreq,true);
+  uverr err = async_req_await(req);
+  assert(err != UV_ETHROWCANCEL);
+  return err;
+}
+
+uverr asyncxx_await(uv_req_t* uvreq) {
+  async_request_t* req = async_request_alloc(uvreq, false);
   return async_req_await(req);
 }
 
+
 uverr asyncx_await(uv_req_t* uvreq) {
-  uverr err = asyncx_nocancel_await(uvreq);
+  uverr err = asyncxx_await(uvreq); 
   if (err == UV_ETHROWCANCEL) lh_throw_cancel();
   return err;
 }
 
-void async_await(uv_req_t* req) {
-  check_uverr(asyncx_await(req));
+void async_await(uv_req_t* uvreq) {
+  check_uverr(asyncx_await(uvreq));
 }
 
 
@@ -72,17 +81,27 @@ Throw on errors
 // Check an error result, throwing on error
 void check_uverr(uverr uverr) {
   if (uverr < 0) {
-    lh_throw(lh_exception_alloc_strdup(uverr, uv_strerror(uverr)));
+    if (uverr == UV_ETHROWCANCEL) {
+      lh_throw_cancel();
+    }
+    else {
+      lh_throw(lh_exception_alloc_strdup(uverr, uv_strerror(uverr)));
+    }
   }
 }
 
 // Check an error result, throwing on error
 void check_uverr_msg(uverr uverr, const char* msg) {
   if (uverr < 0) {
-    char buf[256];
-    snprintf(buf, 255, "%s: %s", uv_strerror(uverr), msg);
-    buf[255] = 0;
-    lh_throw(lh_exception_alloc_strdup(uverr, buf));
+    if (uverr == UV_ETHROWCANCEL) {
+      lh_throw_cancel();
+    }
+    else {
+      char buf[256];
+      snprintf(buf, 255, "%s: %s", uv_strerror(uverr), msg);
+      buf[255] = 0;
+      lh_throw(lh_exception_alloc_strdup(uverr, buf));
+    }
   }
 }
 
@@ -180,12 +199,12 @@ struct _async_request_t {
   async_resume_fun*     resumefun;
 };
 
-static async_request_t* async_request_alloc(uv_req_t* uvreq) {
+static async_request_t* async_request_alloc(uv_req_t* uvreq, bool nocancel) {
   async_request_t* req = nodec_zero_alloc(async_request_t);
   uvreq->data = req;
   req->uvreq = uvreq;
   req->scope = cancel_scope();
-  async_req_register(req);
+  if (!nocancel) async_req_register(req);
   return req;
 }
 

@@ -39,8 +39,9 @@ void       nodec_req_freev(lh_value uvreq);
 
 // Await an asynchronous request but return an explicit error value instead of throwing.
 // Use with care since these still throw on cancelation requests.
-uverr   asyncx_nocancel_await(uv_req_t* uvreq);
-uverr   asyncx_await(uv_req_t* req);
+uverr   asyncx_nocancel_await(uv_req_t* uvreq);  // never throws and cannot be canceled
+uverr   asyncxx_await(uv_req_t* uvreq);  // never throws
+uverr   asyncx_await(uv_req_t* req);     // throws on cancel
 uverr   asyncx_await_fs(uv_fs_t* req);
 
 // Set a timeout callback 
