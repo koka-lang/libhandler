@@ -113,9 +113,22 @@ void interleave(size_t n, lh_actionfun* actions[], lh_value arg_results[]) {
   }
 }
 
+typedef struct _firstof_args_t {
+  lh_actionfun* action;
+  lh_value      arg;
+} firstof_args_t;
+
+static lh_value firstof_action(lh_value argsv) {
+  firstof_args_t* args = (firstof_args_t*)lh_ptr_value(argsv);
+  lh_value result = args->action(args->arg);
+  async_scoped_cancel();
+  return result;
+}
+
 lh_value async_firstof(lh_actionfun* action1, lh_value arg1, lh_actionfun* action2, lh_value arg2, bool* first ) {
-  lh_actionfun* actions[2]     = { action1, action2 };
-  lh_value      arg_results[2] = { arg1, arg2 };
+  firstof_args_t args[2]       = { {action1, arg1}, {action2, arg2} };
+  lh_actionfun* actions[2]     = { &firstof_action, &firstof_action };
+  lh_value      arg_results[2] = { lh_value_any_ptr(&args[0]), lh_value_any_ptr(&args[1]) };
   lh_exception* exceptions[2]  = { NULL, NULL };
   {with_cancel_scope() {
     interleave_n(2, actions, arg_results, exceptions);
@@ -134,26 +147,13 @@ lh_value async_firstof(lh_actionfun* action1, lh_value arg1, lh_actionfun* actio
   }
 }
 
-typedef struct _timeout_action_args {
-  lh_actionfun* action;
-  lh_value      arg;
-} timeout_action_args;
-
-static lh_value _timeout_action(lh_value actionargsv) {
-  timeout_action_args* args = (timeout_action_args*)lh_ptr_value(actionargsv);
-  lh_value result = args->action(args->arg);
-  async_scoped_cancel();
-  return result;
-}
 
 static lh_value _timeout_wait(lh_value timeoutv) {
   uint64_t timeout = lh_longlong_value(timeoutv);
   async_delay(timeout);
-  async_scoped_cancel();
   return lh_value_null;
 }
 
 lh_value async_timeout(lh_actionfun* action, lh_value arg, uint64_t timeout, bool* timedout) {
-  timeout_action_args args = { action, arg };
-  return async_firstof(_timeout_wait, lh_value_longlong(timeout), _timeout_action, lh_value_any_ptr(&args), timedout);
+  return async_firstof(_timeout_wait, lh_value_longlong(timeout), action, arg, timedout);
 }

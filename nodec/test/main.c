@@ -132,7 +132,6 @@ static void test_tcp() {
 
 static lh_value test_tcpv(lh_value _arg) {
   test_tcp();
-  async_scoped_cancel(); // cancel tty waiter
   return lh_value_null;
 }
 
@@ -142,7 +141,6 @@ static lh_value test_ttyv(lh_value _arg) {
     const char* s = async_tty_readline();
     nodec_free(s);
     async_tty_write("canceling server...");
-    async_scoped_cancel();
   }}
   return lh_value_null;
 }
@@ -150,7 +148,7 @@ static lh_value test_ttyv(lh_value _arg) {
 static void test_tcp_tty() {
   bool first;
   async_firstof(&test_tcpv, lh_value_null, &test_ttyv, lh_value_null, &first);
-  printf(first ? "http server exited" : "http server was terminated by the user");
+  // printf( first ? "http server exited\n" : "http server was terminated by the user\n");
 }
 
 
