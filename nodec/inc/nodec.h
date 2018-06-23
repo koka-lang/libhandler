@@ -89,11 +89,12 @@ lh_value  async_with_fopen(const char* path, int flags, int mode, nodec_file_fun
 -----------------------------------------------------------------------------*/
 void        nodec_handle_free(uv_handle_t* handle);
 void        nodec_stream_free(uv_stream_t* stream);
+void        nodec_stream_freev(lh_value streamv);
 void        async_shutdown(uv_stream_t* stream);
-void        async_shutdownv(lh_value streamv);
  
 
-#define with_stream(s)        defer(async_shutdownv,lh_value_ptr(s))
+#define with_stream(s) \
+    defer_exit(async_shutdown(s),&nodec_stream_freev,lh_value_ptr(s))
 
 struct _read_stream_t;
 typedef struct _read_stream_t read_stream_t;
@@ -178,10 +179,12 @@ void async_http_server_at(const struct sockaddr* addr, int backlog, int max_inte
 
 lh_value _nodec_tty_allocv();
 void     _nodec_tty_freev(lh_value ttyv);
+void     async_tty_shutdown();
 
 implicit_declare(tty)
 
-#define with_tty()  with_implicit_defer(_nodec_tty_freev,_nodec_tty_allocv(),tty)
+#define with_tty()  \
+    with_implicit_defer_exit(async_tty_shutdown(),_nodec_tty_freev,_nodec_tty_allocv(),tty)
 
 char* async_tty_readline();
 void  async_tty_write(const char* s);
@@ -260,7 +263,7 @@ void* _nodecx_realloc(void* p, size_t newsize);
 void* _nodec_malloc(size_t size);
 void* _nodec_calloc(size_t count, size_t size);
 void* _nodec_realloc(void* p, size_t newsize);
-void  _nodec_free(void* p);
+void  _nodec_free(const void* p);
 
 void  nodec_freev(lh_value p);
 char* nodec_strdup(const char* s);

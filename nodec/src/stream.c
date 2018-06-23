@@ -493,6 +493,9 @@ void nodec_stream_free(uv_stream_t* stream) {
   nodec_handle_free((uv_handle_t*)stream);  
 }
 
+void nodec_stream_freev(lh_value streamv) {
+  nodec_stream_free((uv_stream_t*)lh_ptr_value(streamv));
+}
 
 void async_shutdown(uv_stream_t* stream) {
   if (stream==NULL) return;
@@ -502,12 +505,9 @@ void async_shutdown(uv_stream_t* stream) {
       async_await_shutdown(req);
     }}
   } 
-  nodec_stream_free(stream);
+  // nodec_stream_free(stream);
 }
 
-void async_shutdownv(lh_value streamv) {
-  async_shutdown((uv_stream_t*)lh_ptr_value(streamv));
-}
 
 
 /* ----------------------------------------------------------------------------

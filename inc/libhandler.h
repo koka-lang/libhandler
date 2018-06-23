@@ -350,6 +350,7 @@ const char* lh_effect_name(lh_effect effect);
   Linear handlers: have either no operations, or only
   operations that do a tail resume without early exit themselves.
 -----------------------------------------------------------------*/
+void lh_nothing();
 
 #ifdef __cplusplus
 class lh_raii_linear_handler {
@@ -362,14 +363,31 @@ public:
   lh_raii_linear_handler(const lh_handlerdef* hdef, lh_value local, bool do_release);
   ~lh_raii_linear_handler();
 };
-#define LH_LINEAR(hdef,local,do_release) lh_raii_linear_handler _lh_linear_handler(hdef,local,do_release); 
+
+#define LH_LINEAR(hdef,local,do_release) \
+  lh_raii_linear_handler _lh_linear_handler(hdef,local,do_release); 
+
+#define LH_LINEAR_EXIT(hdef,local,do_release,after) \
+  lh_raii_linear_handler _lh_linear_handler(hdef,local,do_release); \
+  for (bool _lh_linear_first = true; \
+      _lh_linear_first; \
+      (after, _lh_linear_first = false))
+
 #else
 ptrdiff_t  _lh_linear_handler_init(const lh_handlerdef* hdef, lh_value local, bool* init);
 void       _lh_linear_handler_done(ptrdiff_t id, bool init, bool do_release);
+
+#define LH_LINEAR_EXIT(hdef,local,do_release,after)  \
+    bool _lh_linear_init = false; \
+    ptrdiff_t _lh_linear_id = _lh_linear_handler_init(hdef,local,&_lh_linear_init); \
+    for(bool _lh_linear_first = true; \
+        _lh_linear_first; \
+        (after, _lh_linear_handler_done(_lh_linear_id,_lh_linear_init,do_release), \
+          _lh_linear_first=false))
+
 #define LH_LINEAR(hdef,local,do_release)  \
-                  bool _lh_linear_init = false; \
-                  ptrdiff_t _lh_linear_id = _lh_linear_handler_init(hdef,local,&_lh_linear_init); \
-                  for(bool _lh_linear_first = true; _lh_linear_first; (_lh_linear_handler_done(_lh_linear_id,_lh_linear_init,do_release), _lh_linear_first=false))
+    LH_LINEAR_EXIT(hdef,local,do_release,lh_nothing())
+
 #endif
 
 /*-----------------------------------------------------------------
@@ -378,16 +396,27 @@ void       _lh_linear_handler_done(ptrdiff_t id, bool init, bool do_release);
 -----------------------------------------------------------------*/
 LH_DECLARE_EFFECT0(defer)
 
-#define LH_DEFER(release_fun,local)   const lh_handlerdef _lh_deferdef = { LH_EFFECT(defer), NULL, release_fun, NULL, NULL }; \
-                                      LH_LINEAR(&_lh_deferdef,local,true)
+#define LH_DEFER_EXIT(after,release_fun,local) \
+    const lh_handlerdef _lh_deferdef = { LH_EFFECT(defer), NULL, release_fun, NULL, NULL }; \
+    LH_LINEAR_EXIT(&_lh_deferdef,local,true,after)
 
-#define defer(release_fun,local)      LH_DEFER(release_fun,local)
+#define LH_DEFER(release_fun,local) \
+    const lh_handlerdef _lh_deferdef = { LH_EFFECT(defer), NULL, release_fun, NULL, NULL }; \
+    LH_LINEAR(&_lh_deferdef,local,true)
+
+#define defer_exit(after,release_fun,local) \
+    LH_DEFER_EXIT(after,release_fun,local)
+
+#define defer(release_fun,local) \
+    LH_DEFER(release_fun,local)
 
 
-#define LH_ON_ABORT(release_fun,local)  const lh_handlerdef _lh_deferdef = { LH_EFFECT(defer), NULL, release_fun, NULL, NULL }; \
-                                        LH_LINEAR(&_lh_deferdef,local,false)
+#define LH_ON_ABORT(release_fun,local)  \
+    const lh_handlerdef _lh_deferdef = { LH_EFFECT(defer), NULL, release_fun, NULL, NULL }; \
+    LH_LINEAR(&_lh_deferdef,local,false)
 
-#define on_abort(release_fun,local)     LH_ON_ABORT(release_fun,local)
+#define on_abort(release_fun,local) \
+    LH_ON_ABORT(release_fun,local)
 
 /*-----------------------------------------------------------------
   Implicit Parameters:
@@ -395,16 +424,31 @@ LH_DECLARE_EFFECT0(defer)
 -----------------------------------------------------------------*/
 lh_value _lh_implicit_get(lh_resume r, lh_value local, lh_value arg);
 
-#define LH_IMPLICIT(release_fun,local,name) \
+#define LH_IMPLICIT_EXIT(after,release_fun,local,name) \
     const lh_operation _lh_imp_ops[2] = { { LH_OP_TAIL_NOOP, LH_OPTAG(name,get), &_lh_implicit_get }, { LH_OP_NULL, lh_op_null, NULL } }; \
     const lh_handlerdef _lh_imp_hdef  = { LH_EFFECT(name), NULL, release_fun, NULL, _lh_imp_ops }; \
-    LH_LINEAR(&_lh_imp_hdef,local,(release_fun!=NULL))
+    LH_LINEAR_EXIT(&_lh_imp_hdef,local,(release_fun!=NULL),after)
 
-#define with_implicit_defer(release_fun,local,name)  LH_IMPLICIT(release_fun,local,name)
-#define with_implicit(local,name)                    with_implicit_defer(NULL,local,name)
-#define implicit_define(name)                   LH_DEFINE_EFFECT1(name,get) 
-#define implicit_declare(name)                  LH_DECLARE_EFFECT1(name,get) LH_DECLARE_OP(name,get) 
-#define implicit_get(name)                      lh_yield(LH_OPTAG(name,get),lh_value_null) 
+#define LH_IMPLICIT(release_fun,local,name) \
+    LH_IMPLICIT_EXIT(lh_nothing(),release_fun,local,name)
+
+#define with_implicit_defer_exit(after,release_fun,local,name) \
+    LH_IMPLICIT_EXIT(after,release_fun,local,name)
+
+#define with_implicit_defer(release_fun,local,name) \
+    LH_IMPLICIT(release_fun,local,name)
+
+#define with_implicit(local,name) \
+    with_implicit_defer(NULL,local,name)
+
+#define implicit_define(name) \
+    LH_DEFINE_EFFECT1(name,get) 
+
+#define implicit_declare(name) \
+    LH_DECLARE_EFFECT1(name,get) LH_DECLARE_OP(name,get) 
+
+#define implicit_get(name) \
+    lh_yield(LH_OPTAG(name,get),lh_value_null) 
 
 
 /*-----------------------------------------------------------------

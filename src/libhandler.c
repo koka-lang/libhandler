@@ -1977,3 +1977,4 @@ void lh_release(lh_resume r) {
   if (r->rkind != TailResume) _lh_release(to_resume(r));
 }
 
+void lh_nothing() { }

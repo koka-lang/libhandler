@@ -9,7 +9,9 @@ found in the file "license.txt" at the root of this distribution.
 #include <uv.h>
 #include <assert.h>
 
-
+static uv_stream_t* stream_of_tty(uv_tty_t* tty) {
+  return (uv_stream_t*)tty;  // super class
+}
 
 typedef struct _tty_t {
   uv_tty_t*      _stdin;
@@ -29,9 +31,9 @@ lh_value _nodec_tty_allocv() {
 
 
 static void nodec_tty_free(tty_t* tty) {
-  if (tty->_stdin != NULL) nodec_stream_free((uv_stream_t*)tty->_stdin);
-  if (tty->_stdout != NULL) nodec_stream_free((uv_stream_t*)tty->_stdout);
-  if (tty->_stderr != NULL) nodec_stream_free((uv_stream_t*)tty->_stderr);
+  if (tty->_stdin != NULL) nodec_stream_free(stream_of_tty(tty->_stdin));
+  if (tty->_stdout != NULL) nodec_stream_free(stream_of_tty(tty->_stdout));
+  if (tty->_stderr != NULL) nodec_stream_free(stream_of_tty(tty->_stderr));
   // `read_stream_t* in` is owned by _stdin and freed by it
   nodec_free(tty);
 }
@@ -55,7 +57,7 @@ char* async_tty_readline() {
     check_uverr(uv_tty_init(async_loop(), tty->_stdin, 0, 1));
   }
   if (tty->in == NULL) {
-    tty->in = async_read_start((uv_stream_t*)tty->_stdin, 0, 64, 64);
+    tty->in = async_read_start(stream_of_tty(tty->_stdin), 0, 64, 64);
   }
   return async_read_line(tty->in);
 }
@@ -66,5 +68,12 @@ void async_tty_write(const char* s) {
     tty->_stdout = nodec_zero_alloc(uv_tty_t);
     check_uverr(uv_tty_init(async_loop(), tty->_stdout, 1, 0));
   }
-  async_write((uv_stream_t*)tty->_stdout, s);
+  async_write(stream_of_tty(tty->_stdout), s);
+}
+
+// Flush any outstanding writes
+void async_tty_shutdown() {
+  tty_t* tty = tty_get();
+  if (tty->_stdout == NULL) async_shutdown(stream_of_tty(tty->_stdout));
+  if (tty->_stderr == NULL) async_shutdown(stream_of_tty(tty->_stderr));
 }
