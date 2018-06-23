@@ -170,9 +170,10 @@ static void test_tcp_raw() {
   TTY
 -----------------------------------------------------------------*/
 static void test_tty_raw() {
-  uv_tty_t* tty_in = nodec_zero_alloc(uv_tty_t); 
-  {with_stream(tty_in) {
+  uv_tty_t* tty_in = nodec_zero_alloc(uv_tty_t);
+  {with_stream(tty_in){
     check_uverr(uv_tty_init(async_loop(), tty_in, 0, true));
+    /*
     read_stream_t* rs = async_read_start((uv_stream_t*)tty_in, 0, 255, 255);
     const char* s = async_read_line(rs);
     {with_free(s) {
@@ -183,6 +184,7 @@ static void test_tty_raw() {
       printf("Now I got: %s\n", s);
     }}
     printf("The end");
+    */
   }}
 }
 
@@ -194,11 +196,13 @@ static void test_tty() {
     {with_free(s) {
       printf("I got: %s\n", s);
     }}
+    /*
     async_tty_write("and your age? ");
     s = async_tty_readline();
     {with_free(s) {
       printf("Now I got: %s\n", s);
     }}
+    */
   }}
 }
 
@@ -214,8 +218,9 @@ static void entry() {
   //test_cancel();
   //test_tcp_raw();
   //test_tcp();
-  //test_tty();
-  test_tcp_tty();
+  //test_tty_raw();
+  test_tty();
+  //test_tcp_tty();
 }
 
 

@@ -193,7 +193,7 @@ void  async_tty_write(const char* s);
 
 typedef void (nc_entryfun_t)();
 
-void async_main( nc_entryfun_t* entry );
+uverr  async_main( nc_entryfun_t* entry );
 
 
 /* ----------------------------------------------------------------------------
@@ -267,6 +267,7 @@ char* nodec_strdup(const char* s);
 char* nodec_strndup(const char* s, size_t max);
 
 #define nodecx_alloc(tp)          ((tp*)(nodecx_malloc(sizeof(tp))))
+#define nodecx_zero_alloc(tp)     ((tp*)(nodecx_calloc(1,sizeof(tp))))
 
 #define nodec_alloc(tp)           ((tp*)(nodec_malloc(sizeof(tp))))
 #define nodec_alloc_n(n,tp)       ((tp*)(nodec_malloc((n)*sizeof(tp))))

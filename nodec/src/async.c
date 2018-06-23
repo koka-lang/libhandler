@@ -431,7 +431,7 @@ static lh_value uv_main_try_action(lh_value entry) {
   {with_outer_cancel_scope() {
     lh_try(&exn, uv_main_action, entry);
     if (exn != NULL) {
-      printf("unhandled exception: %s\n", exn->msg);
+      fprintf(stderr,"NodeC: unhandled exception: %s\n", exn->msg);
       lh_exception_free(exn);
     }
   }}
@@ -439,23 +439,36 @@ static lh_value uv_main_try_action(lh_value entry) {
 }
 
 static void uv_main_cb(uv_timer_t* t_start) {
-  // uv_mainx(t_start->loop);
   async_handler(t_start->loop, &uv_main_try_action, lh_value_ptr(t_start->data));
-  uv_timer_stop(t_start);
+  nodec_timer_free(t_start);
 }
 
-void async_main( nc_entryfun_t* entry  ) {
-  uv_loop_t* loop = uv_default_loop();
-  uv_timer_t t_start;
-  t_start.data = entry;
-  uv_timer_init(loop, &t_start);
-  uv_timer_start(&t_start, &uv_main_cb, 0, 0);
-  printf("starting\n");
-  int result = uv_run(loop, UV_RUN_DEFAULT);
+uverr async_main( nc_entryfun_t* entry  ) {
+  uv_replace_allocator(_nodecx_malloc, _nodecx_realloc, _nodecx_calloc, _nodec_free);
+  uv_loop_t* loop = nodecx_zero_alloc(uv_loop_t);
+  if (loop == NULL) return UV_ENOMEM;
+  uverr err = uv_loop_init(loop);
+  if (err == 0) {
+    uv_timer_t* t_start = nodecx_zero_alloc(uv_timer_t);
+    if (t_start == NULL) err = UV_ENOMEM;
+    if (err == 0) {
+      err = uv_timer_init(loop, t_start);
+      if (err == 0) {
+        t_start->data = entry;
+        err = uv_timer_start(t_start, &uv_main_cb, 0, 0);
+        if (err == 0) {
+          // printf("starting event loop\n");
+          err = uv_run(loop, UV_RUN_DEFAULT);
+          t_start = NULL;
+        }
+      }
+    }
+    if (t_start != NULL) nodec_free(t_start);
+  }
   uv_loop_close(loop);
-
+  nodec_free(loop);
   nodec_check_memory();
   char buf[128];
   printf("done! (press enter to quit)\n"); gets(buf);
-  return;
+  return err;
 }
