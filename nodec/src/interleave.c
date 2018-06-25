@@ -35,8 +35,9 @@ static void _handle_interleave_strand(channel_t* channel, interleave_strand_args
   _channel_async_handler(channel, &_interleave_strand, lh_value_any_ptr(args));
 }
 
-static void _interleave_n(size_t n, lh_actionfun** actions, lh_value* arg_results, lh_exception** exceptions) {
-  {with_alloc(size_t, todo) {
+static void  _interleave_n(size_t n, lh_actionfun** actions, lh_value* arg_results, lh_exception** exceptions) {
+  volatile size_t* todo = nodec_alloc(size_t);
+  {with_free(todo){
     *todo = n;
     {with_channel(channel) {      
       for (size_t i = 0; i < n; i++) {

@@ -28,8 +28,8 @@ typedef struct _channel_s {
   // listeners are a stack, so the last listeners
   // gets to handle first
   channel_listener* listeners;
-  ssize_t           lcount;
-  ssize_t           lsize;
+  volatile ssize_t  lcount;
+  volatile ssize_t  lsize;
 
   // the queue is a true queue
   channel_elem*     queue;

@@ -187,15 +187,15 @@ static size_t chunks_find_eol(chunks_t* chunks) {
 typedef struct _read_stream_t {
   uv_stream_t* stream;        // backlink (stream->data == this)
   chunks_t     chunks;        // the currently read buffers
-  size_t       available;     // how much data is now available
   size_t       read_max;      // maximum bytes we are going to read
-  size_t       read_total;    // total bytes read until now (available <= total)
   size_t       alloc_size;    // current chunk allocation size (<= alloc_max), doubled on every new read
   size_t       alloc_max;     // maximal chunk allocation size (usually about 64kb)
   bool         read_to_eof;   // set to true to improve perfomance for reading a stream up to eof
-  bool         eof;           // true if end-of-file reached
-  uverr        err;           // !=0 on error
   uv_req_t*    req;           // request object for waiting
+  volatile size_t     available;     // how much data is now available
+  volatile size_t     read_total;    // total bytes read until now (available <= total)
+  volatile bool       eof;           // true if end-of-file reached
+  volatile uverr      err;           // !=0 on error
 } read_stream_t;
 
 static void read_stream_free(read_stream_t* rs) {
