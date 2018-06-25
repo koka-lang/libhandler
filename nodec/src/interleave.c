@@ -17,13 +17,13 @@ typedef struct _interleave_strand_args {
   lh_actionfun*  action;
   lh_value*      arg_res;
   lh_exception** exception;
-  ssize_t*       todo;
+  volatile ssize_t* todo;
 } interleave_strand_args;
 
 static lh_value _interleave_strand(lh_value vargs) {
   interleave_strand_args* args = (interleave_strand_args*)lh_ptr_value(vargs);
   lh_value arg = *args->arg_res;
-  ssize_t* todo = args->todo;
+  volatile ssize_t* todo = args->todo;
   *args->arg_res = lh_value_null;
   *args->exception = NULL;
   *args->arg_res = lh_try_all(args->exception, args->action, arg);
@@ -37,7 +37,7 @@ static void _handle_interleave_strand(channel_t* channel, interleave_strand_args
 
 static void  _interleave_n(size_t n, lh_actionfun** actions, lh_value* arg_results, lh_exception** exceptions) {
   volatile size_t* todo = nodec_alloc(size_t);
-  {with_free(todo){
+  {defer(nodec_freev, lh_value_ptr((void*)todo)){
     *todo = n;
     {with_channel(channel) {      
       for (size_t i = 0; i < n; i++) {

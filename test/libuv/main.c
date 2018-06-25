@@ -439,11 +439,11 @@ static int async_fread_fullx(const char* path, ssize_t* len, char** contents) {
   uv_stat_t stat;
   err = async_fstatx(file, &stat);
   if (err == 0) {
-    ssize_t size = stat.st_size;
+    size_t size = (size_t)stat.st_size;
     char*   buffer = (char*)malloc(size + 1);
     uv_buf_t buf = uv_buf_init(buffer, (unsigned)size);
-    ssize_t read = 0;
-    ssize_t total = 0;
+    size_t read = 0;
+    size_t total = 0;
     while (total < size && (err = async_freadx(file, &buf, -1, &read)) == 0 && read > 0) {
       total += read;
       if (total > size) {

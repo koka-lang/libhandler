@@ -154,7 +154,8 @@ lh_value async_with_fopen(const char* path, int flags, int mode, nodec_file_fun*
 
 lh_value _async_fread_full(uv_file file, lh_value _arg) {
   uv_stat_t stat = async_fstat(file);
-  size_t    size = stat.st_size;
+  if (stat.st_size >= MAXSIZE_T) lh_throw_errno(E2BIG);
+  size_t    size = (size_t)stat.st_size;
   char*     buffer = nodec_alloc_n(size + 1, char);
   {on_abort(nodec_freev, lh_value_ptr(buffer)) {
     uv_buf_t buf = nodec_buf(buffer, size);
