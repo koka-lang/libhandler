@@ -9,6 +9,10 @@ found in the file "license.txt" at the root of this distribution.
 #include <uv.h>
 #include <assert.h>
 
+static uv_handle_t* handle_of_timer(uv_timer_t* timer) {
+  return (uv_handle_t*)timer;
+}
+
 uv_timer_t* nodec_timer_alloc() {
   uv_timer_t* timer = nodec_zero_alloc(uv_timer_t);
   check_uverr(uv_timer_init(async_loop(), timer));
@@ -22,7 +26,7 @@ static void _timer_close_cb(uv_handle_t* timer) {
 void nodec_timer_free(uv_timer_t* timer) {
   if (timer!=NULL) {
     uv_timer_stop(timer);
-    uv_close((uv_handle_t*)timer, &_timer_close_cb);
+    uv_close(handle_of_timer(timer), &_timer_close_cb);
   }
 }
 

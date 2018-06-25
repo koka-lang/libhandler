@@ -28,10 +28,21 @@ void       nodec_req_force_freev(lh_value uvreq);
 void       nodec_req_free(uv_req_t* uvreq);
 void       nodec_req_freev(lh_value uvreq);
 
-#define with_req(req_tp,name) \
+void       nodec_owner_release(void* owner);
+
+// A request that has an owner and should use `async_await_owned`
+// Canceled requests will be freed when the owner is freed (through `nodec_owner_release`)
+#define with_owned_req(req_tp,name) \
   req_tp* name = nodec_zero_alloc(req_tp); \
   defer(nodec_req_freev,lh_value_ptr(name))
 
+// A request that has no owner where the callback must be called
+// at some point (even when canceled) such that the request can be freed at that time.
+#define with_unowned_req(req_tp,name) \
+  with_owned_req(req_tp,name)
+
+// A request that is always freed even when canceled. Use this only if
+// it is guaranteed that the request is never used again (for example for timers)
 #define with_free_req(req_tp,name) \
   req_tp* name = nodec_zero_alloc(req_tp); \
   defer(nodec_req_force_freev,lh_value_ptr(name))
@@ -40,8 +51,8 @@ void       nodec_req_freev(lh_value uvreq);
 // Await an asynchronous request but return an explicit error value instead of throwing.
 // Use with care since these still throw on cancelation requests.
 uverr   asyncx_nocancel_await(uv_req_t* uvreq);  // never throws and cannot be canceled
-uverr   asyncxx_await(uv_req_t* uvreq);  // never throws
-uverr   asyncx_await(uv_req_t* req);     // throws on cancel
+uverr   asyncxx_await(uv_req_t* uvreq, void* owner);  // never throws
+uverr   asyncx_await(uv_req_t* req, void* owner);     // throws on cancel
 uverr   asyncx_await_fs(uv_fs_t* req);
 
 // Set a timeout callback 

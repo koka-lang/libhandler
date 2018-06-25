@@ -18,7 +18,7 @@ found in the file "license.txt" at the root of this distribution.
 
 // Await a file system request
 uverr asyncx_await_fs(uv_fs_t* req) {
-  return asyncx_await((uv_req_t*)req);
+  return asyncx_await((uv_req_t*)req,NULL);
 }
 
 void async_await_fs(uv_fs_t* req) {
@@ -34,7 +34,15 @@ static void async_fs_resume(uv_fs_t* uvreq) {
 
 
 #define with_fs_req(req,loop)  uv_loop_t* loop = async_loop(); \
-                               with_req(uv_fs_t,req)
+                               with_unowned_req(uv_fs_t,req)
+
+
+
+void async_await_file(uv_fs_t* req, uv_file owner) {
+  async_await_owned((uv_req_t*)req, (void*)((intptr_t)owner));
+}
+
+#define with_file_req(req,loop)  with_fs_req(req,loop)
 
 
 
@@ -89,19 +97,29 @@ uv_file async_fopen(const char* path, int flags, int mode) {
   return file;
 }
 
+void nodec_fclose(uv_file file) {
+  nodec_owner_release((void*)((intptr_t)file));
+}
+
+void nodec_fclosev(lh_value filev) {
+  nodec_fclose((uv_file)lh_int_value(filev));
+}
+
 void async_fclose(uv_file file) {
   if (file < 0) return;
-  {with_fs_req(req, loop) {
-    check_uverr(uv_fs_close(loop, req, file, &async_fs_resume));
-    async_await_fs(req);
+  {defer(nodec_fclosev, lh_value_int(file)) {
+    {with_file_req(req, loop) {
+      check_uverr(uv_fs_close(loop, req, file, &async_fs_resume));
+      async_await_file(req, file);
+    }}
   }}
 }
 
 size_t async_fread(uv_file file, uv_buf_t* buf, int64_t file_offset) {
   size_t read = 0;
-  {with_fs_req(req, loop) {
+  {with_file_req(req, loop) {
     check_uverr(uv_fs_read(loop, req, file, buf, 1, file_offset, &async_fs_resume));
-    async_await_fs(req);
+    async_await_file(req, file);
     read = (size_t)req->result;
   }}
   return read;

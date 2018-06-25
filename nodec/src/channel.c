@@ -162,7 +162,7 @@ static channel_elem channel_receive_ex(channel_t* channel, bool nocancel) {
   else {
     // await the next emit
     uv_channel_req_t* req = nodec_zero_alloc_n(1, uv_channel_req_t);
-    {with_free(req){
+    {with_free(req){ // always free our request
       if (channel->lcount >= channel->lsize) {
         ssize_t newsize = (channel->lsize > 0 ? 2 * channel->lsize : 2);
         channel->listeners = (channel->listeners == NULL ? nodec_alloc_n(newsize, channel_listener)
@@ -178,7 +178,7 @@ static channel_elem channel_receive_ex(channel_t* channel, bool nocancel) {
         err = asyncx_nocancel_await(&req->req);
       } 
       else {
-        err = asyncxx_await(&req->req);
+        err = asyncxx_await(&req->req,NULL);
       }
       // remove ourselves; we must do it here instead of in emit due to cancelations
       bool removed = false;

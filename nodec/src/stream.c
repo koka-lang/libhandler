@@ -43,8 +43,8 @@ uv_buf_t nodec_buf_alloc(size_t len) {
 Await shutdown
 -----------------------------------------------------------------------------*/
 
-static void async_await_shutdown(uv_shutdown_t* req) {
-  async_await((uv_req_t*)req);
+static void async_await_shutdown(uv_shutdown_t* req, uv_stream_t* stream) {
+  async_await_owned((uv_req_t*)req,stream);
 }
 
 static void async_shutdown_resume(uv_shutdown_t* req, uverr status) {
@@ -55,8 +55,8 @@ static void async_shutdown_resume(uv_shutdown_t* req, uverr status) {
 /* ----------------------------------------------------------------------------
 Await write requests
 -----------------------------------------------------------------------------*/
-static void async_await_write(uv_write_t* req) {
-  async_await((uv_req_t*)req);
+static void async_await_write(uv_write_t* req, uv_stream_t* owner) {
+  async_await_owned((uv_req_t*)req,owner);
 }
 
 static void async_write_resume(uv_write_t* req, uverr status) {
@@ -257,7 +257,7 @@ static bool async_read_stream_await(read_stream_t* rs, bool wait_even_if_availab
     uv_req_t* req = nodec_zero_alloc(uv_req_t);
     rs->req = req;
     {defer(read_stream_freereqv, lh_value_ptr(rs)) {
-      async_await(req);
+      async_await_owned(req,rs->stream);
       // fprintf(stderr,"back from await\n");
     }}
   }
@@ -483,6 +483,7 @@ void nodec_handle_free(uv_handle_t* h) {
   else {
     _close_handle_cb(h);
   }
+  nodec_owner_release(h);
 }   
 
 void nodec_stream_free(uv_stream_t* stream) {
@@ -500,9 +501,9 @@ void nodec_stream_freev(lh_value streamv) {
 void async_shutdown(uv_stream_t* stream) {
   if (stream==NULL) return;
   if (stream->write_queue_size>0) {
-    {with_req(uv_shutdown_t, req) {
+    {with_owned_req(uv_shutdown_t, req) {
       check_uverr(uv_shutdown(req, stream, &async_shutdown_resume));
-      async_await_shutdown(req);
+      async_await_shutdown(req, stream);
     }}
   } 
   // nodec_stream_free(stream);
@@ -539,9 +540,9 @@ void async_write_buf(uv_stream_t* stream, uv_buf_t buf) {
 
 void async_write_bufs(uv_stream_t* stream, uv_buf_t bufs[], unsigned int buf_count) {
   if (bufs==NULL || buf_count<=0) return;
-  {with_req(uv_write_t, req) {    
+  {with_owned_req(uv_write_t, req) {    
     // Todo: verify it is ok to have bufs on the stack or if we need to heap alloc them first for safety
     check_uverr(uv_write(req, stream, bufs, buf_count, &async_write_resume));
-    async_await_write(req);
+    async_await_write(req,stream);
   }}
 }

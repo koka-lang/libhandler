@@ -36,11 +36,9 @@ uv_loop_t* async_loop();
 
 // Await an asynchronous request. Throws on error.
 void       async_await(uv_req_t* req);
+void       async_await_owned(uv_req_t* req, void* owner);
 
 void       async_await_fs(uv_fs_t* req);
-void       async_await_connect(uv_connect_t* req);
-void       async_await_shutdown(uv_shutdown_t* req);
-void       async_await_write(uv_write_t* req);
 
 // private
 implicit_declare(_cancel_scope)

@@ -58,6 +58,10 @@ typedef const char* lh_string;
 #define lh_lh_string_value(v) ((lh_string)lh_ptr_value(v))
 #define lh_value_lh_string(v) (lh_value_ptr(v))
 
+typedef void* lh_voidptr;
+#define lh_lh_voidptr_value(v) lh_ptr_value(v)
+#define lh_value_lh_voidptr(p) lh_value_ptr(p)
+
 /*-----------------------------------------------------------------
 	Types
 -----------------------------------------------------------------*/
@@ -319,6 +323,15 @@ const char* lh_effect_name(lh_effect effect);
   const struct lh_optag_ LH_OPTAG_DEF(effect,op2) = { LH_EFFECT(effect), 1 }; \
   const struct lh_optag_ LH_OPTAG_DEF(effect,op3) = { LH_EFFECT(effect), 2 }; \
   const struct lh_optag_ LH_OPTAG_DEF(effect,op4) = { LH_EFFECT(effect), 3 }; 
+
+#define LH_DEFINE_EFFECT5(effect,op1,op2,op3,op4,op5) \
+  const char* LH_EFFECT(effect)[7] = {  #effect, #effect "/" #op1, #effect "/" #op2, #effect "/" #op3, #effect "/" #op4, #effect "/" #op5, NULL }; \
+  const struct lh_optag_ LH_OPTAG_DEF(effect,op1) = { LH_EFFECT(effect), 0 }; \
+  const struct lh_optag_ LH_OPTAG_DEF(effect,op2) = { LH_EFFECT(effect), 1 }; \
+  const struct lh_optag_ LH_OPTAG_DEF(effect,op3) = { LH_EFFECT(effect), 2 }; \
+  const struct lh_optag_ LH_OPTAG_DEF(effect,op4) = { LH_EFFECT(effect), 3 }; \
+  const struct lh_optag_ LH_OPTAG_DEF(effect,op5) = { LH_EFFECT(effect), 4 }; 
+
 
 #define LH_DEFINE_OP0(effect,op,restype) \
   restype effect##_##op() { lh_value res = lh_yield(LH_OPTAG(effect,op), lh_value_null); return lh_##restype##_value(res); } 

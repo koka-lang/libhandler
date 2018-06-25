@@ -10,6 +10,62 @@
 #include <assert.h>
 
 /*-----------------------------------------------------------------
+  HTTP Request
+-----------------------------------------------------------------*/
+/*
+typedef enum _http_method_t {
+  HTTP_UNKNOWN_METHOD = 0,
+  HTTP_GET,
+  HTTP_HEAD,
+  HTTP_POST,
+  HTTP_PUT,
+  HTTP_DELETE,
+  HTTP_CONNECT,
+  HTTP_OPTIONS,
+  HTTP_TRACE
+} http_method_t;
+
+typedef struct _http_header_t {
+  const char* name;
+  const char* value;
+} http_header_t;
+
+
+typedef struct _http_headers_t {
+  size_t  count; // how many are there
+  size_t  size;  // how big is our array
+  const http_header_t*  headers;  // realloc on demand, perhaps start with size 8 and do +8 as it comes?  
+} http_headers_t;
+
+static void http_headers_free(http_headers_t* headers);
+static void http_headers_add(http_headers_t* headers, const char* name, const char* value);
+static const char* http_headers_lookup(http_headers_t* headers, const char* name);
+static size_t http_headers_count(http_headers_t* headers);
+static const http_header_t* http_headers_at(http_headers_t* headers);
+
+
+typedef struct _http_request_t {
+  // special fields
+  http_method_t   method;
+  const char*     url;
+  const char*     http_version;
+  size_t          content_length;
+  http_headers_t  headers;  
+} http_request_t;
+
+static http_request_t* http_request_alloc() {
+  return nodec_zero_alloc(http_request_t);
+}
+
+const char*   http_request_url(http_request_t* req);
+http_method_t http_request_method(http_request_t* req);
+const char*   http_request_header(http_request_t* req, const char* name);
+// .. etc
+
+static void http_request_add_header(http_request_t* req, const char* name, const char* value);
+*/
+
+/*-----------------------------------------------------------------
   HTTP errors|
 -----------------------------------------------------------------*/
 const char* http_error_headers =

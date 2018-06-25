@@ -14,8 +14,10 @@ struct _cancel_scope_t;
 typedef struct _cancel_scope_t cancel_scope_t;
 struct _async_request_t;
 typedef struct _async_request_t async_request_t;
+struct _async_local_t;
+typedef struct _async_local_t async_local_t;
 
-async_request_t* async_request_alloc(uv_req_t* uvreq, bool nocancel);
+async_request_t* async_request_alloc(uv_req_t* uvreq, bool nocancel, void* owner);
 
 /*-----------------------------------------------------------------
 Async effect operations
@@ -33,12 +35,12 @@ typedef const cancel_scope_t*   cancel_scope_ptr;
 #define lh_cancel_scope_ptr_value(v)      ((const cancel_scope_t*)lh_ptr_value(v))
 #define lh_value_cancel_scope_ptr(r)      lh_value_ptr(r)
 
-LH_DEFINE_EFFECT4(async, req_await, uv_loop, req_register, uv_cancel);
+LH_DEFINE_EFFECT5(async, req_await, uv_loop, req_register, uv_cancel, owner_release);
 LH_DEFINE_OP0(async, uv_loop, uv_loop_ptr);
 LH_DEFINE_OP1(async, req_await, int, async_request_ptr);
 LH_DEFINE_VOIDOP1(async, req_register, async_request_ptr);
 LH_DEFINE_VOIDOP1(async, uv_cancel, cancel_scope_ptr);
-
+LH_DEFINE_VOIDOP1(async, owner_release, lh_voidptr);
 
 
 // Wrappers around the primitive operations for async.
@@ -46,28 +48,36 @@ uv_loop_t* async_loop() {
   return async_uv_loop();
 }
 
+void nodec_owner_release(void* owner) {
+  async_owner_release(owner);
+}
+
 
 uverr asyncx_nocancel_await(uv_req_t* uvreq) {
-  async_request_t* req = async_request_alloc(uvreq,true);
+  async_request_t* req = async_request_alloc(uvreq,true,NULL);
   uverr err = async_req_await(req);
   assert(err != UV_ETHROWCANCEL);
   return err;
 }
 
-uverr asyncxx_await(uv_req_t* uvreq) {
-  async_request_t* req = async_request_alloc(uvreq, false);
+uverr asyncxx_await(uv_req_t* uvreq, void* owner) {
+  async_request_t* req = async_request_alloc(uvreq, false, owner);
   return async_req_await(req);
 }
 
 
-uverr asyncx_await(uv_req_t* uvreq) {
-  uverr err = asyncxx_await(uvreq); 
+uverr asyncx_await(uv_req_t* uvreq, void* owner) {
+  uverr err = asyncxx_await(uvreq, owner); 
   if (err == UV_ETHROWCANCEL) lh_throw_cancel();
   return err;
 }
 
 void async_await(uv_req_t* uvreq) {
-  check_uverr(asyncx_await(uvreq));
+  check_uverr(asyncx_await(uvreq,NULL));
+}
+
+void async_await_owned(uv_req_t* uvreq, void* owner) {
+  check_uverr(asyncx_await(uvreq,owner));
 }
 
 
@@ -166,7 +176,7 @@ void nodec_req_force_freev(lh_value uvreq) {
 // When deallocating a request, a `-1` in the data field will not deallocate 
 // quite yet.
 void nodec_req_free(uv_req_t* uvreq) {
-  if ((uvreq != NULL && uvreq->data != (void*)(-1))) {
+  if ((uvreq != NULL && uvreq->data != (void*)(-1)) && uvreq->data != (void*)(-3)) {
     nodec_req_force_free(uvreq);
   }
 }
@@ -196,16 +206,29 @@ struct _async_request_t {
   const cancel_scope_t* scope;
   uv_req_t*             uvreq;
   bool                  canceled;
+  void*                 owner;
   async_resume_fun*     resumefun;
 };
 
-static async_request_t* async_request_alloc(uv_req_t* uvreq, bool nocancel) {
+static async_request_t* async_request_alloc(uv_req_t* uvreq, bool nocancel, void* owner) {
   async_request_t* req = nodec_zero_alloc(async_request_t);
   uvreq->data = req;
   req->uvreq = uvreq;
+  req->owner = owner;
   req->scope = cancel_scope();
   if (!nocancel) async_req_register(req);
   return req;
+}
+
+static void async_request_free(async_request_t* req) {
+  // unregister ourselves from outstanding requests
+  async_request_t* prev = req->prev;
+  if (req->prev != NULL) {    // only NULL for `nocancel` requests; otherwise always valid since we use a dummy head element
+    prev->next = req->next;
+    if (req->next != NULL) req->next->prev = prev; // link back
+  }
+  // and free
+  nodec_free(req);
 }
 
 static void async_resume_default(lh_resume resume, lh_value local, uv_req_t* req, int err) {
@@ -220,28 +243,39 @@ static void async_request_resume(async_request_t* req, uv_req_t* uvreq, int err)
   assert(uvreq!=NULL);
   assert(uvreq->data == req);
   assert(req->uvreq == NULL || req->uvreq == uvreq);
-  if (req->uvreq != NULL) {
-    // resume at most once
-    req->uvreq = NULL;
-    // when we cancel explicitly, the callback will be invoked twice
-    // and the first exit should not trigger deallocation of the uv request
-    // this is signified by putting `-1` in its data field (instead of NULL)
-    uvreq->data = (err == UV_ETHROWCANCEL ? (void*)(-1) : NULL);
-    // unregister ourselves from outstanding requests
-    // previous always exists using a dummy head element
-    async_request_t* prev = req->prev;
-    if (prev != NULL) {
-      prev->next = req->next;
-      if (req->next != NULL) req->next->prev = prev; // link back
-      req->next = NULL;
-      req->prev = NULL;
-    }
-    // and resume
+  if (req->uvreq != NULL && req->uvreq->data == req) { // invoke only once!
+    // put resume arguments in locals
     async_resume_fun* resumefun = req->resumefun;
     lh_resume resume = req->resume;
     lh_value local = req->local;
     int uverr = (req->canceled ? UV_ETHROWCANCEL : err);
-    free(req);
+    // if we are canceled explicitly, we cannot deallocate the orginal
+    // request right away because it might still modified, or its callback
+    // might be called once the request is satisfied. Therefore, if there
+    // is an owner set, we put `-1` in the uvrequest `data` field to signify
+    // it should not yet be deallocated -- but only once the owner is
+    // deallocated (usually a `uv_handle_t*`)._
+    // We use -3 to signify to deallocate once the original callback is called.
+    // this is for request that have no particular owner and where the callback
+    // will be called! like most file system requests
+    if (err == UV_ETHROWCANCEL) {
+      if (req->owner != NULL) {
+        uvreq->data = (void*)(-1); // signify to not deallocate in `nodec_req_free`
+        // we leave it in the outstanding request where it will be freed when
+        // the `owner` (usually a `uv_handle_t`) gets released.
+      }
+      else {
+        uvreq->data = (void*)(-3); // signify to not deallocate in `nodec_req_free`
+        // we free the request object, and free the uv request once its callback
+        // is called
+        async_request_free(req);
+      }
+    }
+    else {
+      // unlink the request
+      uvreq->data = NULL;
+      async_request_free(req);
+    }
     (*resumefun)(resume, local, uvreq, uverr);
   }
 }
@@ -254,13 +288,17 @@ void async_req_resume(uv_req_t* uvreq, int err) {
   assert(uvreq != NULL);
   async_request_t* req = (async_request_t*)uvreq->data;
   if (req != NULL) {
-    if (req != (void*)(-1)) {
-      // regular resumption
-      async_request_resume(req, uvreq, err);
+    if (req == (void*)(-3)) {
+      // was explicitly canceled, deallocate now
+      nodec_req_force_free(uvreq);
+    }
+    else if (req == (void*)(-1)) {
+      // was expliclitly canceled, but has an owner (usually a uv_handle_t) and
+      // will be deallocated later when the owner is released
     }
     else {
-      // already (explicitly) canceled; deallocate the request now and don't resume
-      nodec_req_force_free(uvreq);
+      // regular resumption
+      async_request_resume(req, uvreq, err);
     }
   }
 }
@@ -274,6 +312,8 @@ void async_req_resume(uv_req_t* uvreq, int err) {
 typedef struct _async_local_t {
   uv_loop_t*      loop;      // current event loop
   async_request_t requests;  // empty request to be the head of the queue of outstanding requests
+  async_request_t canceled;  // empty request to be the head of the queue of canceled requests 
+                             // these are deallocated when their owner is released.
 } async_local_t;
 
 // Await an asynchronous request
@@ -304,6 +344,25 @@ static lh_value _async_req_register(lh_resume r, lh_value localv, lh_value arg) 
   if (req->next != NULL) req->next->prev = req;             // link back
   req->prev = &local->requests;   
   local->requests.next = req;
+  return lh_tail_resume(r, localv, lh_value_null);
+}
+
+// Deallocate outstanding requests when their owner is released
+// This usualy only happens for explicitly canceled requests
+static lh_value _async_owner_release(lh_resume r, lh_value localv, lh_value arg) {
+  async_local_t* local = (async_local_t*)lh_ptr_value(localv);
+  void*          owner = lh_ptr_value(arg);
+  if (owner != NULL) {
+    for (async_request_t* req = local->requests.next; req != NULL; ) {  // TODO: linear lookup -- but probably ok.
+      async_request_t* next = req->next;
+      if (req->canceled && req->owner == owner) {
+        assert(req->uvreq != NULL && req->uvreq->data == (void*)(-1));
+        nodec_req_force_free(req->uvreq);
+        async_request_free(req);  // will unlink properly
+      }
+      req = next;
+    }
+  }
   return lh_tail_resume(r, localv, lh_value_null);
 }
 
@@ -347,6 +406,7 @@ static const lh_operation _async_ops[] = {
   { LH_OP_TAIL_NOOP, LH_OPTAG(async,uv_loop), &_async_uv_loop },
   { LH_OP_TAIL_NOOP, LH_OPTAG(async,req_register), &_async_req_register },
   { LH_OP_TAIL_NOOP, LH_OPTAG(async,uv_cancel), &_async_uv_cancel },
+  { LH_OP_TAIL_NOOP, LH_OPTAG(async,owner_release), &_async_owner_release },
   { LH_OP_NULL, lh_op_null, NULL }
 };
 static const lh_handlerdef _async_def = { LH_EFFECT(async), NULL, _async_release, NULL, _async_ops };
@@ -394,11 +454,18 @@ static lh_value _channel_async_uv_cancel(lh_resume r, lh_value localv, lh_value 
   return lh_tail_resume(r, localv, lh_value_null);
 }
 
+// Release of owner
+static lh_value _channel_async_owner_release(lh_resume r, lh_value localv, lh_value arg) {
+  async_owner_release(lh_ptr_value(arg));     // pass through to parent
+  return lh_tail_resume(r, localv, lh_value_null);
+}
+
 static const lh_operation _channel_async_ops[] = {
   { LH_OP_GENERAL, LH_OPTAG(async,req_await), &_channel_async_req_await },
   { LH_OP_TAIL, LH_OPTAG(async,uv_loop), &_channel_async_uv_loop },
   { LH_OP_TAIL, LH_OPTAG(async,req_register), &_channel_async_req_register },
   { LH_OP_TAIL, LH_OPTAG(async,uv_cancel), &_channel_async_uv_cancel },
+  { LH_OP_TAIL, LH_OPTAG(async,owner_release), &_channel_async_owner_release },
   { LH_OP_NULL, lh_op_null, NULL }
 };
 static const lh_handlerdef _channel_async_hdef = { LH_EFFECT(async), NULL, NULL, NULL, _channel_async_ops };
