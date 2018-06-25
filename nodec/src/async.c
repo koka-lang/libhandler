@@ -72,7 +72,7 @@ uverr asyncx_await(uv_req_t* uvreq, void* owner) {
   return err;
 }
 
-void async_await(uv_req_t* uvreq) {
+void async_await_once(uv_req_t* uvreq) {
   check_uverr(asyncx_await(uvreq,NULL));
 }
 
@@ -370,6 +370,13 @@ static void _async_release(lh_value localv) {
   async_local_t* local = (async_local_t*)lh_ptr_value(localv);
   assert(local != NULL);
   assert(local->requests.next == NULL);
+  // paranoia: clean up any left over outstanding requests
+  for (async_request_t* req = local->requests.next; req != NULL; ) { 
+    async_request_t* next = req->next;
+    nodec_req_force_free(req->uvreq);
+    async_request_free(req);  // will unlink properly
+    req = next;
+  }
   free(local);
 }
 
@@ -383,7 +390,7 @@ static lh_value _async_uv_cancel(lh_resume resume, lh_value localv, lh_value sco
   async_local_t* local = (async_local_t*)lh_ptr_value(localv);
   const cancel_scope_t* scope = lh_cancel_scope_ptr_value(scopev);
   for( async_request_t* req = local->requests.next; req != NULL; req = req->next ) {
-    if (in_scope_of(req->scope, scope) && req->uvreq != NULL && !req->canceled) {
+    if (req->uvreq != NULL && !req->canceled && in_scope_of(req->scope, scope)) {
       // try primitive cancelation first; guarantees the callback is called with UV_ECANCELED
       req->canceled = true;
       uverr err = uv_cancel(req->uvreq);
@@ -507,7 +514,7 @@ static lh_value uv_main_try_action(lh_value entry) {
 
 static void uv_main_cb(uv_timer_t* t_start) {
   async_handler(t_start->loop, &uv_main_try_action, lh_value_ptr(t_start->data));
-  nodec_timer_free(t_start);
+  nodec_timer_free(t_start,false);
 }
 
 uverr async_main( nc_entryfun_t* entry  ) {

@@ -501,7 +501,7 @@ void nodec_stream_freev(lh_value streamv) {
 void async_shutdown(uv_stream_t* stream) {
   if (stream==NULL) return;
   if (stream->write_queue_size>0) {
-    {with_owned_req(uv_shutdown_t, req) {
+    {with_req(uv_shutdown_t, req) {
       check_uverr(uv_shutdown(req, stream, &async_shutdown_resume));
       async_await_shutdown(req, stream);
     }}
@@ -540,7 +540,7 @@ void async_write_buf(uv_stream_t* stream, uv_buf_t buf) {
 
 void async_write_bufs(uv_stream_t* stream, uv_buf_t bufs[], unsigned int buf_count) {
   if (bufs==NULL || buf_count<=0) return;
-  {with_owned_req(uv_write_t, req) {    
+  {with_req(uv_write_t, req) {    
     // Todo: verify it is ok to have bufs on the stack or if we need to heap alloc them first for safety
     check_uverr(uv_write(req, stream, bufs, buf_count, &async_write_resume));
     async_await_write(req,stream);

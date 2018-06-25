@@ -182,7 +182,7 @@ static channel_elem channel_receive_ex(channel_t* channel, bool nocancel) {
       }
       // remove ourselves; we must do it here instead of in emit due to cancelations
       bool removed = false;
-      for (ssize_t i = 0; i < channel->lcount; i++) {
+      for (ssize_t i = channel->lcount-1; i >= 0; i--) { // backward for efficiency
         if (channel->listeners[i].arg == lh_value_ptr(req)) {
           // found
           removed = true;

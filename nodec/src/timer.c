@@ -23,15 +23,19 @@ static void _timer_close_cb(uv_handle_t* timer) {
   nodec_free(timer);
 }
 
-void nodec_timer_free(uv_timer_t* timer) {
+void nodec_timer_close(uv_timer_t* timer) {
   if (timer!=NULL) {
-    uv_timer_stop(timer);
     uv_close(handle_of_timer(timer), &_timer_close_cb);
   }
 }
 
+void nodec_timer_free(uv_timer_t* timer, bool owner_release) {
+  nodec_timer_close(timer);
+  if (owner_release) nodec_owner_release(timer);  
+}
+
 void nodec_timer_freev(lh_value timerv) {
-  nodec_timer_free((uv_timer_t*)lh_ptr_value(timerv));
+  nodec_timer_free((uv_timer_t*)lh_ptr_value(timerv),true);
 }
 
 
@@ -46,7 +50,7 @@ static void _timeout_cb(uv_timer_t* timer) {
   if (timer==NULL) return;
   timeout_args args = *((timeout_args*)timer->data);
   nodec_free(timer->data);
-  nodec_timer_free(timer);
+  nodec_timer_free(timer, false);
   args.cb(args.arg);
 }
 
@@ -72,11 +76,10 @@ static void _async_timer_resume(uv_timer_t* timer) {
 void async_delay(uint64_t timeout) {
   uv_timer_t* timer = nodec_timer_alloc();
   {defer(nodec_timer_freev,lh_value_ptr(timer)){
-    {with_free_req(uv_req_t, req) {  // use a dummy request so we can await the timer handle
-                                     // and always free since we always close the timer too 
+    {with_req(uv_req_t, req) {  // use a dummy request so we can await the timer handle
       timer->data = req;
       check_uverr(uv_timer_start(timer, &_async_timer_resume, timeout, 0));
-      async_await(req);
+      async_await_owned(req, timer);
     }}
   }}
 }

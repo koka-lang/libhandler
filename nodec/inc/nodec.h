@@ -34,11 +34,16 @@ uv_buf_t nodec_buf(void* data, size_t len);
 // Return the current event loop (ambiently bound by the async handler)
 uv_loop_t* async_loop();
 
-// Await an asynchronous request. Throws on error.
-void       async_await(uv_req_t* req);
+// Await an asynchronous request. Throws on error. 
+// If canceled, the request is deallocated when the original callback is invoked.
+// This is used for 'one of' callbacks, like `fs_stat`.
+void       async_await_once(uv_req_t* req);
+
+// Await an asynchronous request. 
+// If canceled, the request is deallocated when the `owner` (usually a `uv_handle_t*`)
+// is released. This is used for streams or timers.
 void       async_await_owned(uv_req_t* req, void* owner);
 
-void       async_await_fs(uv_fs_t* req);
 
 // private
 implicit_declare(_cancel_scope)

@@ -22,7 +22,7 @@ uverr asyncx_await_fs(uv_fs_t* req) {
 }
 
 void async_await_fs(uv_fs_t* req) {
-  async_await((uv_req_t*)req);
+  async_await_once((uv_req_t*)req);
 }
 
 // The entry point for filesystem callbacks
@@ -34,15 +34,13 @@ static void async_fs_resume(uv_fs_t* uvreq) {
 
 
 #define with_fs_req(req,loop)  uv_loop_t* loop = async_loop(); \
-                               with_unowned_req(uv_fs_t,req)
+                               with_req(uv_fs_t,req)
 
 
 
 void async_await_file(uv_fs_t* req, uv_file owner) {
   async_await_owned((uv_req_t*)req, (void*)((intptr_t)owner));
 }
-
-#define with_file_req(req,loop)  with_fs_req(req,loop)
 
 
 
@@ -108,7 +106,7 @@ void nodec_fclosev(lh_value filev) {
 void async_fclose(uv_file file) {
   if (file < 0) return;
   {defer(nodec_fclosev, lh_value_int(file)) {
-    {with_file_req(req, loop) {
+    {with_fs_req(req, loop) {
       check_uverr(uv_fs_close(loop, req, file, &async_fs_resume));
       async_await_file(req, file);
     }}
@@ -117,7 +115,7 @@ void async_fclose(uv_file file) {
 
 size_t async_fread(uv_file file, uv_buf_t* buf, int64_t file_offset) {
   size_t read = 0;
-  {with_file_req(req, loop) {
+  {with_fs_req(req, loop) {
     check_uverr(uv_fs_read(loop, req, file, buf, 1, file_offset, &async_fs_resume));
     async_await_file(req, file);
     read = (size_t)req->result;
@@ -154,7 +152,7 @@ lh_value async_with_fopen(const char* path, int flags, int mode, nodec_file_fun*
 
 lh_value _async_fread_full(uv_file file, lh_value _arg) {
   uv_stat_t stat = async_fstat(file);
-  if (stat.st_size >= MAXSIZE_T) lh_throw_errno(E2BIG);
+  if (stat.st_size >= MAXSIZE_T) check_uverr(UV_E2BIG);
   size_t    size = (size_t)stat.st_size;
   char*     buffer = nodec_alloc_n(size + 1, char);
   {on_abort(nodec_freev, lh_value_ptr(buffer)) {
