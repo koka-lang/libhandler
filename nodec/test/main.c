@@ -58,7 +58,7 @@ static lh_value test_cancel1(lh_value arg) {
   printf("starting work...\n");
   test_interleave();
   printf("and waiting a bit.. (1s)\n");
-  async_delay(1000);
+  async_wait(1000);
   printf("done work\n");
 }
 
@@ -111,7 +111,7 @@ static void test_http_serve(int strand_id, uv_stream_t* client) {
   }}
   // work
   printf("waiting %i secs...\n", 2 + strand_id); 
-  async_delay(1000 + strand_id*1000);
+  async_wait(1000 + strand_id*1000);
   //check_uverr(UV_EADDRINUSE);
 
   // response

@@ -151,7 +151,7 @@ lh_value async_firstof(lh_actionfun* action1, lh_value arg1, lh_actionfun* actio
 
 static lh_value _timeout_wait(lh_value timeoutv) {
   uint64_t timeout = lh_longlong_value(timeoutv);
-  async_delay(timeout);
+  async_wait(timeout);
   return lh_value_null;
 }
 

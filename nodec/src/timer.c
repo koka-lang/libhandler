@@ -1,8 +1,8 @@
 /* ----------------------------------------------------------------------------
-Copyright (c) 2018, Microsoft Research, Daan Leijen
-This is free software; you can redistribute it and/or modify it under the
-terms of the Apache License, Version 2.0. A copy of the License can be
-found in the file "license.txt" at the root of this distribution.
+  Copyright (c) 2018, Microsoft Research, Daan Leijen
+  This is free software; you can redistribute it and/or modify it under the
+  terms of the Apache License, Version 2.0. A copy of the License can be
+  found in the file "license.txt" at the root of this distribution.
 -----------------------------------------------------------------------------*/
 #include "nodec.h"
 #include "nodec-internal.h"
@@ -38,8 +38,31 @@ void nodec_timer_freev(lh_value timerv) {
   nodec_timer_free((uv_timer_t*)lh_ptr_value(timerv),true);
 }
 
+static void _async_timer_resume(uv_timer_t* timer) {
+  uv_req_t* req = (uv_req_t*)timer->data;
+  async_req_resume(req, 0);
+}
+
+void async_wait(uint64_t timeout) {
+  uv_timer_t* timer = nodec_timer_alloc();
+  {defer(nodec_timer_freev, lh_value_ptr(timer)) {
+    {with_req(uv_req_t, req) {  // use a dummy request so we can await the timer handle
+      timer->data = req;
+      check_uverr(uv_timer_start(timer, &_async_timer_resume, timeout, 0));
+      async_await_owned(req, timer);
+    }}
+  }}
+}
+
+void async_yield() {
+  async_wait(0);
+}
 
 
+/* ----------------------------------------------------------------------------
+  Internal timeout routine to delay certain function calls.
+  Used for cancelation resumptions
+-----------------------------------------------------------------------------*/
 
 typedef struct _timeout_args {
   uv_timeoutfun* cb;
@@ -68,22 +91,4 @@ uverr _uv_set_timeout(uv_loop_t* loop, uv_timeoutfun* cb, void* arg, uint64_t ti
 }
 
 
-static void _async_timer_resume(uv_timer_t* timer) {
-  uv_req_t* req = (uv_req_t*)timer->data;
-  async_req_resume(req, 0);
-}
 
-void async_delay(uint64_t timeout) {
-  uv_timer_t* timer = nodec_timer_alloc();
-  {defer(nodec_timer_freev,lh_value_ptr(timer)){
-    {with_req(uv_req_t, req) {  // use a dummy request so we can await the timer handle
-      timer->data = req;
-      check_uverr(uv_timer_start(timer, &_async_timer_resume, timeout, 0));
-      async_await_owned(req, timer);
-    }}
-  }}
-}
-
-void async_yield() {
-  async_delay(0);
-}
