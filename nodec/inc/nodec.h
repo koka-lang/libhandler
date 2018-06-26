@@ -90,6 +90,8 @@ lh_value  async_with_fopen(const char* path, int flags, int mode, nodec_file_fun
 /* ----------------------------------------------------------------------------
   Streams
 -----------------------------------------------------------------------------*/
+uv_buf_t nodec_buf_null();
+
 void        nodec_handle_free(uv_handle_t* handle);
 void        nodec_stream_free(uv_stream_t* stream);
 void        nodec_stream_freev(lh_value streamv);

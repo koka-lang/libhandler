@@ -542,7 +542,6 @@ uverr async_main( nc_entryfun_t* entry  ) {
   uv_loop_close(loop);
   nodec_free(loop);
   nodec_check_memory();
-  char buf[128];
-  printf("done! (press enter to quit)\n"); gets(buf);
+  lh_debug_wait_for_enter();
   return err;
 }
