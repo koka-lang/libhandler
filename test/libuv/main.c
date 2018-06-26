@@ -546,7 +546,7 @@ int main() {
   int result = uv_run(loop, UV_RUN_DEFAULT);
   uv_loop_close(loop);
 
-  char buf[128];
-  printf("done! (press enter to quit)\n"); gets(buf);
+  
+  lh_debug_wait_for_enter();
   return;
 }

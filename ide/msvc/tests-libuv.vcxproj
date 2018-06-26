@@ -146,14 +146,10 @@
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\..\src\common.c" />
     <ClCompile Include="..\..\test\libuv\main.c" />
   </ItemGroup>
   <ItemGroup>
     <Library Include="..\..\..\libuv\$(Configuration)\lib\libuv.lib" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="..\..\inc\common.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

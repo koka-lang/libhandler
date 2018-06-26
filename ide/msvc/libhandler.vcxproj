@@ -19,12 +19,10 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\..\src\common.c" />
     <ClCompile Include="..\..\src\exception.c" />
     <ClCompile Include="..\..\src\libhandler.c" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\..\inc\common.h" />
     <ClInclude Include="..\..\inc\libhandler-internal.h" />
     <ClInclude Include="..\..\inc\libhandler.h" />
     <ClInclude Include="cenv.h" />

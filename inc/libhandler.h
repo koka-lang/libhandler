@@ -244,7 +244,7 @@ void  lh_free(void* p);
 char* lh_strdup(const char* s);
 char* lh_strndup(const char* s, size_t max);
 
-
+void lh_debug_wait_for_enter();
 
 /*-----------------------------------------------------------------
   Operation tags 

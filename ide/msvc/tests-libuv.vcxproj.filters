@@ -18,16 +18,8 @@
     <ClCompile Include="..\..\test\libuv\main.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\src\common.c">
-      <Filter>Source Files</Filter>
-    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <Library Include="..\..\..\libuv\$(Configuration)\lib\libuv.lib" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="..\..\inc\common.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
   </ItemGroup>
 </Project>

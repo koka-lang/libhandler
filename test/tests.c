@@ -19,8 +19,7 @@ void tests_check_memory() {
     _CrtSetReportFile(_CRT_ASSERT, _CRTDBG_FILE_STDOUT);
     _CrtDumpMemoryLeaks();
   # endif
-    char buf[128];
-    gets_s(buf, 127);
+	lh_debug_wait_for_enter();
   #endif
 }
 

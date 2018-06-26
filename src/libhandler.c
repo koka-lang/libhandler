@@ -297,6 +297,19 @@ __thread hstack __hstack = { NULL, 0, 0, NULL };
 
 static lh_fatalfun* onfatal = NULL;
 
+void lh_debug_wait_for_enter() {
+#ifdef _DEBUG
+	char buf[128];
+	buf[127] = 0;
+	fprintf(stderr,"(press enter to continue)\n");
+#ifdef _MSC_VER
+	gets_s(buf, sizeof(buf));
+#else
+	gets(buf);
+#endif
+#endif
+}
+
 static void fatal(int err, const char* msg, ...) {
   va_list args;
   va_start(args, msg);
@@ -311,10 +324,7 @@ static void fatal(int err, const char* msg, ...) {
     fputs("libhandler: fatal error: ", stderr);
     fputs(buf, stderr);
     fputs("\n", stderr);
-    #ifdef _DEBUG
-    char buf[128];
-    gets(&buf);
-    #endif
+    lh_debug_wait_for_enter();
     exit(1);
   }
 }

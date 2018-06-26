@@ -17,9 +17,6 @@
     <ClCompile Include="..\..\src\exception.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\src\common.c">
-      <Filter>Source Files</Filter>
-    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\inc\libhandler.h">
@@ -29,9 +26,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\..\inc\libhandler-internal.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\inc\common.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
