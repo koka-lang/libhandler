@@ -101,7 +101,7 @@
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
       <SDLCheck>true</SDLCheck>
-      <AdditionalIncludeDirectories>..\..\..\libuv\include;..\..\inc;..\..\nodec\inc;.</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\..\..\http-parser;..\..\..\libuv\include;..\..\inc;..\..\nodec\inc;.</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;Ws2_32.lib;iphlpapi.lib;psapi.lib;userenv.lib;%(AdditionalDependencies)</AdditionalDependencies>
@@ -149,6 +149,10 @@
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="..\..\..\http-parser\http_parser.c" />
+    <ClCompile Include="..\..\nodec\test\callbacks.c" />
+    <ClCompile Include="..\..\nodec\test\hexdump.c" />
+    <ClCompile Include="..\..\nodec\test\http_parser_wrapper.c" />
     <ClCompile Include="..\..\nodec\test\main.c" />
   </ItemGroup>
   <ItemGroup>

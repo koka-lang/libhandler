@@ -135,6 +135,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="..\..\src\common.c" />
     <ClCompile Include="..\..\test\main-tests.cpp" />
     <ClCompile Include="..\..\test\test-amb.c" />
     <ClCompile Include="..\..\test\test-destructor.cpp" />
@@ -151,6 +152,7 @@
     <ClCompile Include="..\..\test\tests.c" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\..\inc\common.h" />
     <ClInclude Include="..\..\test\tests++.h" />
     <ClInclude Include="..\..\test\tests.h" />
   </ItemGroup>
