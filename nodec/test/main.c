@@ -1,4 +1,3 @@
-#include "stdafx.h"
 #include <stdio.h>
 #include <nodec.h>
 #include <http_parser.h>
@@ -209,11 +208,9 @@ static void test_tty() {
 Test HTTP
 -----------------------------------------------------------------*/
 
-#ifdef VERBOSE
 int bVerbose = 1;
-#else
-int bVerbose = 0;
-#endif
+
+void init_settings(struct http_parser_settings* settings);
 
 static const char* http_type_str(enum http_parser_type type)
 {

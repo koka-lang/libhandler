@@ -18,9 +18,6 @@
     <ClCompile Include="..\..\nodec\test\main.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\http-parser\http_parser.c">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="..\..\nodec\test\hexdump.c">
       <Filter>Source Files</Filter>
     </ClCompile>

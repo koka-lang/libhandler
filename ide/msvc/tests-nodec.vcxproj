@@ -149,7 +149,6 @@
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\..\..\http-parser\http_parser.c" />
     <ClCompile Include="..\..\nodec\test\callbacks.c" />
     <ClCompile Include="..\..\nodec\test\hexdump.c" />
     <ClCompile Include="..\..\nodec\test\http_parser_wrapper.c" />

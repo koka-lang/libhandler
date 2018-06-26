@@ -53,5 +53,8 @@
     <ClCompile Include="..\..\nodec\src\tty.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\..\http-parser\http_parser.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
 </Project>

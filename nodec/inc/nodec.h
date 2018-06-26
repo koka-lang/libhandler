@@ -10,6 +10,7 @@
 
 #include <libhandler.h>
 #include <uv.h>
+#include <http_parser.h>
 
 // Forward declarations 
 struct _channel_s;
