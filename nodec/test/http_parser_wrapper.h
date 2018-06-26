@@ -11,7 +11,7 @@ extern "C" {
 	void debug_http_parser_pause(http_parser* _parser, int _paused);
 	int debug_http_body_is_final(const http_parser* _parser);
 
-#ifdef VERBOSE
+#if 1
 #define HTTP_PARSER_EXECUTE debug_http_parser_execute
 #define HTTP_SHOULD_KEEP_ALIVE debug_http_should_keep_alive
 #define HTTP_PARSER_PAUSE debug_http_parser_pause
