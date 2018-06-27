@@ -156,16 +156,16 @@ static void async_write_http_err(uv_stream_t* client, http_status code, const ch
   async_write_strs(client, strs, 2);
 }
 
-void lh_throw_http_err_str(http_status status, const char* msg) {
+void throw_http_err_str(http_status status, const char* msg) {
   lh_throw_str(UV_EHTTP - status, msg);
 }
 
-void lh_throw_http_err_strdup(http_status status, const char* msg) {
+void throw_http_err_strdup(http_status status, const char* msg) {
   lh_throw_strdup(UV_EHTTP - status, msg);
 }
 
-void lh_throw_http_err(http_status status) {
-  lh_throw_http_err_str(status, NULL);
+void throw_http_err(http_status status) {
+  throw_http_err_str(status, NULL);
 }
 
 

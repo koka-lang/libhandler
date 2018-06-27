@@ -5,8 +5,8 @@ terms of the Apache License, Version 2.0. A copy of the License can be
 found in the file "license.txt" at the root of this distribution.
 -----------------------------------------------------------------------------*/
 #include "nodec.h"
+#include "nodec-primitive.h"
 #include "nodec-internal.h"
-#include <uv.h>
 #include <assert.h> 
 
 /*-----------------------------------------------------------------
@@ -24,7 +24,7 @@ typedef struct _channel_listener {
   lh_value              arg;
 } channel_listener;
 
-typedef struct _channel_s {
+typedef struct _channel_t {
   // listeners are a stack, so the last listeners
   // gets to handle first
   channel_listener* listeners;
@@ -104,7 +104,7 @@ bool  channel_is_full(channel_t* channel) {
   return (channel->lcount <= 0 && channel->qcount >= channel->qmax);
 }
 
-uverr channel_emit(channel_t* channel, lh_value data, lh_value arg, int err) {
+uv_errno_t channel_emit(channel_t* channel, lh_value data, lh_value arg, int err) {
   channel_elem elem = { data, arg, err };
   if (channel->lcount > 0) {
     // a listener, serve immediately
@@ -173,7 +173,7 @@ static channel_elem channel_receive_ex(channel_t* channel, bool nocancel) {
       channel->listeners[channel->lcount].fun = &_channel_req_listener_fun;
       channel->lcount++;
       // and await our request 
-      uverr err;
+      uv_errno_t err;
       if (nocancel) {
         err = asyncx_nocancel_await(&req->req);
       } 
@@ -196,7 +196,7 @@ static channel_elem channel_receive_ex(channel_t* channel, bool nocancel) {
       }
       assert(removed);
       // check errors
-      check_uverr(err);
+      nodec_check(err);
       // and return the result
       result = req->elem;
     }}

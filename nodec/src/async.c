@@ -1,6 +1,6 @@
 #include "nodec.h"
+#include "nodec-primitive.h"
 #include "nodec-internal.h"
-#include <uv.h>
 #include <assert.h> 
 
 /* todos:
@@ -10,11 +10,8 @@
 
 // forwards
 
-struct _cancel_scope_t;
 typedef struct _cancel_scope_t cancel_scope_t;
-struct _async_request_t;
 typedef struct _async_request_t async_request_t;
-struct _async_local_t;
 typedef struct _async_local_t async_local_t;
 
 async_request_t* async_request_alloc(uv_req_t* uvreq, bool nocancel, void* owner);
@@ -22,18 +19,18 @@ async_request_t* async_request_alloc(uv_req_t* uvreq, bool nocancel, void* owner
 /*-----------------------------------------------------------------
 Async effect operations
 -----------------------------------------------------------------*/
-typedef uv_loop_t*   uv_loop_ptr;
-typedef uv_req_t*    uv_req_ptr;
-typedef uv_handle_t* uv_handle_ptr;
-typedef async_request_t*  async_request_ptr;
-typedef const cancel_scope_t*   cancel_scope_ptr;
+typedef uv_loop_t*            uv_loop_ptr;
+typedef uv_req_t*             uv_req_ptr;
+typedef uv_handle_t*          uv_handle_ptr;
+typedef async_request_t*      async_request_ptr;
+typedef const cancel_scope_t* cancel_scope_ptr;
 
-#define lh_uv_loop_ptr_value(v)     ((uv_loop_t*)lh_ptr_value(v))
-#define lh_value_uv_loop_ptr(h)     lh_value_ptr(h)
-#define lh_async_request_ptr_value(v)      ((async_request_t*)lh_ptr_value(v))
-#define lh_value_async_request_ptr(r)      lh_value_ptr(r)
-#define lh_cancel_scope_ptr_value(v)      ((const cancel_scope_t*)lh_ptr_value(v))
-#define lh_value_cancel_scope_ptr(r)      lh_value_ptr(r)
+#define lh_uv_loop_ptr_value(v)         ((uv_loop_t*)lh_ptr_value(v))
+#define lh_value_uv_loop_ptr(h)         lh_value_ptr(h)
+#define lh_async_request_ptr_value(v)   ((async_request_t*)lh_ptr_value(v))
+#define lh_value_async_request_ptr(r)   lh_value_ptr(r)
+#define lh_cancel_scope_ptr_value(v)    ((const cancel_scope_t*)lh_ptr_value(v))
+#define lh_value_cancel_scope_ptr(r)    lh_value_ptr(r)
 
 LH_DEFINE_EFFECT5(async, req_await, uv_loop, req_register, uv_cancel, owner_release);
 LH_DEFINE_OP0(async, uv_loop, uv_loop_ptr);
@@ -53,31 +50,31 @@ void nodec_owner_release(void* owner) {
 }
 
 
-uverr asyncx_nocancel_await(uv_req_t* uvreq) {
+uv_errno_t asyncx_nocancel_await(uv_req_t* uvreq) {
   async_request_t* req = async_request_alloc(uvreq,true,NULL);
-  uverr err = async_req_await(req);
+  uv_errno_t err = async_req_await(req);
   assert(err != UV_ETHROWCANCEL);
   return err;
 }
 
-uverr asyncxx_await(uv_req_t* uvreq, void* owner) {
+uv_errno_t asyncxx_await(uv_req_t* uvreq, void* owner) {
   async_request_t* req = async_request_alloc(uvreq, false, owner);
   return async_req_await(req);
 }
 
 
-uverr asyncx_await(uv_req_t* uvreq, void* owner) {
-  uverr err = asyncxx_await(uvreq, owner); 
+uv_errno_t asyncx_await(uv_req_t* uvreq, void* owner) {
+  uv_errno_t err = asyncxx_await(uvreq, owner); 
   if (err == UV_ETHROWCANCEL) lh_throw_cancel();
   return err;
 }
 
 void async_await_once(uv_req_t* uvreq) {
-  check_uverr(asyncx_await(uvreq,NULL));
+  nodec_check(asyncx_await(uvreq,NULL));
 }
 
 void async_await_owned(uv_req_t* uvreq, void* owner) {
-  check_uverr(asyncx_await(uvreq,owner));
+  nodec_check(asyncx_await(uvreq,owner));
 }
 
 
@@ -87,31 +84,45 @@ void async_await_owned(uv_req_t* uvreq, void* owner) {
 Throw on errors
 -----------------------------------------------------------------*/
 
-
-// Check an error result, throwing on error
-void check_uverr(uverr uverr) {
-  if (uverr < 0) {
-    if (uverr == UV_ETHROWCANCEL) {
+// Throw a uv error exception
+void nodec_throw(int err) {
+  if (err < 0) {
+    if (err == UV_ETHROWCANCEL) {
       lh_throw_cancel();
     }
     else {
-      lh_throw(lh_exception_alloc_strdup(uverr, uv_strerror(uverr)));
+      lh_throw(lh_exception_alloc_strdup(err, uv_strerror(err)));
     }
+  }
+  else {
+    lh_throw_errno(err);
+  }
+}
+
+void nodec_throw_msg(int err, const char* msg) {
+  if (err == UV_ETHROWCANCEL) {
+    lh_throw_cancel();
+  }
+  else {
+    char buf[256];
+    snprintf(buf, 255, "%s: %s", uv_strerror(err), msg);
+    buf[255] = 0;
+    lh_throw_strdup(err, buf);
+  }
+}
+
+
+// Check an error result, throwing on error
+void nodec_check(uverr_t err) {
+  if (err != 0) {
+    nodec_throw(err);
   }
 }
 
 // Check an error result, throwing on error
-void check_uverr_msg(uverr uverr, const char* msg) {
-  if (uverr < 0) {
-    if (uverr == UV_ETHROWCANCEL) {
-      lh_throw_cancel();
-    }
-    else {
-      char buf[256];
-      snprintf(buf, 255, "%s: %s", uv_strerror(uverr), msg);
-      buf[255] = 0;
-      lh_throw(lh_exception_alloc_strdup(uverr, buf));
-    }
+void nodec_check_msg(uverr_t err, const char* msg) {
+  if (err != 0) {
+    nodec_throw_msg(err, msg);
   }
 }
 
@@ -248,7 +259,7 @@ static void async_request_resume(async_request_t* req, uv_req_t* uvreq, int err)
     async_resume_fun* resumefun = req->resumefun;
     lh_resume resume = req->resume;
     lh_value local = req->local;
-    int uverr = (req->canceled ? UV_ETHROWCANCEL : err);
+    int uv_errno_t = (req->canceled ? UV_ETHROWCANCEL : err);
     // if we are canceled explicitly, we cannot deallocate the orginal
     // request right away because it might still modified, or its callback
     // might be called once the request is satisfied. Therefore, if there
@@ -276,7 +287,7 @@ static void async_request_resume(async_request_t* req, uv_req_t* uvreq, int err)
       uvreq->data = NULL;
       async_request_free(req);
     }
-    (*resumefun)(resume, local, uvreq, uverr);
+    (*resumefun)(resume, local, uvreq, uv_errno_t);
   }
 }
 
@@ -393,7 +404,7 @@ static lh_value _async_uv_cancel(lh_resume resume, lh_value localv, lh_value sco
     if (req->uvreq != NULL && !req->canceled && in_scope_of(req->scope, scope)) {
       // try primitive cancelation first; guarantees the callback is called with UV_ECANCELED
       req->canceled = true;
-      uverr err = uv_cancel(req->uvreq);
+      uv_errno_t err = uv_cancel(req->uvreq);
       if (err != 0) {
         // cancel failed; cancel it explicitly (through the eventloop instead using a 0 timeout)
         // this is risky as async_req_resume can be invoked twice and the first return might 
@@ -495,7 +506,7 @@ lh_value _channel_async_handler(channel_t* channel, lh_actionfun* action, lh_val
 Main wrapper
 -----------------------------------------------------------------*/
 static lh_value uv_main_action(lh_value ventry) {
-  nc_entryfun_t* entry = (nc_entryfun_t*)lh_ptr_value(ventry);
+  nodec_main_fun_t* entry = (nodec_main_fun_t*)lh_ptr_value(ventry);
   entry();
   return lh_value_null;
 }
@@ -517,11 +528,11 @@ static void uv_main_cb(uv_timer_t* t_start) {
   nodec_timer_free(t_start,false);
 }
 
-uverr async_main( nc_entryfun_t* entry  ) {
+uv_errno_t async_main( nodec_main_fun_t* entry  ) {
   uv_replace_allocator(_nodecx_malloc, _nodecx_realloc, _nodecx_calloc, _nodec_free);
   uv_loop_t* loop = nodecx_zero_alloc(uv_loop_t);
   if (loop == NULL) return UV_ENOMEM;
-  uverr err = uv_loop_init(loop);
+  uv_errno_t err = uv_loop_init(loop);
   if (err == 0) {
     uv_timer_t* t_start = nodecx_zero_alloc(uv_timer_t);
     if (t_start == NULL) err = UV_ENOMEM;

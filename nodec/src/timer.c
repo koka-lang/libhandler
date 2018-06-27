@@ -5,8 +5,8 @@
   found in the file "license.txt" at the root of this distribution.
 -----------------------------------------------------------------------------*/
 #include "nodec.h"
+#include "nodec-primitive.h"
 #include "nodec-internal.h"
-#include <uv.h>
 #include <assert.h>
 
 static uv_handle_t* handle_of_timer(uv_timer_t* timer) {
@@ -15,7 +15,7 @@ static uv_handle_t* handle_of_timer(uv_timer_t* timer) {
 
 uv_timer_t* nodec_timer_alloc() {
   uv_timer_t* timer = nodec_zero_alloc(uv_timer_t);
-  check_uverr(uv_timer_init(async_loop(), timer));
+  nodec_check(uv_timer_init(async_loop(), timer));
   return timer;
 }
 
@@ -48,7 +48,7 @@ void async_wait(uint64_t timeout) {
   {defer(nodec_timer_freev, lh_value_ptr(timer)) {
     {with_req(uv_req_t, req) {  // use a dummy request so we can await the timer handle
       timer->data = req;
-      check_uverr(uv_timer_start(timer, &_async_timer_resume, timeout, 0));
+      nodec_check(uv_timer_start(timer, &_async_timer_resume, timeout, 0));
       async_await_owned(req, timer);
     }}
   }}
@@ -77,7 +77,7 @@ static void _timeout_cb(uv_timer_t* timer) {
   args.cb(args.arg);
 }
 
-uverr _uv_set_timeout(uv_loop_t* loop, uv_timeoutfun* cb, void* arg, uint64_t timeout) {
+uv_errno_t _uv_set_timeout(uv_loop_t* loop, uv_timeoutfun* cb, void* arg, uint64_t timeout) {
   uv_timer_t* timer = nodecx_alloc(uv_timer_t);
   if (timer == NULL) return UV_ENOMEM;
   timeout_args* args = nodecx_alloc(timeout_args);

@@ -21,6 +21,9 @@
     <ClInclude Include="..\..\nodec\inc\nodec-internal.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\nodec\inc\nodec-primitive.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\nodec\src\async.c">

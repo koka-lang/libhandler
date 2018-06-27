@@ -1,12 +1,12 @@
 /* ----------------------------------------------------------------------------
-Copyright (c) 2018, Microsoft Research, Daan Leijen
-This is free software; you can redistribute it and/or modify it under the
-terms of the Apache License, Version 2.0. A copy of the License can be
-found in the file "license.txt" at the root of this distribution.
+  Copyright (c) 2018, Microsoft Research, Daan Leijen
+  This is free software; you can redistribute it and/or modify it under the
+  terms of the Apache License, Version 2.0. A copy of the License can be
+  found in the file "license.txt" at the root of this distribution.
 -----------------------------------------------------------------------------*/
 #include "nodec.h"
+#include "nodec-primitive.h"
 #include "nodec-internal.h"
-#include <uv.h>
 #include <assert.h>
 #include <fcntl.h>
 
@@ -17,7 +17,7 @@ found in the file "license.txt" at the root of this distribution.
 -----------------------------------------------------------------*/
 
 // Await a file system request
-uverr asyncx_await_fs(uv_fs_t* req) {
+uv_errno_t asyncx_await_fs(uv_fs_t* req) {
   return asyncx_await((uv_req_t*)req,NULL);
 }
 
@@ -28,7 +28,7 @@ void async_await_fs(uv_fs_t* req) {
 // The entry point for filesystem callbacks
 static void async_fs_resume(uv_fs_t* uvreq) {
   if (uvreq == NULL) return;
-  uverr err = (uvreq->result >= 0 ? 0 : (uverr)uvreq->result);
+  uv_errno_t err = (uvreq->result >= 0 ? 0 : (uv_errno_t)uvreq->result);
   async_req_resume((uv_req_t*)uvreq, err);
 }
 
@@ -49,11 +49,11 @@ void async_await_file(uv_fs_t* req, uv_file owner) {
   Async wrappers
 -----------------------------------------------------------------*/
 
-uverr asyncx_stat(const char* path, uv_stat_t* stat ) {
+uv_errno_t asyncx_stat(const char* path, uv_stat_t* stat ) {
   nodec_zero(uv_stat_t,stat);
-  uverr err = 0;
+  uv_errno_t err = 0;
   {with_fs_req(req, loop){
-    check_uverr(uv_fs_stat(loop, req, path, &async_fs_resume));
+    nodec_check(uv_fs_stat(loop, req, path, &async_fs_resume));
     err = asyncx_await_fs(req);
     if (err == 0) *stat = req->statbuf;
   }}
@@ -62,7 +62,7 @@ uverr asyncx_stat(const char* path, uv_stat_t* stat ) {
 
 uv_stat_t async_stat(const char* path) {
   uv_stat_t stat;
-  check_uverr_msg(asyncx_stat(path, &stat), path);
+  nodec_check_msg(asyncx_stat(path, &stat), path);
   return stat;
 }
 
@@ -70,7 +70,7 @@ uv_stat_t async_fstat(uv_file file) {
   uv_stat_t stat; 
   nodec_zero(uv_stat_t, &stat);
   {with_fs_req(req, loop) {
-    check_uverr(uv_fs_fstat(loop, req, file, &async_fs_resume));
+    nodec_check(uv_fs_fstat(loop, req, file, &async_fs_resume));
     async_await_fs(req);
     stat = req->statbuf;
   }}  
@@ -78,11 +78,11 @@ uv_stat_t async_fstat(uv_file file) {
 }
 
 
-uverr asyncx_fopen(const char* path, int flags, int mode, uv_file* file) {
+uv_errno_t asyncx_fopen(const char* path, int flags, int mode, uv_file* file) {
   *file = -1;
-  uverr err = 0;
+  uv_errno_t err = 0;
   {with_fs_req(req, loop) {
-    check_uverr_msg(uv_fs_open(loop, req, path, flags, mode, &async_fs_resume), path);
+    nodec_check_msg(uv_fs_open(loop, req, path, flags, mode, &async_fs_resume), path);
     err = asyncx_await_fs(req);
     if (err == 0) *file = (uv_file)(req->result);
   }}
@@ -91,7 +91,7 @@ uverr asyncx_fopen(const char* path, int flags, int mode, uv_file* file) {
 
 uv_file async_fopen(const char* path, int flags, int mode) {
   uv_file file = -1;
-  check_uverr_msg(asyncx_fopen(path, flags, mode, &file), path);
+  nodec_check_msg(asyncx_fopen(path, flags, mode, &file), path);
   return file;
 }
 
@@ -107,7 +107,7 @@ void async_fclose(uv_file file) {
   if (file < 0) return;
   {defer(nodec_fclosev, lh_value_int(file)) {
     {with_fs_req(req, loop) {
-      check_uverr(uv_fs_close(loop, req, file, &async_fs_resume));
+      nodec_check(uv_fs_close(loop, req, file, &async_fs_resume));
       async_await_file(req, file);
     }}
   }}
@@ -116,7 +116,7 @@ void async_fclose(uv_file file) {
 size_t async_fread(uv_file file, uv_buf_t* buf, int64_t file_offset) {
   size_t read = 0;
   {with_fs_req(req, loop) {
-    check_uverr(uv_fs_read(loop, req, file, buf, 1, file_offset, &async_fs_resume));
+    nodec_check(uv_fs_read(loop, req, file, buf, 1, file_offset, &async_fs_resume));
     async_await_file(req, file);
     read = (size_t)req->result;
   }}
@@ -152,7 +152,7 @@ lh_value async_with_fopen(const char* path, int flags, int mode, nodec_file_fun*
 
 lh_value _async_fread_full(uv_file file, lh_value _arg) {
   uv_stat_t stat = async_fstat(file);
-  if (stat.st_size >= MAXSIZE_T) check_uverr(UV_E2BIG);
+  if (stat.st_size >= MAXSIZE_T) nodec_check(UV_E2BIG);
   size_t    size = (size_t)stat.st_size;
   char*     buffer = nodec_alloc_n(size + 1, char);
   {on_abort(nodec_freev, lh_value_ptr(buffer)) {

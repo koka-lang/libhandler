@@ -1,12 +1,12 @@
 /* ----------------------------------------------------------------------------
-Copyright (c) 2018, Microsoft Research, Daan Leijen
-This is free software; you can redistribute it and/or modify it under the
-terms of the Apache License, Version 2.0. A copy of the License can be
-found in the file "license.txt" at the root of this distribution.
+  Copyright (c) 2018, Microsoft Research, Daan Leijen
+  This is free software; you can redistribute it and/or modify it under the
+  terms of the Apache License, Version 2.0. A copy of the License can be
+  found in the file "license.txt" at the root of this distribution.
 -----------------------------------------------------------------------------*/
 #include "nodec.h"
+#include "nodec-primitive.h"
 #include "nodec-internal.h"
-#include <uv.h>
 #include <assert.h>
 
 
@@ -47,7 +47,7 @@ static void async_await_shutdown(uv_shutdown_t* req, uv_stream_t* stream) {
   async_await_owned((uv_req_t*)req,stream);
 }
 
-static void async_shutdown_resume(uv_shutdown_t* req, uverr status) {
+static void async_shutdown_resume(uv_shutdown_t* req, uverr_t status) {
   async_req_resume((uv_req_t*)req, status);
 }
 
@@ -59,7 +59,7 @@ static void async_await_write(uv_write_t* req, uv_stream_t* owner) {
   async_await_owned((uv_req_t*)req,owner);
 }
 
-static void async_write_resume(uv_write_t* req, uverr status) {
+static void async_write_resume(uv_write_t* req, uverr_t status) {
   async_req_resume((uv_req_t*)req, status);
 }
 
@@ -88,7 +88,7 @@ typedef struct _chunks_t {
 } chunks_t;
 
 // push a buffer on the chunks queue
-static uverr chunks_push(chunks_t* chunks, const uv_buf_t buf, size_t nread) {
+static uv_errno_t chunks_push(chunks_t* chunks, const uv_buf_t buf, size_t nread) {
   chunk_t* chunk = nodecx_alloc(chunk_t);
   if (chunk == NULL) return UV_ENOMEM;
   // initalize
@@ -195,7 +195,7 @@ typedef struct _read_stream_t {
   volatile size_t     available;     // how much data is now available
   volatile size_t     read_total;    // total bytes read until now (available <= total)
   volatile bool       eof;           // true if end-of-file reached
-  volatile uverr      err;           // !=0 on error
+  volatile uv_errno_t      err;           // !=0 on error
 } read_stream_t;
 
 static void read_stream_free(read_stream_t* rs) {
@@ -261,7 +261,7 @@ static bool async_read_stream_await(read_stream_t* rs, bool wait_even_if_availab
       // fprintf(stderr,"back from await\n");
     }}
   }
-  check_uverr(rs->err);
+  nodec_check(rs->err);
   return rs->eof;
 }
 
@@ -300,7 +300,7 @@ static void _read_stream_cb(uv_stream_t* stream, ssize_t nread, const uv_buf_t* 
     }
     else if (nread < 0) {
       // done reading (error or UV_EOF)
-      rs->err = (uverr)(nread == UV_EOF ? 0 : nread);
+      rs->err = (uv_errno_t)(nread == UV_EOF ? 0 : nread);
       if (nread == UV_EOF) rs->eof = true;
       uv_read_stop(stream);       // no more reading
       read_stream_try_resume(rs);
@@ -323,12 +323,12 @@ read_stream_t* async_read_start(uv_stream_t* stream, size_t read_max, size_t all
   rs->read_max = (read_max > 0 ? read_max : 1024 * 1024 * 1024);  // 1Gb by default
   rs->alloc_size = (alloc_init == 0 ? 1024 : alloc_init);  // start small but double at every new read
   rs->alloc_max = (alloc_max == 0 ? 64*1024 : alloc_max);
-  check_uverr(uv_read_start(stream, &_read_stream_alloc_cb, &_read_stream_cb));
+  nodec_check(uv_read_start(stream, &_read_stream_alloc_cb, &_read_stream_cb));
   return rs;
 }
 
 void async_read_restart(read_stream_t* rs) {
-  check_uverr(uv_read_start(rs->stream, &_read_stream_alloc_cb, &_read_stream_cb));  
+  nodec_check(uv_read_start(rs->stream, &_read_stream_alloc_cb, &_read_stream_cb));  
 }
 
 void nodec_read_stop(uv_stream_t* stream) {
@@ -342,7 +342,7 @@ void nodec_read_stop(uv_stream_t* stream) {
 // return the bytes read, or 0 on end-of-file.
 static size_t read_stream_read_buf(read_stream_t* rs, uv_buf_t* buf) {
   if (rs->available == 0) {
-    check_uverr(rs->err);
+    nodec_check(rs->err);
     return 0;
   }
   else {
@@ -356,7 +356,7 @@ static size_t read_stream_read_buf(read_stream_t* rs, uv_buf_t* buf) {
 // Try to read at most `max` characters from all available data
 static uv_buf_t read_stream_read_n(read_stream_t* rs, size_t max) {
   if (rs->available == 0) {
-    check_uverr(rs->err);
+    nodec_check(rs->err);
     return nodec_buf_null();
   }
   else if (rs->chunks.first->buf.len == max) {
@@ -502,7 +502,7 @@ void async_shutdown(uv_stream_t* stream) {
   if (stream==NULL) return;
   if (stream->write_queue_size>0) {
     {with_req(uv_shutdown_t, req) {
-      check_uverr(uv_shutdown(req, stream, &async_shutdown_resume));
+      nodec_check(uv_shutdown(req, stream, &async_shutdown_resume));
       async_await_shutdown(req, stream);
     }}
   } 
@@ -542,7 +542,7 @@ void async_write_bufs(uv_stream_t* stream, uv_buf_t bufs[], unsigned int buf_cou
   if (bufs==NULL || buf_count<=0) return;
   {with_req(uv_write_t, req) {    
     // Todo: verify it is ok to have bufs on the stack or if we need to heap alloc them first for safety
-    check_uverr(uv_write(req, stream, bufs, buf_count, &async_write_resume));
+    nodec_check(uv_write(req, stream, bufs, buf_count, &async_write_resume));
     async_await_write(req,stream);
   }}
 }
