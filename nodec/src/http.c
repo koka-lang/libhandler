@@ -5,8 +5,8 @@
   found in the file "license.txt" at the root of this distribution.
 -----------------------------------------------------------------------------*/
 #include "nodec.h"
+#include "nodec-primitive.h"
 #include "nodec-internal.h"
-#include <uv.h>
 #include <assert.h>
 
 /*-----------------------------------------------------------------
@@ -94,46 +94,10 @@ typedef struct _http_err_reason {
 } http_err_reason;
 
 static http_err_reason http_reasons[] = {
-  { 200, "OK" },
-  { 500, "Internal Server Error" },
-  { 400, "Bad Request" },
-  { 401, "Unauthorized" },
-  { 100, "Continue" },
-  { 101, "Switching Protocols" },
-  { 201, "Created" },
-  { 202, "Accepted" },
-  { 203, "Non - Authoritative Information" },
-  { 204, "No Content" },
-  { 205, "Reset Content" },
-  { 206, "Partial Content" },
-  { 300, "Multiple Choices" },
-  { 301, "Moved Permanently" },
-  { 302, "Found" },
-  { 303, "See Other" },
-  { 304, "Not Modified" },
-  { 305, "Use Proxy" },
-  { 307, "Temporary Redirect" },
-  { 402, "Payment Required" },
-  { 403, "Forbidden" },
-  { 404, "Not Found" },
-  { 405, "Method Not Allowed" },
-  { 406, "Not Acceptable" },
-  { 407, "Proxy Authentication Required" },
-  { 408, "Request Time - out" },
-  { 409, "Conflict" },
-  { 410, "Gone" },
-  { 411, "Length Required" },
-  { 412, "Precondition Failed" },
-  { 413, "Request Entity Too Large" },
-  { 414, "Request - URI Too Large" },
-  { 415, "Unsupported Media Type" },
-  { 416, "Requested range not satisfiable" },
-  { 417, "Expectation Failed" },
-  { 501, "Not Implemented" },
-  { 502, "Bad Gateway" },
-  { 503, "Service Unavailable" },
-  { 504, "Gateway Time - out" },
-  { 505, "HTTP Version not supported" },
+  // Use HTTP_STATUS_MAP from <http_parser.h>
+  #define XX(num, name, string) { num, #string },
+  HTTP_STATUS_MAP(XX)
+  #undef XX
   { -1, NULL }
 };
 
@@ -156,16 +120,16 @@ static void async_write_http_err(uv_stream_t* client, http_status code, const ch
   async_write_strs(client, strs, 2);
 }
 
-void lh_throw_http_err_str(http_status status, const char* msg) {
+void throw_http_err_str(http_status status, const char* msg) {
   lh_throw_str(UV_EHTTP - status, msg);
 }
 
-void lh_throw_http_err_strdup(http_status status, const char* msg) {
+void throw_http_err_strdup(http_status status, const char* msg) {
   lh_throw_strdup(UV_EHTTP - status, msg);
 }
 
-void lh_throw_http_err(http_status status) {
-  lh_throw_http_err_str(status, NULL);
+void throw_http_err(http_status status) {
+  throw_http_err_str(status, NULL);
 }
 
 

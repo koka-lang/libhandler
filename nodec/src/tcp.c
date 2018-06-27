@@ -6,7 +6,7 @@ found in the file "license.txt" at the root of this distribution.
 -----------------------------------------------------------------------------*/
 #include "nodec.h"
 #include "nodec-internal.h"
-#include <uv.h>
+#include "nodec-primitive.h"
 #include <assert.h>
 
 void check_uv_err_addr(int err, const struct sockaddr* addr) {
@@ -23,7 +23,7 @@ void check_uv_err_addr(int err, const struct sockaddr* addr) {
       }
     }
     buf[255] = 0;
-    check_uverr_msg(err, buf);
+    nodec_check_msg(err, buf);
   }
 }
 
@@ -42,7 +42,7 @@ void nodec_tcp_freev(lh_value tcp) {
 
 uv_tcp_t* nodec_tcp_alloc() {
   uv_tcp_t* tcp = nodec_zero_alloc(uv_tcp_t);
-  check_uverr( uv_tcp_init(async_loop(), tcp) );  
+  nodec_check( uv_tcp_init(async_loop(), tcp) );  
   return tcp;
 }
 
@@ -115,7 +115,7 @@ static void _channel_release_client(lh_value data, lh_value arg, int err) {
 
 tcp_channel_t* nodec_tcp_listen(uv_tcp_t* tcp, int backlog, bool channel_owns_tcp) {
   if (backlog <= 0) backlog = 512;
-  check_uverr(uv_listen((uv_stream_t*)tcp, backlog, &_listen_cb));
+  nodec_check(uv_listen((uv_stream_t*)tcp, backlog, &_listen_cb));
   tcp_channel_t* ch = (tcp_channel_t*)channel_alloc_ex(8, // TODO: should be small?
                           (channel_owns_tcp ? &_channel_release_tcp : NULL), 
                               lh_value_ptr(tcp), &_channel_release_client );  
@@ -124,11 +124,11 @@ tcp_channel_t* nodec_tcp_listen(uv_tcp_t* tcp, int backlog, bool channel_owns_tc
 }
 
 void nodec_ip4_addr(const char* ip, int port, struct sockaddr_in* addr) {
-  check_uverr(uv_ip4_addr(ip, port, addr));
+  nodec_check(uv_ip4_addr(ip, port, addr));
 }
 
 void nodec_ip6_addr(const char* ip, int port, struct sockaddr_in6* addr) {
-  check_uverr(uv_ip6_addr(ip, port, addr));
+  nodec_check(uv_ip6_addr(ip, port, addr));
 }
 
 tcp_channel_t* nodec_tcp_listen_at(const struct sockaddr* addr, int backlog) {
@@ -189,7 +189,7 @@ static lh_value tcp_serve_timeout(lh_value argsv) {
   else {
     bool timedout = false;
     lh_value result = async_timeout(&tcp_serve_client, argsv, args->timeout, &timedout);
-    if (timedout) lh_throw_http_err(408);
+    if (timedout) throw_http_err(408);
     return result;
   }
 }
@@ -220,7 +220,7 @@ static lh_value tcp_servev(lh_value argsv) {
   return lh_value_null;
 }
 
-void async_tcp_server_at(const struct sockaddr* addr, int backlog, int n, uint64_t timeout, 
+void async_tcp_server_at(const struct sockaddr* addr, int backlog, int max_interleaving, uint64_t timeout, 
                            nodec_tcp_servefun* servefun, lh_actionfun* on_exn) {
   tcp_channel_t* ch = nodec_tcp_listen_at(addr, backlog);
   {with_tcp_channel(ch) {
@@ -229,13 +229,13 @@ void async_tcp_server_at(const struct sockaddr* addr, int backlog, int n, uint64
       sargs->timeout = timeout;
       sargs->serve = servefun;
       sargs->on_exn = (on_exn == NULL ? &async_log_tcp_exn : on_exn);
-      {with_alloc_n(n, lh_actionfun*, actions) {
-        {with_alloc_n(n, lh_value, args) {
-          for (int i = 0; i < n; i++) {
+      {with_alloc_n(max_interleaving, lh_actionfun*, actions) {
+        {with_alloc_n(max_interleaving, lh_value, args) {
+          for (int i = 0; i < max_interleaving; i++) {
             actions[i] = &tcp_servev;
             args[i] = lh_value_any_ptr(sargs);
           }
-          interleave(n, actions, args);
+          interleave(max_interleaving, actions, args);
         }}
       }}
     }}

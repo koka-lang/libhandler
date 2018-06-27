@@ -20,6 +20,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\nodec\inc\nodec-internal.h" />
+    <ClInclude Include="..\..\nodec\inc\nodec-primitive.h" />
     <ClInclude Include="..\..\nodec\inc\nodec.h" />
   </ItemGroup>
   <ItemGroup>

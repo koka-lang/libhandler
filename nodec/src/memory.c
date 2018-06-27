@@ -1,6 +1,6 @@
 #include "nodec.h"
+#include "nodec-primitive.h"
 #include "nodec-internal.h"
-#include <uv.h>
 #include <assert.h> 
 
 /*-----------------------------------------------------------------
@@ -44,7 +44,7 @@ void  _nodec_free(void* p) {
 
 
 void* check_nonnull(void* p) {
-  if (p == NULL) check_uverr(UV_ENOMEM);
+  if (p == NULL) nodec_check(UV_ENOMEM);
   return p;
 }
 

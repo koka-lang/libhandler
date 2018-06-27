@@ -6,7 +6,7 @@ found in the file "license.txt" at the root of this distribution.
 -----------------------------------------------------------------------------*/
 #include "nodec.h"
 #include "nodec-internal.h"
-#include <uv.h>
+#include "nodec-primitive.h"
 #include <assert.h>
 
 static uv_stream_t* stream_of_tty(uv_tty_t* tty) {
@@ -54,7 +54,7 @@ char* async_tty_readline() {
   tty_t* tty = tty_get();
   if (tty->_stdin == NULL) {
     tty->_stdin = nodec_zero_alloc(uv_tty_t);
-    check_uverr(uv_tty_init(async_loop(), tty->_stdin, 0, 1));
+    nodec_check(uv_tty_init(async_loop(), tty->_stdin, 0, 1));
   }
   if (tty->in == NULL) {
     tty->in = async_read_start(stream_of_tty(tty->_stdin), 0, 64, 64);
@@ -66,7 +66,7 @@ void async_tty_write(const char* s) {
   tty_t* tty = tty_get();
   if (tty->_stdout == NULL) {
     tty->_stdout = nodec_zero_alloc(uv_tty_t);
-    check_uverr(uv_tty_init(async_loop(), tty->_stdout, 1, 0));
+    nodec_check(uv_tty_init(async_loop(), tty->_stdout, 1, 0));
   }
   async_write(stream_of_tty(tty->_stdout), s);
 }

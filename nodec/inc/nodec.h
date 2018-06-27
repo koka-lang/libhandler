@@ -10,41 +10,35 @@
 
 #include <libhandler.h>
 #include <uv.h>
-#include <http_parser.h>
+
+/* ----------------------------------------------------------------------------
+  Notes:
+  - Private functions are prepended with an underscore. Dont use them directly.
+  - Pre- and post-fixes:
+    "async_" : for asynchronous functions that might interleave
+    "nodec_" : synchronous functions that might throw exeptions or use other effects.
+    "nodecx_": synchronous functions that return an explicit error result.
+    "..._t"  : for types
+    "with_"  : for scoped combinators, to be used with double curly braces:
+               i.e. "{with_alloc(tp,name){ ... <use name> ... }}"
+
+  - an `lh_value` is used to mimic polymorphism. There are a host of 
+    conversion functions, like `lh_ptr_value` (from value to pointer)
+    or `lh_value_int` (from int to a value).
+-----------------------------------------------------------------------------*/
+
 
 // Forward declarations 
-struct _channel_s;
-typedef struct _channel_s channel_t;
+typedef struct _channel_t channel_t;
 
-// Error codes: non-zero is an error. libuv error codes are negative.
-typedef int uverr;
-
-// Check the an error value and throw if it is not zero.
-void     check_uverr(uverr err);
-void     check_uverr_msg(uverr err, const char* msg);
-
-
-// Initialize a libuv buffer which is a record with a data pointer and its length.
-uv_buf_t nodec_buf(void* data, size_t len);
+// Throw on an error
+void nodec_throw(int err);
+void nodec_throw_msg(int err, const char* msg);
 
 
 /* ----------------------------------------------------------------------------
-  Asynchronous primitives
+  Cancelation scope
 -----------------------------------------------------------------------------*/
-
-// Return the current event loop (ambiently bound by the async handler)
-uv_loop_t* async_loop();
-
-// Await an asynchronous request. Throws on error. 
-// If canceled, the request is deallocated when the original callback is invoked.
-// This is used for 'one of' callbacks, like `fs_stat`.
-void       async_await_once(uv_req_t* req);
-
-// Await an asynchronous request. 
-// If canceled, the request is deallocated when the `owner` (usually a `uv_handle_t*`)
-// is released. This is used for streams or timers.
-void       async_await_owned(uv_req_t* req, void* owner);
-
 
 // private
 implicit_declare(_cancel_scope)
@@ -53,15 +47,25 @@ lh_value _cancel_scope_alloc();
 // execute under a cancelation scope
 #define with_cancel_scope()        with_implicit_defer(nodec_freev,_cancel_scope_alloc(),_cancel_scope)
 
+// Asynchronously cancel all outstanding requests under the same
+// cancelation scope.
 void async_scoped_cancel();
 
 /* ----------------------------------------------------------------------------
   Asynchronous combinators
 -----------------------------------------------------------------------------*/
 
+// Interleave `n` actions with arguments `arg_results`. 
+// The result of each action is stored again in `arg_results`; when
+// an exception is raised, it is rethrown from `interleave` once all
+// its actions have finished. Interleave introduces a cancelation 
+// scope.
 void interleave(size_t n, lh_actionfun* actions[], lh_value arg_results[]);
 
+// General timeout routine over an `action`. 
 lh_value async_timeout(lh_actionfun* action, lh_value arg, uint64_t timeout, bool* timedout);
+
+// Return the value of the first returning action, canceling the other.
 lh_value async_firstof(lh_actionfun* action1, lh_value arg1, lh_actionfun* action2, lh_value arg2, bool* first);
 
 // Asynchronously wait for `timeout` milli-seconds.
@@ -74,31 +78,46 @@ void async_yield();
   File system (fs)
 -----------------------------------------------------------------------------*/
 
-int       asyncx_stat(const char* path, uv_stat_t* stat);
-uv_stat_t async_stat(const char* path);
-uv_stat_t async_fstat(uv_file file);
-uv_file   async_fopen(const char* path, int flags, int mode);
-void      async_fclose(uv_file file);
-size_t    async_fread(uv_file file, uv_buf_t* buf, int64_t offset);
+uv_errno_t  asyncx_stat(const char* path, uv_stat_t* stat);
+uv_stat_t   async_stat(const char* path);
+uv_stat_t   async_fstat(uv_file file);
+uv_file     async_fopen(const char* path, int flags, int mode);
+void        async_fclose(uv_file file);
+size_t      async_fread(uv_file file, uv_buf_t* buf, int64_t offset);
 
+// ----------------------------------
 // File system convenience functions
-char*     async_fread_full(const char* path);
+
+char*       async_fread_full(const char* path);
 
 typedef lh_value(nodec_file_fun)(uv_file file, lh_value arg);
-lh_value  async_with_fopen(const char* path, int flags, int mode, nodec_file_fun* action, lh_value arg);
+lh_value    async_with_fopen(const char* path, int flags, int mode, nodec_file_fun* action, lh_value arg);
+
+
+/* ----------------------------------------------------------------------------
+  Buffers are `uv_buf_t` which contain a `base` pointer and the
+  available `len` bytes. These buffers are usually passed by value.
+-----------------------------------------------------------------------------*/
+
+// Initialize a libuv buffer which is a record with a data pointer and its length.
+uv_buf_t nodec_buf(void* data, size_t len);
+
+// Create a NULL buffer, i.e. `nodec_buf(NULL,0)`.
+uv_buf_t nodec_buf_null();
+
+// Create and allocate a buffer
+uv_buf_t nodec_buf_alloc(size_t len);
 
 
 /* ----------------------------------------------------------------------------
   Streams
 -----------------------------------------------------------------------------*/
-uv_buf_t nodec_buf_null();
 
 void        nodec_handle_free(uv_handle_t* handle);
 void        nodec_stream_free(uv_stream_t* stream);
 void        nodec_stream_freev(lh_value streamv);
 void        async_shutdown(uv_stream_t* stream);
  
-
 #define with_stream(s) \
     defer_exit(async_shutdown(s),&nodec_stream_freev,lh_value_ptr(s))
 
@@ -124,9 +143,11 @@ void        async_write_strs(uv_stream_t* stream, const char* strings[], unsigne
 void        async_write_data(uv_stream_t* stream, const void* data, size_t len);
 void        async_write_buf(uv_stream_t* stream, uv_buf_t buf);
 
+
 /* ----------------------------------------------------------------------------
-  Addresses
+  IP4 and IP6 Addresses
 -----------------------------------------------------------------------------*/
+
 void nodec_ip4_addr(const char* ip, int port, struct sockaddr_in* addr);
 void nodec_ip6_addr(const char* ip, int port, struct sockaddr_in6* addr);
 
@@ -141,23 +162,21 @@ void nodec_ip6_addr(const char* ip, int port, struct sockaddr_in6* addr);
 
 
 /* ----------------------------------------------------------------------------
-    TCP
+  TCP
 -----------------------------------------------------------------------------*/
-typedef channel_t tcp_channel_t;
-
-uv_tcp_t*   nodec_tcp_alloc();
-void        nodec_tcp_free(uv_tcp_t* tcp);
-void        nodec_tcp_freev(lh_value tcp);
-
+typedef struct _channel_t tcp_channel_t;
+void            channel_freev(lh_value vchannel);
 #define with_tcp_channel(ch)  defer(channel_freev,lh_value_ptr(ch))
 
+uv_tcp_t*       nodec_tcp_alloc();
+void            nodec_tcp_free(uv_tcp_t* tcp);
+void            nodec_tcp_freev(lh_value tcp);
 
 void            nodec_tcp_bind(uv_tcp_t* handle, const struct sockaddr* addr, unsigned int flags);
 tcp_channel_t*  nodec_tcp_listen(uv_tcp_t* tcp, int backlog, bool channel_owns_tcp);
 uv_stream_t*    async_tcp_channel_receive(tcp_channel_t* ch);
 
-// Convenience
-tcp_channel_t*  nodec_tcp_listen_at(const struct sockaddr* addr, int backlog);
+// Convenience:
 
 typedef void    (nodec_tcp_servefun)(int id, uv_stream_t* client);
 
@@ -170,9 +189,9 @@ void async_tcp_server_at(const struct sockaddr* addr, int backlog, int max_inter
 -----------------------------------------------------------------------------*/
 typedef int http_status;
 
-void lh_throw_http_err(http_status status);
-void lh_throw_http_err_str(http_status status, const char* msg);
-void lh_throw_http_err_strdup(http_status status, const char* msg);
+void throw_http_err(http_status status);
+void throw_http_err_str(http_status status, const char* msg);
+void throw_http_err_strdup(http_status status, const char* msg);
 
 void async_http_server_at(const struct sockaddr* addr, int backlog, int max_interleaving, 
                           uint64_t timeout, nodec_tcp_servefun* servefun);
@@ -185,7 +204,6 @@ void async_http_server_at(const struct sockaddr* addr, int backlog, int max_inte
 
 lh_value _nodec_tty_allocv();
 void     _nodec_tty_freev(lh_value ttyv);
-void     async_tty_shutdown();
 
 implicit_declare(tty)
 
@@ -194,34 +212,19 @@ implicit_declare(tty)
 
 char* async_tty_readline();
 void  async_tty_write(const char* s);
+void  async_tty_shutdown();
 
 
 /* ----------------------------------------------------------------------------
-  Other
+  Main entry point
 -----------------------------------------------------------------------------*/
 
-typedef void (nc_entryfun_t)();
+typedef void (nodec_main_fun_t)();
 
-uverr  async_main( nc_entryfun_t* entry );
+uv_errno_t  async_main( nodec_main_fun_t* entry );
 
 
-/* ----------------------------------------------------------------------------
-  Channels
------------------------------------------------------------------------------*/
-typedef void (channel_release_elem_fun)(lh_value data, lh_value arg, int err);
 
-channel_t*    channel_alloc(ssize_t queue_max);
-channel_t*    channel_alloc_ex(ssize_t queue_max, lh_releasefun* release, lh_value release_arg, channel_release_elem_fun* release_elem );
-void          channel_free(channel_t* channel);
-void          channel_freev(lh_value vchannel);
-#define with_channel(name) channel_t* name = channel_alloc(-1); defer(&channel_freev,lh_value_ptr(name))
-
-uverr         channel_emit(channel_t* channel, lh_value data, lh_value arg, int err);
-int           channel_receive(channel_t* channel, lh_value* data, lh_value* arg);
-bool          channel_is_full(channel_t* channel);
-
-// Convenience
-uv_stream_t*  tcp_channel_receive(tcp_channel_t* ch);
 
 /* ----------------------------------------------------------------------------
   Safe allocation
