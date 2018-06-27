@@ -83,8 +83,6 @@ typedef struct _chunk_t {
 typedef struct _chunks_t {
   chunk_t*     first;
   chunk_t*     last;
-  size_t       alloc_size;
-  size_t       alloc_max;
 } chunks_t;
 
 // push a buffer on the chunks queue
