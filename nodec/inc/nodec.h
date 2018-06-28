@@ -129,10 +129,12 @@ uv_buf_t    async_read_buf(uv_stream_t* stream);
 uv_buf_t    async_read_buf_available(uv_stream_t* stream);
 uv_buf_t    async_read_buf_line(uv_stream_t* stream);
 uv_buf_t    async_read_buf_all(uv_stream_t* stream);
+size_t      async_read_into_all(uv_stream_t* stream, uv_buf_t buf);
 
 char*       async_read(uv_stream_t* stream);
 char*       async_read_all(uv_stream_t* stream);
 char*       async_read_line(uv_stream_t* stream);
+
 
 void        async_write(uv_stream_t* stream, const char* s);
 void        async_write_bufs(uv_stream_t* stream, uv_buf_t bufs[], unsigned int buf_count);

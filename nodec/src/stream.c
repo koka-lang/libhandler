@@ -129,16 +129,32 @@ static void chunks_free(chunks_t* chunks) {
   chunks->first = chunks->last = NULL;
 }
 
-// Read one chunk into a pre-allocated buffer, or move it in place.
-static size_t chunks_read_buf(chunks_t* chunks, uv_buf_t* buf) {
-  if (chunks->first == NULL) return 0;
+// Return the first available buffer in the chunks
+static uv_buf_t chunks_read_buf(chunks_t* chunks) {
+  chunk_t* chunk = chunks->first;
+  if (chunk==NULL) {
+    return nodec_buf_null();
+  }
+  else {
+    uv_buf_t buf = chunk->buf;
+    // unlink the first chunk
+    chunks->first = chunk->next;
+    if (chunks->first == NULL) chunks->last = NULL;
+    nodec_free(chunk);
+    return buf;
+  }
+}
+
+// Read one chunk into a pre-allocated buffer.
+static size_t chunks_read_into(chunks_t* chunks, uv_buf_t buf) {
   size_t nread = 0;
   chunk_t* chunk = chunks->first;
-  if (buf->base != NULL && buf->len < chunk->buf.len) {
+  if (buf.base==NULL || buf.len==0 || chunk==NULL) return 0;  
+  if (buf.len < chunk->buf.len) {
     // pre-allocated buffer that is too small for the first chunk
-    nread = buf->len;
+    nread = buf.len;
     size_t todo = chunk->buf.len - nread;
-    memcpy(buf->base, chunk->buf.base, nread);
+    memcpy(buf.base, chunk->buf.base, nread);
     memmove(chunk->buf.base, chunk->buf.base + nread, todo);
     chunk->buf.len = (uv_buf_len_t)todo;
   }
@@ -149,15 +165,9 @@ static size_t chunks_read_buf(chunks_t* chunks, uv_buf_t* buf) {
     chunks->first = chunk->next;
     if (chunks->first == NULL) chunks->last = NULL;
     nodec_free(chunk);
-    if (buf->base == NULL) {
-      // not pre-allocated, just return as is :-)
-      *buf = src;
-    }
-    else {
-      // pre-allocated with enough space
-      memcpy(buf->base, src.base, nread);
-      nodec_free(src.base);
-    }
+    // pre-allocated with enough space
+    memcpy(buf.base, src.base, nread);
+    nodec_free(src.base);    
   }
   return nread;
 }
@@ -350,49 +360,55 @@ void nodec_read_stop(uv_stream_t* stream) {
   nodec_check(uv_read_stop(stream));
 }
 
-// Read into a pre-allocated buffer, or allocated on demand, and
+// Read first available buffer chunk.
+static uv_buf_t read_stream_read_buf(read_stream_t* rs) {
+  if (rs->available == 0) {
+    nodec_check(rs->err);
+    return nodec_buf_null();
+  }
+  else {
+    uv_buf_t buf = chunks_read_buf(&rs->chunks);
+    assert(buf.len <= rs->available);
+    rs->available -= buf.len;
+    return buf;
+  }
+}
+
+// Read into a pre-allocated buffer, and
 // return the bytes read, or 0 on end-of-file.
-static size_t read_stream_read_buf(read_stream_t* rs, uv_buf_t* buf) {
+static size_t read_stream_read_into(read_stream_t* rs, uv_buf_t buf) {
   if (rs->available == 0) {
     nodec_check(rs->err);
     return 0;
   }
   else {
-    size_t nread = chunks_read_buf(&rs->chunks, buf);
+    size_t nread = chunks_read_into(&rs->chunks, buf);
     assert(nread <= rs->available);
     rs->available -= nread;
     return nread;
   }
 }
 
-// Try to read at most `max` characters from all available data
+// Try to read at most `max` bytes from all available data
 static uv_buf_t read_stream_read_n(read_stream_t* rs, size_t max) {
-  if (rs->available == 0) {
-    nodec_check(rs->err);
-    return nodec_buf_null();
-  }
-  else if (rs->chunks.first->buf.len == max) {
-    // just one chunk that contains all available data; just return it directly
-    uv_buf_t buf = nodec_buf_null();
-    size_t nread = read_stream_read_buf(rs, &buf);
-    assert(buf.len == nread);
-    assert(nread == max);
-    return buf;
-  }
-  else {
+  if (rs->available > 0 && rs->chunks.first != NULL && rs->chunks.first->buf.len != max) {
     // preallocate and read into that
     uv_buf_t buf = nodec_buf_alloc(max);
     size_t   total = 0;
     size_t   nread = 0;
     do {
       uv_buf_t view = nodec_buf(buf.base + total, buf.len - total);
-      nread = read_stream_read_buf(rs, &view);
+      nread = read_stream_read_into(rs, view);
       total += nread;
     } while (nread > 0);
     assert(total == buf.len);
     assert(total == max);
     buf.len = (uv_buf_len_t)total; // paranoia
     return buf;
+  }
+  else {
+    // either empty or exactly max bytes available in the first chunk
+    return read_stream_read_buf(rs);
   }
 }
 
@@ -413,10 +429,30 @@ static size_t read_stream_find_eol(read_stream_t* rs) {
 
 // Read into a pre-allocated buffer, and
 // return the bytes read, or 0 on end-of-file.
-static size_t async_read_into(uv_stream_t* stream, uv_buf_t* buf ) {
+static size_t async_read_into(uv_stream_t* stream, uv_buf_t buf ) {
   read_stream_t* rs = nodec_get_read_stream(stream);
   async_read_stream_await(rs,false);
-  return read_stream_read_buf(rs,buf);
+  return read_stream_read_into(rs,buf);
+}
+
+// Read into a preallocated buffer until the buffer is full or eof.
+// Returns the number of bytes read.
+//
+// Todo: If we drain the current chunks first, we could after that 
+// 'allocate' in the given buffer from the callback directly and
+// not actually copy the memory but write to it directly.
+size_t async_read_into_all(uv_stream_t* stream, uv_buf_t buf) {
+  if (buf.base==NULL || buf.len == 0) return 0;
+  read_stream_t* rs = nodec_get_read_stream(stream);
+  size_t total = 0;
+  size_t nread = 0;
+  do {
+    async_read_stream_await(rs, false);
+    uv_buf_t view = nodec_buf(buf.base + total, buf.len - total);
+    nread = read_stream_read_into(rs, view);
+    total += nread;
+  } while (nread > 0);
+  return total;
 }
 
 // Read available data chunk. This is the most efficient
@@ -426,9 +462,7 @@ static size_t async_read_into(uv_stream_t* stream, uv_buf_t* buf ) {
 uv_buf_t async_read_buf(uv_stream_t* stream) {
   read_stream_t* rs = nodec_get_read_stream(stream);
   async_read_stream_await(rs, false);
-  uv_buf_t buf = nodec_buf_null();
-  read_stream_read_buf(rs, &buf);
-  return buf;
+  return read_stream_read_buf(rs);  
 }
 
 // Read available data 
@@ -442,7 +476,7 @@ uv_buf_t async_read_buf_available(uv_stream_t* stream) {
 uv_buf_t async_read_buf_line(uv_stream_t* stream) {
   read_stream_t* rs = nodec_get_read_stream(stream);
   size_t toread = 0;
-  bool eof;
+  bool eof = false;
   do {
     eof = async_read_stream_await(rs,true);
     toread = read_stream_find_eol(rs);
@@ -451,6 +485,7 @@ uv_buf_t async_read_buf_line(uv_stream_t* stream) {
     return read_stream_read_n(rs,toread);
   }
   else {
+    // eof
     return read_stream_read_available(rs);
   }
 }
