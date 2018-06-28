@@ -53,7 +53,7 @@ static void async_shutdown_resume(uv_shutdown_t* req, uverr_t status) {
 
 
 /* ----------------------------------------------------------------------------
-Await write requests
+  Await write requests
 -----------------------------------------------------------------------------*/
 static void async_await_write(uv_write_t* req, uv_stream_t* owner) {
   async_await_owned((uv_req_t*)req,owner);
@@ -162,6 +162,8 @@ static size_t chunks_read_buf(chunks_t* chunks, uv_buf_t* buf) {
   return nread;
 }
 
+// Return the position of the first end-of-line character.
+// Used for line buffered reading.
 static size_t chunks_find_eol(chunks_t* chunks) {
   size_t toread = 0;
   for (chunk_t* chunk = chunks->first; chunk != NULL; chunk = chunk->next) {    
@@ -409,12 +411,24 @@ static size_t read_stream_find_eol(read_stream_t* rs) {
 // Read interface
 // ---------------------------------------------------------
 
-// Read into a pre-allocated buffer, or allocated on demand, and
+// Read into a pre-allocated buffer, and
 // return the bytes read, or 0 on end-of-file.
-size_t async_read_buf(uv_stream_t* stream, uv_buf_t* buf ) {
+static size_t async_read_into(uv_stream_t* stream, uv_buf_t* buf ) {
   read_stream_t* rs = nodec_get_read_stream(stream);
   async_read_stream_await(rs,false);
   return read_stream_read_buf(rs,buf);
+}
+
+// Read available data chunk. This is the most efficient
+// way to process a stream as it returns the first available
+// buffer without copying or allocation. Returns a NULL buffer
+// on end-of-file.
+uv_buf_t async_read_buf(uv_stream_t* stream) {
+  read_stream_t* rs = nodec_get_read_stream(stream);
+  async_read_stream_await(rs, false);
+  uv_buf_t buf = nodec_buf_null();
+  read_stream_read_buf(rs, &buf);
+  return buf;
 }
 
 // Read available data 
@@ -442,7 +456,7 @@ uv_buf_t async_read_buf_line(uv_stream_t* stream) {
 }
 
 // Return a single buffer that contains the entire stream contents
-uv_buf_t async_read_full(uv_stream_t* stream) {
+uv_buf_t async_read_buf_all(uv_stream_t* stream) {
   read_stream_t* rs = nodec_get_read_stream(stream);
   rs->read_to_eof = true; // reduces resumes
   while (!async_read_stream_await(rs,true)) {
@@ -452,18 +466,17 @@ uv_buf_t async_read_full(uv_stream_t* stream) {
 }
 
 // Return the entire stream as a string
-char* async_read_str_full(uv_stream_t* stream) {
-  uv_buf_t buf = async_read_full(stream);
+char* async_read_all(uv_stream_t* stream) {
+  uv_buf_t buf = async_read_buf_all(stream);
   if (buf.base == NULL) return NULL;
   buf.base[buf.len] = 0;
   return (char*)buf.base;
 }
 
-// Return available data as a string
-char* async_read_str(uv_stream_t* stream) {
-  uv_buf_t buf = nodec_buf(NULL, 0);
-  size_t nread = async_read_buf(stream, &buf);
-  if (buf.base == NULL || nread == 0) return NULL;
+// Return first available data as a string
+char* async_read(uv_stream_t* stream) {
+  uv_buf_t buf = async_read_buf(stream);
+  if (buf.base == NULL) return NULL;
   buf.base[buf.len] = 0;
   return (char*)buf.base;
 }
@@ -534,7 +547,8 @@ void async_shutdown(uv_stream_t* stream) {
 
 void async_write(uv_stream_t* stream, const char* s) {
   if (s==NULL) return;
-  async_write_data(stream, s, strlen(s));
+  uv_buf_t buf = nodec_buf(s, strlen(s));
+  async_write_buf(stream, buf);
 }
 
 void async_write_strs(uv_stream_t* stream, const char* strings[], unsigned int string_count) {
@@ -544,11 +558,6 @@ void async_write_strs(uv_stream_t* stream, const char* strings[], unsigned int s
     bufs[i] = nodec_buf(strings[i], (strings[i]!=NULL ? strlen(strings[i]) : 0));
   }
   async_write_bufs(stream, bufs, string_count);
-}
-
-void async_write_data(uv_stream_t* stream, const void* data, size_t len) {
-  uv_buf_t buf = nodec_buf(data, len);
-  async_write_buf(stream, buf);
 }
 
 void async_write_buf(uv_stream_t* stream, uv_buf_t buf) {

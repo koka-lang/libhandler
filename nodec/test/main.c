@@ -107,7 +107,7 @@ const char* response_body =
 static void test_http_serve(int strand_id, uv_stream_t* client) {
   fprintf(stderr, "strand %i entered\n", strand_id);
   // input
-  const char* input = async_read_str(client);
+  const char* input = async_read(client);
   {with_free(input) {
     printf("strand %i received:%zi bytes\n%s", strand_id, strlen(input), input);
   }}
@@ -240,16 +240,15 @@ static void test_chunks(const char* chunks[], size_t nchunks, enum http_parser_t
 static void test_httpx_serve(int strand_id, uv_stream_t* client) {
 	fprintf(stderr, "strand %i entered\n", strand_id);
 	// input
-	uv_buf_t buf = nodec_buf_null();
-	size_t nread = async_read_buf(client, &buf);
-	//const char* input = async_read_str(rs);
-	{with_free(buf.base) {
-		buf.base[buf.len] = 0;
-		printf("nread: %zu\n", nread);
-		printf("strand %i received:%u bytes\n%s\n", strand_id, buf.len, buf.base);
-		const char* chunks[] = { buf.base };
-		test_chunks(chunks, 1, HTTP_REQUEST);
-	}}
+	uv_buf_t buf = async_read_buf(client);
+  if (buf.len > 0) {
+    {with_free(buf.base) {
+      buf.base[buf.len] = 0;
+      printf("strand %i received:%u bytes\n%s\n", strand_id, buf.len, buf.base);
+      const char* chunks[] = { buf.base };
+      test_chunks(chunks, 1, HTTP_REQUEST);
+    }}
+  }
 	// work
 	printf("waiting %i secs...\n", 2 + strand_id);
 	async_wait(1000 + strand_id * 1000);
