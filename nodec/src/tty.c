@@ -17,7 +17,6 @@ typedef struct _tty_t {
   uv_tty_t*      _stdin;
   uv_tty_t*      _stdout;
   uv_tty_t*      _stderr;
-  read_stream_t* in;
   int            mode;
 } tty_t;
 
@@ -55,11 +54,9 @@ char* async_tty_readline() {
   if (tty->_stdin == NULL) {
     tty->_stdin = nodec_zero_alloc(uv_tty_t);
     nodec_check(uv_tty_init(async_loop(), tty->_stdin, 0, 1));
+    nodec_read_start(stream_of_tty(tty->_stdin), 0, 64, 64);
   }
-  if (tty->in == NULL) {
-    tty->in = async_read_start(stream_of_tty(tty->_stdin), 0, 64, 64);
-  }
-  return async_read_line(tty->in);
+  return async_read_line(stream_of_tty(tty->_stdin));
 }
 
 void async_tty_write(const char* s) {

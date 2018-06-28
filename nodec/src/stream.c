@@ -312,28 +312,40 @@ static void _read_stream_cb(uv_stream_t* stream, ssize_t nread, const uv_buf_t* 
 }
 
 
-read_stream_t* async_read_start(uv_stream_t* stream, size_t read_max, size_t alloc_init, size_t alloc_max) {
-  assert(stream->data == NULL); // can start reading only once!
-  if (stream->data != NULL) return (read_stream_t*)stream->data;
-  read_stream_t* rs = nodec_zero_alloc(read_stream_t);  // owned by stream
-  stream->data = rs;
-  rs->stream = stream; // backlink
+void nodec_read_start(uv_stream_t* stream, size_t read_max, size_t alloc_init, size_t alloc_max) {
+  read_stream_t* rs;
+  if (stream->data != NULL) {
+    rs = (read_stream_t*)stream->data;
+  }
+  else {
+    rs = nodec_zero_alloc(read_stream_t);  // owned by stream
+    stream->data = rs;
+    rs->stream = stream; // backlink
+  }
+  assert(rs != NULL && rs->stream == stream && stream->data == rs);
   rs->read_max = (read_max > 0 ? read_max : 1024 * 1024 * 1024);  // 1Gb by default
   rs->alloc_size = (alloc_init == 0 ? 1024 : alloc_init);  // start small but double at every new read
   rs->alloc_max = (alloc_max == 0 ? 64*1024 : alloc_max);
-  nodec_check(uv_read_start(stream, &_read_stream_alloc_cb, &_read_stream_cb));
-  return rs;
+  nodec_read_restart(stream);
 }
 
-void async_read_restart(read_stream_t* rs) {
-  nodec_check(uv_read_start(rs->stream, &_read_stream_alloc_cb, &_read_stream_cb));  
+static read_stream_t* nodec_get_read_stream(uv_stream_t* stream) {
+  if (stream->data==NULL) {
+    nodec_read_start(stream, 0, 0, 0);
+  }
+  assert(stream->data != NULL);
+  return (read_stream_t*)stream->data;
+}
+
+void nodec_read_restart(uv_stream_t* stream) {
+  read_stream_t* rs = nodec_get_read_stream(stream);
+  uverr_t err = uv_read_start(stream, &_read_stream_alloc_cb, &_read_stream_cb);
+  if (err!=0 && err!=UV_EALREADY) nodec_check(err);
 }
 
 void nodec_read_stop(uv_stream_t* stream) {
   if (stream->data == NULL) return;
-  read_stream_t* rs = stream->data;
-  rs->eof = true;
-  uv_read_stop(stream);
+  nodec_check(uv_read_stop(stream));
 }
 
 // Read into a pre-allocated buffer, or allocated on demand, and
@@ -393,22 +405,28 @@ static size_t read_stream_find_eol(read_stream_t* rs) {
   return chunks_find_eol(&rs->chunks);
 }
 
+// ---------------------------------------------------------
+// Read interface
+// ---------------------------------------------------------
 
 // Read into a pre-allocated buffer, or allocated on demand, and
 // return the bytes read, or 0 on end-of-file.
-size_t async_read_buf(read_stream_t* rs, uv_buf_t* buf ) {
+size_t async_read_buf(uv_stream_t* stream, uv_buf_t* buf ) {
+  read_stream_t* rs = nodec_get_read_stream(stream);
   async_read_stream_await(rs,false);
   return read_stream_read_buf(rs,buf);
 }
 
 // Read available data 
-uv_buf_t async_read_buf_available(read_stream_t* rs) {
+uv_buf_t async_read_buf_available(uv_stream_t* stream) {
+  read_stream_t* rs = nodec_get_read_stream(stream);
   async_read_stream_await(rs,false);
   return read_stream_read_available(rs);
 }
 
 // Read a line
-uv_buf_t async_read_buf_line(read_stream_t* rs) {
+uv_buf_t async_read_buf_line(uv_stream_t* stream) {
+  read_stream_t* rs = nodec_get_read_stream(stream);
   size_t toread = 0;
   bool eof;
   do {
@@ -424,7 +442,8 @@ uv_buf_t async_read_buf_line(read_stream_t* rs) {
 }
 
 // Return a single buffer that contains the entire stream contents
-uv_buf_t async_read_full(read_stream_t* rs) {
+uv_buf_t async_read_full(uv_stream_t* stream) {
+  read_stream_t* rs = nodec_get_read_stream(stream);
   rs->read_to_eof = true; // reduces resumes
   while (!async_read_stream_await(rs,true)) {
     // wait until eof
@@ -433,25 +452,25 @@ uv_buf_t async_read_full(read_stream_t* rs) {
 }
 
 // Return the entire stream as a string
-char* async_read_str_full(read_stream_t* rs) {
-  uv_buf_t buf = async_read_full(rs);
+char* async_read_str_full(uv_stream_t* stream) {
+  uv_buf_t buf = async_read_full(stream);
   if (buf.base == NULL) return NULL;
   buf.base[buf.len] = 0;
   return (char*)buf.base;
 }
 
 // Return available data as a string
-char* async_read_str(read_stream_t* rs) {
+char* async_read_str(uv_stream_t* stream) {
   uv_buf_t buf = nodec_buf(NULL, 0);
-  size_t nread = async_read_buf(rs, &buf);
+  size_t nread = async_read_buf(stream, &buf);
   if (buf.base == NULL || nread == 0) return NULL;
   buf.base[buf.len] = 0;
   return (char*)buf.base;
 }
 
 // Read one line
-char* async_read_line(read_stream_t* rs) {
-  uv_buf_t buf = async_read_buf_line(rs);
+char* async_read_line(uv_stream_t* stream) {
+  uv_buf_t buf = async_read_buf_line(stream);
   if (buf.base == NULL) return NULL;
   buf.base[buf.len] = 0;
   return (char*)buf.base;

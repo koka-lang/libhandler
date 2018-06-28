@@ -1,6 +1,6 @@
 #include <stdio.h>
 #include <nodec.h>
-// #include <nodec-primitive.h>
+#include <nodec-primitive.h>
 #include <http_parser.h>
 #include "http_parser_wrapper.h"
 
@@ -107,8 +107,7 @@ const char* response_body =
 static void test_http_serve(int strand_id, uv_stream_t* client) {
   fprintf(stderr, "strand %i entered\n", strand_id);
   // input
-  read_stream_t* rs = async_read_start(client, 0, 0, 0);
-  const char* input = async_read_str(rs);
+  const char* input = async_read_str(client);
   {with_free(input) {
     printf("strand %i received:%zi bytes\n%s", strand_id, strlen(input), input);
   }}
@@ -155,19 +154,6 @@ static void test_tcp_tty() {
 }
 
 
-static void test_tcp_raw() {
-  define_ip4_addr("127.0.0.1", 8080, addr);
-  tcp_channel_t* ch = nodec_tcp_listen_at(addr, 0);
-  {with_tcp_channel(ch){
-    int max_connects = 3;
-    while (max_connects-- > 0) {
-      uv_stream_t* client = tcp_channel_receive(ch);
-      {with_stream(client){
-        test_http_serve(max_connects, client);
-      }}
-    }
-  }}
-}
 
 /*-----------------------------------------------------------------
   TTY
@@ -175,13 +161,13 @@ static void test_tcp_raw() {
 static void test_tty_raw() {
   uv_tty_t* tty_in = nodec_zero_alloc(uv_tty_t);
   {with_stream((uv_stream_t*)tty_in){
-    check_uverr(uv_tty_init(async_loop(), tty_in, 0, true));
-    read_stream_t* rs = async_read_start((uv_stream_t*)tty_in, 0, 255, 255);
-    const char* s = async_read_line(rs);
+    nodec_check(uv_tty_init(async_loop(), tty_in, 0, true));
+    nodec_read_start((uv_stream_t*)tty_in, 0, 255, 255);
+    const char* s = async_read_line((uv_stream_t*)tty_in);
     {with_free(s) {
       printf("I got: %s\n", s);
     }}
-    s = async_read_line(rs);
+    s = async_read_line((uv_stream_t*)tty_in);
     {with_free(s) {
       printf("Now I got: %s\n", s);
     }}
@@ -254,9 +240,8 @@ static void test_chunks(const char* chunks[], size_t nchunks, enum http_parser_t
 static void test_httpx_serve(int strand_id, uv_stream_t* client) {
 	fprintf(stderr, "strand %i entered\n", strand_id);
 	// input
-	read_stream_t* rs = async_read_start(client, 0, 0, 0);
 	uv_buf_t buf = nodec_buf_null();
-	size_t nread = async_read_buf(rs, &buf);
+	size_t nread = async_read_buf(client, &buf);
 	//const char* input = async_read_str(rs);
 	{with_free(buf.base) {
 		buf.base[buf.len] = 0;
@@ -294,7 +279,6 @@ static void entry() {
   //test_files();
   //test_interleave();
   //test_cancel();
-  //test_tcp_raw();
   //test_tcp();
   //test_tty_raw();
   //test_tty();
