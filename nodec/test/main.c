@@ -192,6 +192,21 @@ static void test_tty() {
 }
 
 /*-----------------------------------------------------------------
+Test scandir
+-----------------------------------------------------------------*/
+
+void test_scandir() {
+  nodec_scandir_t* scan = async_scandir("..");
+  {with_scandir(scan) {
+    uv_dirent_t dirent;
+    while (async_scandir_next(scan, &dirent)) {
+      printf("entry %i: %s\n", dirent.type, dirent.name);
+    }
+  }}
+}
+
+
+/*-----------------------------------------------------------------
 Test HTTP
 -----------------------------------------------------------------*/
 
@@ -282,7 +297,8 @@ static void entry() {
   //test_tty_raw();
   //test_tty();
   //test_tcp_tty();
-  test_http();
+  test_scandir();
+  //test_http();
 }
 
 int main() {

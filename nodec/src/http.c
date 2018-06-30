@@ -39,6 +39,10 @@ typedef struct _http_headers_t {
 
 static void http_headers_free(http_headers_t* headers);
 static void http_headers_add(http_headers_t* headers, const char* name, const char* value);
+
+static void http_headers_add(http_headers_t* headers, const char* name, size_t len);
+static void http_headers_set(http_headers_t* headers, const char* name, const char* value, size_t len);
+
 static const char* http_headers_lookup(http_headers_t* headers, const char* name);
 static size_t http_headers_count(http_headers_t* headers);
 static const http_header_t* http_headers_at(http_headers_t* headers);
@@ -50,6 +54,8 @@ typedef struct _http_request_t {
   const char*     url;
   const char*     http_version;
   size_t          content_length;
+  bool            connection_close;
+  http_parser*    parser;
   http_headers_t  headers;  
 } http_request_t;
 
@@ -57,12 +63,21 @@ static http_request_t* http_request_alloc() {
   return nodec_zero_alloc(http_request_t);
 }
 
+static http_request_t* http_request_parse( uv_stream_t* stream ) {
+  // do http-parser magic
+}
+
 const char*   http_request_url(http_request_t* req);
+const char*   http_request_http_version(http_request_t* req);
 http_method_t http_request_method(http_request_t* req);
+bool          http_request_keep_alive(http_request_t* req);
+size_t        http_request_content_length(http_request_t* req);
+
 const char*   http_request_header(http_request_t* req, const char* name);
 // .. etc
 
 static void http_request_add_header(http_request_t* req, const char* name, const char* value);
+
 */
 
 /*-----------------------------------------------------------------

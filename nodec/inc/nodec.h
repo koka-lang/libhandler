@@ -85,6 +85,14 @@ uv_file     async_fopen(const char* path, int flags, int mode);
 void        async_fclose(uv_file file);
 size_t      async_fread(uv_file file, uv_buf_t* buf, int64_t offset);
 
+typedef uv_fs_t nodec_scandir_t;
+void        nodec_scandir_free(nodec_scandir_t* scanreq);
+void        nodec_scandir_freev(lh_value scanreqv);
+#define with_scandir(req)  defer(nodec_scandir_freev,lh_value_ptr(req))
+
+nodec_scandir_t* async_scandir(const char* path);
+bool async_scandir_next(nodec_scandir_t* scanreq, uv_dirent_t* dirent);
+
 // ----------------------------------
 // File system convenience functions
 
@@ -129,7 +137,7 @@ uv_buf_t    async_read_buf(uv_stream_t* stream);
 uv_buf_t    async_read_buf_available(uv_stream_t* stream);
 uv_buf_t    async_read_buf_line(uv_stream_t* stream);
 uv_buf_t    async_read_buf_all(uv_stream_t* stream);
-size_t      async_read_into_all(uv_stream_t* stream, uv_buf_t buf);
+size_t      async_read_into_all(uv_stream_t* stream, uv_buf_t buf, bool* at_eof);
 
 char*       async_read(uv_stream_t* stream);
 char*       async_read_all(uv_stream_t* stream);

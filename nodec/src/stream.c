@@ -435,14 +435,21 @@ static size_t async_read_into(uv_stream_t* stream, uv_buf_t buf ) {
   return read_stream_read_into(rs,buf);
 }
 
+// End of stream reached?
+static bool nodec_stream_at_eof(uv_stream_t* stream) {
+  read_stream_t* rs = (read_stream_t*)stream->data;
+  return (rs != NULL && rs->available==0 && rs->eof);
+}
+
 // Read into a preallocated buffer until the buffer is full or eof.
-// Returns the number of bytes read.
+// Returns the number of bytes read. `at_eof` can be NULL;
 //
 // Todo: If we drain the current chunks first, we could after that 
 // 'allocate' in the given buffer from the callback directly and
 // not actually copy the memory but write to it directly.
-size_t async_read_into_all(uv_stream_t* stream, uv_buf_t buf) {
+size_t async_read_into_all(uv_stream_t* stream, uv_buf_t buf, bool* at_eof) {
   if (buf.base==NULL || buf.len == 0) return 0;
+  if (at_eof != NULL) *at_eof = false;
   read_stream_t* rs = nodec_get_read_stream(stream);
   size_t total = 0;
   size_t nread = 0;
@@ -452,6 +459,7 @@ size_t async_read_into_all(uv_stream_t* stream, uv_buf_t buf) {
     nread = read_stream_read_into(rs, view);
     total += nread;
   } while (nread > 0);
+  if (at_eof != NULL) *at_eof = (rs->available == 0 && rs->eof);
   return total;
 }
 
