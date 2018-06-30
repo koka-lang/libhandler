@@ -197,6 +197,9 @@ typedef void    (nodec_tcp_servefun)(int id, uv_stream_t* client);
 void async_tcp_server_at(const struct sockaddr* addr, int backlog, int max_interleaving, 
                           uint64_t timeout, nodec_tcp_servefun* servefun, lh_actionfun* on_exn);
 
+uv_stream_t* async_tcp_connect_at(const struct sockaddr* addr);
+uv_stream_t* async_tcp_connect(const char* host, const char* service /*NULL="http"*/);
+
 
 /* ----------------------------------------------------------------------------
   HTTP

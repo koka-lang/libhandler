@@ -225,6 +225,27 @@ void test_dns() {
 }
 
 /*-----------------------------------------------------------------
+  Test connect
+-----------------------------------------------------------------*/
+const char* http_request =
+  "GET / HTTP/1.1\r\n"
+  "Host: www.bing.com\r\n"
+  "Connection: close\r\n"
+  "\r\n";
+
+void test_connect() {
+  uv_stream_t* conn = async_tcp_connect("bing.com","http");
+  {with_stream(conn) {
+    async_write(conn, http_request);
+    char* body = async_read_all(conn);
+    {with_free(body) {
+      printf("received:\n%s", body);
+    }}
+  }}
+}
+
+
+/*-----------------------------------------------------------------
 Test HTTP
 -----------------------------------------------------------------*/
 
@@ -284,7 +305,7 @@ static void test_httpx_serve(int strand_id, uv_stream_t* client) {
   }
 	// work
 	printf("waiting %i secs...\n", 2 + strand_id);
-	async_wait(1000 + strand_id * 1000);
+	async_wait(1000 + strand_id * 1000);  
 	//check_uverr(UV_EADDRINUSE);
 
 	// response
@@ -317,6 +338,7 @@ static void entry() {
   //test_tcp_tty();
   //test_scandir();
   //test_dns();
+  //test_connect();
   test_http();
 }
 

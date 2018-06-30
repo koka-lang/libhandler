@@ -153,6 +153,31 @@ uv_stream_t* async_tcp_channel_receive(tcp_channel_t* ch) {
 }
 
 
+static void connect_cb(uv_connect_t* req, int status) {
+  async_req_resume((uv_req_t*)req, status >= 0 ? 0 : status);
+}
+
+uv_stream_t* async_tcp_connect_at(const struct sockaddr* addr) {
+  uv_tcp_t* tcp = nodec_tcp_alloc();
+  {on_abort(nodec_tcp_freev, lh_value_ptr(tcp)) {
+    {with_req(uv_connect_t, req) {
+      nodec_check(uv_tcp_connect(req, tcp, addr, &connect_cb));
+      async_await_once((uv_req_t*)req);
+    }}
+  }}
+  return (uv_stream_t*)tcp;
+}
+
+uv_stream_t* async_tcp_connect(const char* host, const char* service) {
+  struct addrinfo* info = async_getaddrinfo(host, (service==NULL ? "http" : service), NULL);
+  if (info==NULL) nodec_check(UV_EINVAL);
+  uv_stream_t* tcp = NULL;
+  {with_addrinfo(info) {
+    tcp = async_tcp_connect_at(info->ai_addr);
+  }}
+  return tcp;
+}
+
 /*-----------------------------------------------------------------
     A TCP server
 -----------------------------------------------------------------*/
