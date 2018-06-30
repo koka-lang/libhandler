@@ -9,20 +9,24 @@ found in the file "license.txt" at the root of this distribution.
 #include "nodec-primitive.h"
 #include <assert.h>
 
+void nodec_sockname(const struct sockaddr* addr, char* buf, size_t bufsize) {
+  buf[0] = 0;
+  if (addr != NULL) {
+    if (addr->sa_family == AF_INET6) {
+      uv_ip6_name((const struct sockaddr_in6*)addr, buf, bufsize);
+    }
+    else {
+      uv_ip4_name((const struct sockaddr_in*)addr, buf, bufsize);
+    }
+  }
+  buf[bufsize - 1] = 0;
+}
+
 void check_uv_err_addr(int err, const struct sockaddr* addr) {
   // todo: switch to ipv6 address if needed
   if (err != 0) {
     char buf[256];
-    buf[0] = 0;
-    if (addr != NULL) {
-      if (addr->sa_family == AF_INET6) {
-        uv_ip6_name((const struct sockaddr_in6*)addr, buf, 255);
-      }
-      else {
-        uv_ip4_name((const struct sockaddr_in*)addr, buf, 255);
-      }
-    }
-    buf[255] = 0;
+    nodec_sockname(addr, buf, sizeof(buf));
     nodec_check_msg(err, buf);
   }
 }

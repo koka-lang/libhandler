@@ -594,7 +594,7 @@ void async_write(uv_stream_t* stream, const char* s) {
   async_write_buf(stream, buf);
 }
 
-void async_write_strs(uv_stream_t* stream, const char* strings[], unsigned int string_count) {
+void async_write_strs(uv_stream_t* stream, const char* strings[], size_t string_count) {
   if (strings==NULL||string_count <= 0) return;
   uv_buf_t* bufs = alloca(string_count*sizeof(uv_buf_t));
   for (unsigned int i = 0; i < string_count; i++) {
@@ -607,11 +607,11 @@ void async_write_buf(uv_stream_t* stream, uv_buf_t buf) {
   async_write_bufs(stream, &buf, 1);
 }
 
-void async_write_bufs(uv_stream_t* stream, uv_buf_t bufs[], unsigned int buf_count) {
+void async_write_bufs(uv_stream_t* stream, uv_buf_t bufs[], size_t buf_count) {
   if (bufs==NULL || buf_count<=0) return;
   {with_req(uv_write_t, req) {    
     // Todo: verify it is ok to have bufs on the stack or if we need to heap alloc them first for safety
-    nodec_check(uv_write(req, stream, bufs, buf_count, &async_write_resume));
+    nodec_check(uv_write(req, stream, bufs, (unsigned)buf_count, &async_write_resume));
     async_await_write(req,stream);
   }}
 }

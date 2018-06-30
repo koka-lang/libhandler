@@ -32,6 +32,7 @@
     </ClCompile>
     <ClCompile Include="..\..\nodec\src\async.c" />
     <ClCompile Include="..\..\nodec\src\channel.c" />
+    <ClCompile Include="..\..\nodec\src\dns.c" />
     <ClCompile Include="..\..\nodec\src\fs.c" />
     <ClCompile Include="..\..\nodec\src\http.c" />
     <ClCompile Include="..\..\nodec\src\interleave.c" />

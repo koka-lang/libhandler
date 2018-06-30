@@ -145,8 +145,8 @@ char*       async_read_line(uv_stream_t* stream);
 
 
 void        async_write(uv_stream_t* stream, const char* s);
-void        async_write_bufs(uv_stream_t* stream, uv_buf_t bufs[], unsigned int buf_count);
-void        async_write_strs(uv_stream_t* stream, const char* strings[], unsigned int string_count );
+void        async_write_bufs(uv_stream_t* stream, uv_buf_t bufs[], size_t buf_count);
+void        async_write_strs(uv_stream_t* stream, const char* strings[], size_t string_count );
 void        async_write_buf(uv_stream_t* stream, uv_buf_t buf);
 
 
@@ -165,6 +165,14 @@ void nodec_ip6_addr(const char* ip, int port, struct sockaddr_in6* addr);
   struct sockaddr_in name##_ip6; nodec_ip6_addr(ip,port,&name##_ip6); \
   struct sockaddr* name = (struct sockaddr*)&name##_ip6;
 
+void nodec_sockname(const struct sockaddr* addr, char* buf, size_t bufsize);
+
+void async_getnameinfo(const struct sockaddr* addr, int flags, char** node, char** service);
+struct addrinfo* async_getaddrinfo(const char* node, const char* service, const struct addrinfo* hints);
+
+void nodec_free_addrinfo(struct addrinfo* info);
+void nodec_free_addrinfov(lh_value infov);
+#define with_addrinfo(name)  defer(nodec_free_addrinfov,lh_value_ptr(name))
 
 
 /* ----------------------------------------------------------------------------

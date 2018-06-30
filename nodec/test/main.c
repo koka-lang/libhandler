@@ -196,7 +196,7 @@ Test scandir
 -----------------------------------------------------------------*/
 
 void test_scandir() {
-  nodec_scandir_t* scan = async_scandir("..");
+  nodec_scandir_t* scan = async_scandir(".");
   {with_scandir(scan) {
     uv_dirent_t dirent;
     while (async_scandir_next(scan, &dirent)) {
@@ -205,6 +205,24 @@ void test_scandir() {
   }}
 }
 
+/*-----------------------------------------------------------------
+Test dns
+-----------------------------------------------------------------*/
+
+void test_dns() {
+  struct addrinfo* info = async_getaddrinfo("iana.org", NULL, NULL);
+  {with_addrinfo(info) {
+    for (struct addrinfo* current = info; current != NULL; current = current->ai_next) {
+      char sockname[128];
+      nodec_sockname(current->ai_addr, sockname, sizeof(sockname));
+      char* host = NULL;
+      async_getnameinfo(current->ai_addr, 0, &host, NULL);
+      {with_free(host) {
+        printf("info: protocol %i at %s, reverse host: %s\n", current->ai_protocol, sockname, host);        
+      }}
+    }
+  }}
+}
 
 /*-----------------------------------------------------------------
 Test HTTP
@@ -297,8 +315,9 @@ static void entry() {
   //test_tty_raw();
   //test_tty();
   //test_tcp_tty();
-  test_scandir();
-  //test_http();
+  //test_scandir();
+  //test_dns();
+  test_http();
 }
 
 int main() {
