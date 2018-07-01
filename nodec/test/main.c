@@ -335,11 +335,11 @@ static void entry() {
   //test_tcp();
   //test_tty_raw();
   //test_tty();
-  //test_tcp_tty();
+  test_tcp_tty();
   //test_scandir();
   //test_dns();
   //test_connect();
-  test_http();
+  // test_http();
 }
 
 int main() {

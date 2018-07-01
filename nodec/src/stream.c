@@ -259,20 +259,27 @@ static void read_stream_freereqv(lh_value rsv) {
   read_stream_freereq(lh_ptr_value(rsv));
 }
 
-static bool async_read_stream_await(read_stream_t* rs, bool wait_even_if_available) {
-  if (rs == NULL) return true;
+static uverr_t asyncx_read_stream_await(read_stream_t* rs, bool wait_even_if_available) {
+  if (rs == NULL) return UV_EINVAL;
   if ((wait_even_if_available || rs->available == 0) && rs->err == 0 && !rs->eof) {
     // await an event
     if (rs->req != NULL) lh_throw_str(UV_EINVAL, "only one strand can await a read stream");
     uv_req_t* req = nodec_zero_alloc(uv_req_t);
     rs->req = req;
     {defer(read_stream_freereqv, lh_value_ptr(rs)) {
-      async_await_owned(req,rs->stream);
+      async_await_owned(req, rs->stream);
       // fprintf(stderr,"back from await\n");
     }}
   }
-  nodec_check(rs->err);
-  return rs->eof;
+  if (rs->eof) return UV_EOF;
+  return rs->err;
+}
+
+static bool async_read_stream_await(read_stream_t* rs, bool wait_even_if_available) {
+  if (rs == NULL) return true;
+  uverr_t err = asyncx_read_stream_await(rs, wait_even_if_available);
+  if (err != UV_EOF) nodec_check(err);
+  return (err == UV_EOF);
 }
 
 static void _read_stream_alloc_cb(uv_handle_t* handle, size_t suggested_size, uv_buf_t* buf) {
@@ -426,6 +433,11 @@ static size_t read_stream_find_eol(read_stream_t* rs) {
 // ---------------------------------------------------------
 // Read interface
 // ---------------------------------------------------------
+
+uverr_t asyncx_stream_await_available(uv_stream_t* stream) {
+  read_stream_t* rs = nodec_get_read_stream(stream);
+  return asyncx_read_stream_await(rs, false);
+}
 
 // Read into a pre-allocated buffer, and
 // return the bytes read, or 0 on end-of-file.

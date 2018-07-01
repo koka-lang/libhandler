@@ -202,6 +202,7 @@ typedef struct _tcp_client_args {
   uint64_t      timeout;
   uv_stream_t*  client;
   nodec_tcp_servefun* serve;
+  int           keepalive;
 } tcp_client_args;
 
 static lh_value tcp_serve_client(lh_value argsv) {
@@ -223,6 +224,22 @@ static lh_value tcp_serve_timeout(lh_value argsv) {
   }
 }
 
+static lh_value tcp_serve_keepalive(lh_value argsv) {
+  tcp_client_args* args = (tcp_client_args*)lh_ptr_value(argsv);
+  if (args->keepalive <= 0) {
+    return tcp_serve_timeout(argsv);
+  }
+  else {
+    lh_value result = lh_value_null;
+    uverr_t err = 0;
+    //nodec_check(uv_tcp_keepalive((uv_tcp_t*)args->client, 1, (unsigned)args->keepalive));
+    do {
+      result = tcp_serve_timeout(argsv);
+      err = asyncx_stream_await_available(args->client);
+    } while (err == 0);
+    return result;
+  }
+}
 
 static lh_value tcp_servev(lh_value argsv) {
   static int ids = 0;
@@ -232,8 +249,8 @@ static lh_value tcp_servev(lh_value argsv) {
     uv_stream_t* client = async_tcp_channel_receive(args.ch);
     {with_stream(client) {
       lh_exception* exn;
-      tcp_client_args cargs = { id, args.timeout, client, args.serve };
-      lh_try( &exn, &tcp_serve_timeout, lh_value_any_ptr(&cargs)); 
+      tcp_client_args cargs = { id, args.timeout, client, args.serve, 5 };
+      lh_try( &exn, &tcp_serve_keepalive, lh_value_any_ptr(&cargs)); 
       if (exn != NULL) {
         // send an exception response
         // wrap in try itself in case writing gives an error too!
