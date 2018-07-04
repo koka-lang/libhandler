@@ -59,7 +59,7 @@ bool          channel_is_full(channel_t* channel);
 
 
 // Used to implement keep-alive
-uverr_t asyncx_stream_await_available(uv_stream_t* stream);
+uverr_t asyncx_stream_await_available(uv_stream_t* stream, uint64_t timeout);
 
 
 #endif

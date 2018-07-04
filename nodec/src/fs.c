@@ -18,7 +18,7 @@
 
 // Await a file system request
 uv_errno_t asyncx_await_fs(uv_fs_t* req) {
-  return asyncx_await((uv_req_t*)req,NULL);
+  return asyncx_await((uv_req_t*)req,0,NULL);
 }
 
 void async_await_fs(uv_fs_t* req) {

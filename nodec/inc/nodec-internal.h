@@ -48,8 +48,8 @@ void       nodec_owner_release(void* owner);
 // Await an asynchronous request but return an explicit error value instead of throwing.
 // Use with care since these still throw on cancelation requests.
 uv_errno_t   asyncx_nocancel_await(uv_req_t* uvreq);  // never throws and cannot be canceled
-uv_errno_t   asyncxx_await(uv_req_t* uvreq, void* owner);  // never throws
-uv_errno_t   asyncx_await(uv_req_t* req, void* owner);     // throws on cancel
+uv_errno_t   asyncxx_await(uv_req_t* uvreq, uint64_t timeout, void* owner);  // never throws
+uv_errno_t   asyncx_await(uv_req_t* req, uint64_t timeout, void* owner);     // throws on cancel
 uv_errno_t   asyncx_await_fs(uv_fs_t* req);
 
 // Set a timeout callback 
@@ -59,7 +59,7 @@ void         nodec_timer_free(uv_timer_t* timer, bool owner_release);
 
 int          channel_receive_nocancel(channel_t* channel, lh_value* data, lh_value* arg);
 
-#define UV_ETHROWCANCEL  (-10000)
-#define UV_EHTTP         (-20000)
+#define UV_ETHROWCANCEL   (-10000)
+#define UV_EHTTP          (-20000)
 
 #endif

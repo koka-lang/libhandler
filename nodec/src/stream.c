@@ -259,7 +259,7 @@ static void read_stream_freereqv(lh_value rsv) {
   read_stream_freereq(lh_ptr_value(rsv));
 }
 
-static uverr_t asyncx_read_stream_await(read_stream_t* rs, bool wait_even_if_available) {
+static uverr_t asyncx_read_stream_await(read_stream_t* rs, bool wait_even_if_available, uint64_t timeout) {
   if (rs == NULL) return UV_EINVAL;
   if ((wait_even_if_available || rs->available == 0) && rs->err == 0 && !rs->eof) {
     // await an event
@@ -267,7 +267,8 @@ static uverr_t asyncx_read_stream_await(read_stream_t* rs, bool wait_even_if_ava
     uv_req_t* req = nodec_zero_alloc(uv_req_t);
     rs->req = req;
     {defer(read_stream_freereqv, lh_value_ptr(rs)) {
-      async_await_owned(req, rs->stream);
+      rs->err = asyncx_await(req, timeout, rs->stream);
+      //async_await_owned(req, rs->stream);
       // fprintf(stderr,"back from await\n");
     }}
   }
@@ -277,7 +278,7 @@ static uverr_t asyncx_read_stream_await(read_stream_t* rs, bool wait_even_if_ava
 
 static bool async_read_stream_await(read_stream_t* rs, bool wait_even_if_available) {
   if (rs == NULL) return true;
-  uverr_t err = asyncx_read_stream_await(rs, wait_even_if_available);
+  uverr_t err = asyncx_read_stream_await(rs, wait_even_if_available, 0);
   if (err != UV_EOF) nodec_check(err);
   return (err == UV_EOF);
 }
@@ -434,9 +435,9 @@ static size_t read_stream_find_eol(read_stream_t* rs) {
 // Read interface
 // ---------------------------------------------------------
 
-uverr_t asyncx_stream_await_available(uv_stream_t* stream) {
+uverr_t asyncx_stream_await_available(uv_stream_t* stream, uint64_t timeout) {
   read_stream_t* rs = nodec_get_read_stream(stream);
-  return asyncx_read_stream_await(rs, false);
+  return asyncx_read_stream_await(rs, false, timeout);
 }
 
 // Read into a pre-allocated buffer, and

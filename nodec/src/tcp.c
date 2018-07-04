@@ -235,7 +235,7 @@ static lh_value tcp_serve_keepalive(lh_value argsv) {
     //nodec_check(uv_tcp_keepalive((uv_tcp_t*)args->client, 1, (unsigned)args->keepalive));
     do {
       result = tcp_serve_timeout(argsv);
-      err = asyncx_stream_await_available(args->client);
+      err = asyncx_stream_await_available(args->client, 1000*(uint64_t)args->keepalive);
     } while (err == 0);
     return result;
   }

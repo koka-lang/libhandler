@@ -178,7 +178,7 @@ static channel_elem channel_receive_ex(channel_t* channel, bool nocancel) {
         err = asyncx_nocancel_await(&req->req);
       } 
       else {
-        err = asyncxx_await(&req->req,NULL);
+        err = asyncxx_await(&req->req,0,NULL);
       }
       // remove ourselves; we must do it here instead of in emit due to cancelations
       bool removed = false;

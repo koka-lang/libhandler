@@ -14,7 +14,7 @@ typedef struct _cancel_scope_t cancel_scope_t;
 typedef struct _async_request_t async_request_t;
 typedef struct _async_local_t async_local_t;
 
-async_request_t* async_request_alloc(uv_req_t* uvreq, bool nocancel, void* owner);
+async_request_t* async_request_alloc(uv_req_t* uvreq, bool nocancel, uint64_t timeout, void* owner);
 
 /*-----------------------------------------------------------------
 Async effect operations
@@ -51,30 +51,30 @@ void nodec_owner_release(void* owner) {
 
 
 uv_errno_t asyncx_nocancel_await(uv_req_t* uvreq) {
-  async_request_t* req = async_request_alloc(uvreq,true,NULL);
+  async_request_t* req = async_request_alloc(uvreq,true,0,NULL);
   uv_errno_t err = async_req_await(req);
   assert(err != UV_ETHROWCANCEL);
   return err;
 }
 
-uv_errno_t asyncxx_await(uv_req_t* uvreq, void* owner) {
-  async_request_t* req = async_request_alloc(uvreq, false, owner);
+uv_errno_t asyncxx_await(uv_req_t* uvreq, uint64_t timeout, void* owner) {
+  async_request_t* req = async_request_alloc(uvreq, false, timeout, owner);
   return async_req_await(req);
 }
 
 
-uv_errno_t asyncx_await(uv_req_t* uvreq, void* owner) {
-  uv_errno_t err = asyncxx_await(uvreq, owner); 
+uv_errno_t asyncx_await(uv_req_t* uvreq, uint64_t timeout, void* owner) {
+  uv_errno_t err = asyncxx_await(uvreq, timeout, owner); 
   if (err == UV_ETHROWCANCEL) lh_throw_cancel();
   return err;
 }
 
 void async_await_once(uv_req_t* uvreq) {
-  nodec_check(asyncx_await(uvreq,NULL));
+  nodec_check(asyncx_await(uvreq,0,NULL));
 }
 
 void async_await_owned(uv_req_t* uvreq, void* owner) {
-  nodec_check(asyncx_await(uvreq,owner));
+  nodec_check(asyncx_await(uvreq,0,owner));
 }
 
 
@@ -216,18 +216,23 @@ struct _async_request_t {
   lh_value              local;
   const cancel_scope_t* scope;
   uv_req_t*             uvreq;
-  bool                  canceled;
+  uverr_t               canceled_err;
   void*                 owner;
+  uint64_t              due;
   async_resume_fun*     resumefun;
 };
 
-static async_request_t* async_request_alloc(uv_req_t* uvreq, bool nocancel, void* owner) {
+static async_request_t* async_request_alloc(uv_req_t* uvreq, bool nocancel, uint64_t timeout, void* owner) {
   async_request_t* req = nodec_zero_alloc(async_request_t);
   uvreq->data = req;
   req->uvreq = uvreq;
   req->owner = owner;
   req->scope = cancel_scope();
-  if (!nocancel) async_req_register(req);
+  if (timeout>0) {
+    uint64_t now = async_loop()->time;
+    req->due = (UINT64_MAX - now < timeout ? UINT64_MAX : now + timeout);
+  }
+  if (!nocancel || timeout!=0) async_req_register(req);
   return req;
 }
 
@@ -259,8 +264,8 @@ static void async_request_resume(async_request_t* req, uv_req_t* uvreq, int err)
     async_resume_fun* resumefun = req->resumefun;
     lh_resume resume = req->resume;
     lh_value local = req->local;
-    int uv_errno_t = (req->canceled ? UV_ETHROWCANCEL : err);
-    // if we are canceled explicitly, we cannot deallocate the orginal
+    
+    // if we were canceled explicitly, we cannot deallocate the orginal
     // request right away because it might still modified, or its callback
     // might be called once the request is satisfied. Therefore, if there
     // is an owner set, we put `-1` in the uvrequest `data` field to signify
@@ -269,7 +274,8 @@ static void async_request_resume(async_request_t* req, uv_req_t* uvreq, int err)
     // We use -3 to signify to deallocate once the original callback is called.
     // this is for request that have no particular owner and where the callback
     // will be called! like most file system requests
-    if (err == UV_ETHROWCANCEL) {
+    if (req->canceled_err!=0) {
+      err = req->canceled_err;
       if (req->owner != NULL) {
         uvreq->data = (void*)(-1); // signify to not deallocate in `nodec_req_free`
         // we leave it in the outstanding request where it will be freed when
@@ -287,7 +293,7 @@ static void async_request_resume(async_request_t* req, uv_req_t* uvreq, int err)
       uvreq->data = NULL;
       async_request_free(req);
     }
-    (*resumefun)(resume, local, uvreq, uv_errno_t);
+    (*resumefun)(resume, local, uvreq, err);
   }
 }
 
@@ -325,8 +331,36 @@ typedef struct _async_local_t {
   async_request_t requests;  // empty request to be the head of the queue of outstanding requests
   async_request_t canceled;  // empty request to be the head of the queue of canceled requests 
                              // these are deallocated when their owner is released.
+  uv_timer_t*     reaper;
 } async_local_t;
 
+
+static void _reaper_timeout_cb(void* data) {
+  uv_req_t* uvreq = (uv_req_t*)data;
+  async_req_resume(uvreq, UV_ETIMEDOUT);
+}
+
+static void _reaper_cb(uv_timer_t* timer) {
+  async_local_t* local = (async_local_t*)(timer->data);
+  uint64_t now = timer->loop->time;
+  uv_timer_again(timer);
+  // check if any outstanding requests timed out.
+  for (async_request_t* req = local->requests.next; req != NULL; req = req->next) {
+    if (req->uvreq != NULL && req->canceled_err==0 && req->due != 0 && req->due < now) {
+      // try primitive cancelation first; guarantees the callback is called with UV_ECANCELED
+      req->canceled_err = UV_ETIMEDOUT;
+      uv_errno_t err = uv_cancel(req->uvreq);
+      if (err != 0) {
+        // cancel failed; cancel it explicitly (through the eventloop instead using a 0 timeout)
+        // this is risky as async_req_resume can be invoked twice and the first return might 
+        // trigger deallocation of the uv_req_t structure which would be too early. Therefore,
+        // we set its `data` field to `-1` and check for that before deallocating a request.
+        _uv_set_timeout(local->loop, &_reaper_timeout_cb, req->uvreq, 0);
+        // todo: dont ignore errors here?
+      }
+    }
+  }
+}
 // Await an asynchronous request
 static lh_value _async_req_await(lh_resume resume, lh_value local, lh_value arg) {
   async_request_t* req = lh_async_request_ptr_value(arg);
@@ -350,6 +384,15 @@ static lh_value _async_req_register(lh_resume r, lh_value localv, lh_value arg) 
   async_local_t* local = (async_local_t*)lh_ptr_value(localv);
   async_request_t* req = lh_async_request_ptr_value(arg);
   assert(req != NULL);
+  // init reaper if necessary
+  if (local->reaper==NULL && req->due != 0) {
+    local->reaper = nodecx_zero_alloc(uv_timer_t);
+    if (local->reaper != NULL) {
+      uv_timer_init(local->loop, local->reaper);
+      local->reaper->data = local;
+      uv_timer_start(local->reaper, &_reaper_cb, 500, 500);
+    }
+  }
   // insert in front
   req->next = local->requests.next;
   if (req->next != NULL) req->next->prev = req;             // link back
@@ -366,7 +409,7 @@ static lh_value _async_owner_release(lh_resume r, lh_value localv, lh_value arg)
   if (owner != NULL) {
     for (async_request_t* req = local->requests.next; req != NULL; ) {  // TODO: linear lookup -- but probably ok.
       async_request_t* next = req->next;
-      if (req->canceled && req->owner == owner) {
+      if (req->canceled_err != 0 && req->owner == owner) {
         assert(req->uvreq != NULL && req->uvreq->data == (void*)(-1));
         nodec_req_force_free(req->uvreq);
         async_request_free(req);  // will unlink properly
@@ -381,6 +424,12 @@ static void _async_release(lh_value localv) {
   async_local_t* local = (async_local_t*)lh_ptr_value(localv);
   assert(local != NULL);
   assert(local->requests.next == NULL);
+  // stop reaper interval
+  if (local->reaper!=NULL) {
+    uv_timer_stop(local->reaper);
+    nodec_free(local->reaper);
+    local->reaper = NULL;
+  }
   // paranoia: clean up any left over outstanding requests
   for (async_request_t* req = local->requests.next; req != NULL; ) { 
     async_request_t* next = req->next;
@@ -401,9 +450,9 @@ static lh_value _async_uv_cancel(lh_resume resume, lh_value localv, lh_value sco
   async_local_t* local = (async_local_t*)lh_ptr_value(localv);
   const cancel_scope_t* scope = lh_cancel_scope_ptr_value(scopev);
   for( async_request_t* req = local->requests.next; req != NULL; req = req->next ) {
-    if (req->uvreq != NULL && !req->canceled && in_scope_of(req->scope, scope)) {
+    if (req->uvreq != NULL && req->canceled_err==0 && in_scope_of(req->scope, scope)) {
       // try primitive cancelation first; guarantees the callback is called with UV_ECANCELED
-      req->canceled = true;
+      req->canceled_err = UV_ETHROWCANCEL;
       uv_errno_t err = uv_cancel(req->uvreq);
       if (err != 0) {
         // cancel failed; cancel it explicitly (through the eventloop instead using a 0 timeout)
@@ -429,13 +478,14 @@ static const lh_operation _async_ops[] = {
 };
 static const lh_handlerdef _async_def = { LH_EFFECT(async), NULL, _async_release, NULL, _async_ops };
 
+
 lh_value async_handler(uv_loop_t* loop, lh_value(*action)(lh_value), lh_value arg) {
-  async_local_t* local = (async_local_t*)calloc(1,sizeof(async_local_t));
+  async_local_t* local = nodecx_zero_alloc(async_local_t);
   if (local == NULL) return lh_value_null;
   local->loop = loop;
   local->requests.next = NULL;
   local->requests.prev = NULL;
-  return lh_handle(&_async_def, lh_value_ptr(local), action, arg);
+  return lh_handle(&_async_def, lh_value_ptr(local), action, arg);  
 }
 
 
