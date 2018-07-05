@@ -331,16 +331,22 @@ typedef struct _async_local_t {
   async_request_t requests;  // empty request to be the head of the queue of outstanding requests
   async_request_t canceled;  // empty request to be the head of the queue of canceled requests 
                              // these are deallocated when their owner is released.
-  uv_timer_t*     reaper;
+  uv_timer_t*     periodic;  // interval timer. currently only used for timing out requests
+                             // on a slow interval but in the future could be used for light
+                             // weight timers sharing a single handle.
 } async_local_t;
 
 
-static void _reaper_timeout_cb(void* data) {
+/*-----------------------------------------------------------------
+  Timeouts and cancelation
+-----------------------------------------------------------------*/
+
+static void _periodic_force_timeout_cb(void* data) {
   uv_req_t* uvreq = (uv_req_t*)data;
   async_req_resume(uvreq, UV_ETIMEDOUT);
 }
 
-static void _reaper_cb(uv_timer_t* timer) {
+static void _periodic_cb(uv_timer_t* timer) {
   async_local_t* local = (async_local_t*)(timer->data);
   uint64_t now = timer->loop->time;
   uv_timer_again(timer);
@@ -355,12 +361,43 @@ static void _reaper_cb(uv_timer_t* timer) {
         // this is risky as async_req_resume can be invoked twice and the first return might 
         // trigger deallocation of the uv_req_t structure which would be too early. Therefore,
         // we set its `data` field to `-1` and check for that before deallocating a request.
-        _uv_set_timeout(local->loop, &_reaper_timeout_cb, req->uvreq, 0);
+        _uv_set_timeout(local->loop, &_periodic_force_timeout_cb, req->uvreq, 0);
         // todo: dont ignore errors here?
       }
     }
   }
 }
+
+static void _explicit_cancel_cb(void* data) {
+  uv_req_t* uvreq = (uv_req_t*)data;
+  async_req_resume(uvreq, UV_ETHROWCANCEL);
+}
+
+static lh_value _async_uv_cancel(lh_resume resume, lh_value localv, lh_value scopev) {
+  async_local_t* local = (async_local_t*)lh_ptr_value(localv);
+  const cancel_scope_t* scope = lh_cancel_scope_ptr_value(scopev);
+  for (async_request_t* req = local->requests.next; req != NULL; req = req->next) {
+    if (req->uvreq != NULL && req->canceled_err==0 && in_scope_of(req->scope, scope)) {
+      // try primitive cancelation first; guarantees the callback is called with UV_ECANCELED
+      req->canceled_err = UV_ETHROWCANCEL;
+      uv_errno_t err = uv_cancel(req->uvreq);
+      if (err != 0) {
+        // cancel failed; cancel it explicitly (through the eventloop instead using a 0 timeout)
+        // this is risky as async_req_resume can be invoked twice and the first return might 
+        // trigger deallocation of the uv_req_t structure which would be too early. Therefore,
+        // we set its `data` field to `-1` and check for that before deallocating a request.
+        _uv_set_timeout(local->loop, &_explicit_cancel_cb, req->uvreq, 0);
+        // todo: dont ignore errors here?
+      }
+    }
+  }
+  return lh_tail_resume(resume, localv, lh_value_null);
+}
+
+/*-----------------------------------------------------------------
+  Main Async Handler primitives
+-----------------------------------------------------------------*/
+
 // Await an asynchronous request
 static lh_value _async_req_await(lh_resume resume, lh_value local, lh_value arg) {
   async_request_t* req = lh_async_request_ptr_value(arg);
@@ -384,13 +421,13 @@ static lh_value _async_req_register(lh_resume r, lh_value localv, lh_value arg) 
   async_local_t* local = (async_local_t*)lh_ptr_value(localv);
   async_request_t* req = lh_async_request_ptr_value(arg);
   assert(req != NULL);
-  // init reaper if necessary
-  if (local->reaper==NULL && req->due != 0) {
-    local->reaper = nodecx_zero_alloc(uv_timer_t);
-    if (local->reaper != NULL) {
-      uv_timer_init(local->loop, local->reaper);
-      local->reaper->data = local;
-      uv_timer_start(local->reaper, &_reaper_cb, 500, 500);
+  // initialize periodic timer if necessary
+  if (local->periodic==NULL && req->due != 0) {
+    local->periodic = nodecx_zero_alloc(uv_timer_t);
+    if (local->periodic != NULL) {
+      uv_timer_init(local->loop, local->periodic);
+      local->periodic->data = local;
+      uv_timer_start(local->periodic, &_periodic_cb, 500, 500);
     }
   }
   // insert in front
@@ -425,10 +462,10 @@ static void _async_release(lh_value localv) {
   assert(local != NULL);
   assert(local->requests.next == NULL);
   // stop reaper interval
-  if (local->reaper!=NULL) {
-    uv_timer_stop(local->reaper);
-    nodec_free(local->reaper);
-    local->reaper = NULL;
+  if (local->periodic!=NULL) {
+    uv_timer_stop(local->periodic);
+    nodec_free(local->periodic);
+    local->periodic = NULL;
   }
   // paranoia: clean up any left over outstanding requests
   for (async_request_t* req = local->requests.next; req != NULL; ) { 
@@ -441,31 +478,6 @@ static void _async_release(lh_value localv) {
 }
 
 
-static void _explicit_cancel_cb(void* data) {
-  uv_req_t* uvreq = (uv_req_t*)data;
-  async_req_resume(uvreq, UV_ETHROWCANCEL);
-}
-
-static lh_value _async_uv_cancel(lh_resume resume, lh_value localv, lh_value scopev) {
-  async_local_t* local = (async_local_t*)lh_ptr_value(localv);
-  const cancel_scope_t* scope = lh_cancel_scope_ptr_value(scopev);
-  for( async_request_t* req = local->requests.next; req != NULL; req = req->next ) {
-    if (req->uvreq != NULL && req->canceled_err==0 && in_scope_of(req->scope, scope)) {
-      // try primitive cancelation first; guarantees the callback is called with UV_ECANCELED
-      req->canceled_err = UV_ETHROWCANCEL;
-      uv_errno_t err = uv_cancel(req->uvreq);
-      if (err != 0) {
-        // cancel failed; cancel it explicitly (through the eventloop instead using a 0 timeout)
-        // this is risky as async_req_resume can be invoked twice and the first return might 
-        // trigger deallocation of the uv_req_t structure which would be too early. Therefore,
-        // we set its `data` field to `-1` and check for that before deallocating a request.
-        _uv_set_timeout(local->loop, &_explicit_cancel_cb, req->uvreq, 0);  
-        // todo: dont ignore errors here?
-      }
-    }
-  }
-  return lh_tail_resume(resume, localv, lh_value_null);
-}
 
 // The main async handler
 static const lh_operation _async_ops[] = {

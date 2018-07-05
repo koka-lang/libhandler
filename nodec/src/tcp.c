@@ -262,7 +262,7 @@ static lh_value tcp_servev(lh_value argsv) {
         lh_exception_free(exn);
       }
     }}
-  } while (false);  // should be until termination
+  } while (true);  // should be until termination
   return lh_value_null;
 }
 
