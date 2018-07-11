@@ -2,7 +2,7 @@
 #include <nodec.h>
 #include <nodec-primitive.h>
 #include <http_parser.h>
-#include "http_parser_wrapper.h"
+#include "request.h"
 
 /*-----------------------------------------------------------------
   Test files
@@ -246,88 +246,11 @@ void test_connect() {
 
 
 /*-----------------------------------------------------------------
-Test HTTP
------------------------------------------------------------------*/
-
-int bVerbose = 1;
-
-void init_settings(struct http_parser_settings* settings);
-
-static const char* http_type_str(enum http_parser_type type)
-{
-	switch (type) {
-	case HTTP_REQUEST: return "HTTP_REQUEST";
-	case HTTP_RESPONSE: return "HTTP_RESPONSE";
-	case HTTP_BOTH: return "HTTP_BOTH";
-	default: return "UNKNOWN";
-	}
-}
-
-static int test_chunk(struct http_parser *parser, const struct http_parser_settings *settings, const char* chunk) {
-	size_t const len0 = strlen(chunk);
-	size_t const len1 = HTTP_PARSER_EXECUTE(parser, settings, chunk, len0);
-	if (parser->http_errno != HPE_OK || len0 != len1) {
-		printf("Parsing Error\n");
-		return 1;
-	}
-	else
-		return 0;
-}
-
-static void test_chunks(const char* chunks[], size_t nchunks, enum http_parser_type type) {
-	size_t i;
-	struct http_parser_settings settings;
-	struct http_parser parser;
-
-	init_settings(&settings);
-	HTTP_PARSER_INIT(&parser, type);
-	for (i = 0; i < nchunks; i++) {
-		if (test_chunk(&parser, &settings, chunks[i]) != 0)
-			break;
-	}
-	printf("  type: %s\n", http_type_str(parser.type));
-	if (parser.type == HTTP_REQUEST)
-		printf("  method: %s\n", http_method_str(parser.method));
-}
-
-
-static void test_httpx_serve(int strand_id, uv_stream_t* client) {
-	fprintf(stderr, "strand %i entered\n", strand_id);
-	// input
-	uv_buf_t buf = async_read_buf(client);
-  if (buf.len > 0) {
-    {with_free(buf.base) {
-      buf.base[buf.len] = 0;
-      printf("strand %i received:%u bytes\n%s\n", strand_id, buf.len, buf.base);
-      const char* chunks[] = { buf.base };
-      test_chunks(chunks, 1, HTTP_REQUEST);
-    }}
-  }
-	// work
-	printf("waiting %i secs...\n", 2 + strand_id);
-	async_wait(1000 + strand_id * 1000);  
-	//check_uverr(UV_EADDRINUSE);
-
-	// response
-	{with_alloc_n(128, char, content_len) {
-		snprintf(content_len, 128, "Content-Length: %zi\r\n\r\n", strlen(response_body));
-		printf("strand %i: response body is %zi bytes\n", strand_id, strlen(response_body));
-		const char* response[3] = { response_headers, content_len, response_body };
-		async_write_strs(client, response, 3);
-	}}
-	printf("request handled\n\n\n");
-}
-
-static void test_http() {
-	define_ip4_addr("127.0.0.1", 8080, addr);
-	async_http_server_at(addr, 0, 3, 0, &test_httpx_serve);
-}
-
-/*-----------------------------------------------------------------
   Main
 -----------------------------------------------------------------*/
 
 static void entry() {
+    void test_http();
   printf("in the main loop\n");
   //test_files();
   //test_interleave();
@@ -335,11 +258,11 @@ static void entry() {
   //test_tcp();
   //test_tty_raw();
   //test_tty();
-  test_tcp_tty();
+  //test_tcp_tty();
   //test_scandir();
   //test_dns();
   //test_connect();
-  // test_http();
+  test_http();
 }
 
 int main() {

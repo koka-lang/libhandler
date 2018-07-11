@@ -18,17 +18,43 @@
     <ClCompile Include="..\..\nodec\test\main.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\nodec\test\hexdump.c">
+    <ClCompile Include="..\..\nodec\test\debug.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\nodec\test\callbacks.c">
+    <ClCompile Include="..\..\nodec\test\utils.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\nodec\test\http_parser_wrapper.c">
+    <ClCompile Include="..\..\nodec\test\kvp.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\nodec\test\request.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\nodec\test\sbuf.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\nodec\test\test_http.c">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <Library Include="..\..\..\libuv\$(Configuration)\lib\libuv.lib" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\..\nodec\test\debug.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\nodec\test\utils.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\nodec\test\kvp.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\nodec\test\request.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\nodec\test\sbuf.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

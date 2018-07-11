@@ -149,13 +149,23 @@
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\..\nodec\test\callbacks.c" />
-    <ClCompile Include="..\..\nodec\test\hexdump.c" />
-    <ClCompile Include="..\..\nodec\test\http_parser_wrapper.c" />
+    <ClCompile Include="..\..\nodec\test\debug.c" />
+    <ClCompile Include="..\..\nodec\test\kvp.c" />
     <ClCompile Include="..\..\nodec\test\main.c" />
+    <ClCompile Include="..\..\nodec\test\request.c" />
+    <ClCompile Include="..\..\nodec\test\sbuf.c" />
+    <ClCompile Include="..\..\nodec\test\test_http.c" />
+    <ClCompile Include="..\..\nodec\test\utils.c" />
   </ItemGroup>
   <ItemGroup>
     <Library Include="..\..\..\libuv\$(Configuration)\lib\libuv.lib" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\..\nodec\test\debug.h" />
+    <ClInclude Include="..\..\nodec\test\kvp.h" />
+    <ClInclude Include="..\..\nodec\test\request.h" />
+    <ClInclude Include="..\..\nodec\test\sbuf.h" />
+    <ClInclude Include="..\..\nodec\test\utils.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
