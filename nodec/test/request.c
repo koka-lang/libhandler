@@ -226,7 +226,6 @@ int on_headers_complete(http_parser* parser)
 	}
 	R->previous = ON_HEADERS_COMPLETE;
 	R->headers_are_complete = true;
-    //R->content_length = parser->content_length == -1 ? 0 : parser->content_length;
     R->content_length = parser->content_length;
     R->connection_close = !http_should_keep_alive(parser);
 	return ans;
