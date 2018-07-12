@@ -244,13 +244,12 @@ void test_connect() {
   }}
 }
 
-
 /*-----------------------------------------------------------------
   Main
 -----------------------------------------------------------------*/
 
 static void entry() {
-    void test_http();
+  void test_http();
   printf("in the main loop\n");
   //test_files();
   //test_interleave();
