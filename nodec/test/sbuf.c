@@ -18,9 +18,10 @@ void sbuf_append(sbuf_t *sbuf, const char* s, size_t len, size_t buf_inc)
         sbuf->buffer = debug_realloc(sbuf->buffer, sbuf->total);
     }
     debug_memcpy(sbuf->buffer + sbuf->used, s, len);
-    // this does not mark the teminator as used so it can be overwritten
-    // by the next call to append
+    // sbuf->used does not include the terminator that I add in the next line
     sbuf->used += len;
+    // add a terminator after the end of the string, guarantees 
+    // printf will not go crazy
     sbuf->buffer[sbuf->used] = 0;
 }
 
@@ -35,7 +36,7 @@ size_t sbuf_add(sbuf_t *sbuf, const char* s, size_t len, size_t buf_inc)
     size_t start = 0;
     if (sbuf->used > 0) {
         start = sbuf->used + 1;
-        // this marks the terminator as used and can never be overwritten again
+        // the must now be accounted for so add it to the total used
         sbuf->used += 1;
     }
     sbuf_append(sbuf, s, len, buf_inc);

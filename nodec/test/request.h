@@ -5,7 +5,7 @@
 #include "kvp.h"
 
 /*****************************************************************************\
-*   string_g                                                                  *
+*   string_t                                                                  *
 *                                                                             *
 *       a safe string containing a pointer to the start of the string         *
 *       along with the length of the string not including any terminator      *

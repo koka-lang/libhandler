@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <ctype.h>
 #include <memory.h>
+#include <nodec.h>
 #include "debug.h"
 
 /*****************************************************************************\
@@ -12,7 +13,8 @@
 void debug_free(void* block)
 {
     printf("free(%p) -> void\n", block);
-    free(block);
+    //free(block);
+    nodec_free(block);
 }
 
 /*****************************************************************************\
@@ -22,7 +24,8 @@ void debug_free(void* block)
 \*****************************************************************************/
 void* debug_realloc(void* block, size_t size)
 {
-    void* ans = realloc(block, size);
+    // void* ans = realloc(block, size);
+    void* ans = nodec_realloc(block, size);
     printf("realloc(%p, %zu) -> %p\n", block, size, ans);
     return ans;
 }

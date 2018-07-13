@@ -110,6 +110,23 @@ static void process_request(http_request_t* const pR, uv_buf_t* pB) {
 }
 
 /*---------------------------------------------------------------------------*\
+*  http_request_freev                                                         *
+\*---------------------------------------------------------------------------*/
+static void http_request_freev(lh_value req) {
+    http_request_free(lh_ptr_value(req));
+}
+
+/*---------------------------------------------------------------------------*\
+*  process_request_buf                                                        *
+\*---------------------------------------------------------------------------*/
+static void process_request_buf(uv_buf_t* buf) {
+    http_request_t* const req = http_request_alloc();
+    {defer(http_request_freev, lh_value_ptr(req)) {
+        process_request(req, buf);
+    }}
+}
+
+/*---------------------------------------------------------------------------*\
 *  test_httpx_serve                                                           *
 \*---------------------------------------------------------------------------*/
 static void test_httpx_serve(int strand_id, uv_stream_t* client) {
@@ -117,21 +134,16 @@ static void test_httpx_serve(int strand_id, uv_stream_t* client) {
     // input
     uv_buf_t buf = async_read_buf(client);
     if (buf.len > 0) {
-        {
-            with_free(buf.base) {
-                buf.base[buf.len] = 0;
-                printf(
-                    "strand %i received:%u bytes\n%s\n",
-                    strand_id,
-                    buf.len,
-                    buf.base
-                );
-
-                http_request_t* const req = http_request_alloc();
-                process_request(req, &buf);
-                http_request_free(req);
-            }
-        }
+        {with_free(buf.base) {
+            buf.base[buf.len] = 0;
+            printf(
+                "strand %i received:%u bytes\n%s\n",
+                strand_id,
+                buf.len,
+                buf.base
+            );
+            process_request_buf(&buf);
+        }}
     }
     // work
     printf("waiting %i secs...\n", 2);
