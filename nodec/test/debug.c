@@ -18,6 +18,18 @@ void debug_free(void* block)
 }
 
 /*****************************************************************************\
+*  debug_calloc                                                               *
+*                                                                             *
+*   A debug version of calloc                                                 *
+\*****************************************************************************/
+void* debug_calloc(size_t num, size_t size)
+{
+    void* ans = nodec_calloc(num, size);
+    printf("calloc(%zu, %zu) -> %p\n", num, size, ans);
+    return ans;
+}
+
+/*****************************************************************************\
 *  debug_realloc                                                              *
 *                                                                             *
 *   A debug version of realloc                                                *

@@ -6,6 +6,7 @@
 *   exports                                                                   *
 \*****************************************************************************/
 void debug_free(void* block);
+void* debug_calloc(size_t num, size_t size);
 void* debug_realloc(void* block, size_t size);
 void debug_memcpy(void* dst, const void* src, size_t size);
 void hexDump(const void *addr, size_t len, const char* prefix);

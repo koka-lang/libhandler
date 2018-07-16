@@ -7,52 +7,6 @@
 const char* response_headers;
 const char* response_body;
 
-/*-----------------------------------------------------------------
-Test HTTP
------------------------------------------------------------------*/
-
-//int bVerbose = 1;
-//
-//void init_settings(struct http_parser_settings* settings);
-//
-//static const char* http_type_str(enum http_parser_type type)
-//{
-//	switch (type) {
-//	case HTTP_REQUEST: return "HTTP_REQUEST";
-//	case HTTP_RESPONSE: return "HTTP_RESPONSE";
-//	case HTTP_BOTH: return "HTTP_BOTH";
-//	default: return "UNKNOWN";
-//	}
-//}
-//
-//static int test_chunk(struct http_parser *parser, const struct http_parser_settings *settings, const char* chunk) {
-//	size_t const len0 = strlen(chunk);
-//	size_t const len1 = HTTP_PARSER_EXECUTE(parser, settings, chunk, len0);
-//	if (parser->http_errno != HPE_OK || len0 != len1) {
-//		printf("Parsing Error\n");
-//		return 1;
-//	}
-//	else
-//		return 0;
-//}
-//
-//static void test_chunks(const char* chunks[], size_t nchunks, enum http_parser_type type) {
-//	size_t i;
-//	struct http_parser_settings settings;
-//	struct http_parser parser;
-//
-//	init_settings(&settings);
-//	HTTP_PARSER_INIT(&parser, type);
-//	for (i = 0; i < nchunks; i++) {
-//		if (test_chunk(&parser, &settings, chunks[i]) != 0)
-//			break;
-//	}
-//	printf("  type: %s\n", http_type_str(parser.type));
-//	if (parser.type == HTTP_REQUEST)
-//		printf("  method: %s\n", http_method_str(parser.method));
-//}
-//
-
 /*---------------------------------------------------------------------------*\
 *   header_callback_t                                                         *
 \*---------------------------------------------------------------------------*/
@@ -103,10 +57,10 @@ static void process_completed_request(http_request_t* req) {
 /*---------------------------------------------------------------------------*\
 *  process_request                                                            *
 \*---------------------------------------------------------------------------*/
-static void process_request(http_request_t* const pR, uv_buf_t* pB) {
-    http_request_execute(pR, pB->base, pB->len);
-    if (http_request_headers_are_complete(pR))
-        process_completed_request(pR);
+static void process_request(http_request_t* const Req, uv_buf_t* Buffer) {
+    http_request_execute(Req, Buffer->base, Buffer->len);
+    if (http_request_headers_are_complete(Req))
+        process_completed_request(Req);
 }
 
 /*---------------------------------------------------------------------------*\

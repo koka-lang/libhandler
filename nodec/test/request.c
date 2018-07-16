@@ -66,7 +66,7 @@ static void http_request_init(http_request_t* self)
 \*****************************************************************************/
 http_request_t* http_request_alloc()
 {
-    http_request_t* ans = (http_request_t*)debug_realloc(0, sizeof(*ans));
+    http_request_t* ans = (http_request_t*)debug_calloc(1, sizeof(*ans));
     http_request_init(ans);
     return ans;
 }
