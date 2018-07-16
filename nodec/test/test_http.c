@@ -58,6 +58,8 @@ static void process_completed_request(http_request_t* req) {
 *  process_request                                                            *
 \*****************************************************************************/
 static void process_request(http_request_t* const Req, uv_buf_t* Buffer) {
+    extern bool debug_verbose;
+    debug_verbose = false;
     http_request_execute(Req, Buffer->base, Buffer->len);
     if (http_request_headers_are_complete(Req))
         process_completed_request(Req);

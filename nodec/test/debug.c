@@ -5,6 +5,8 @@
 #include <nodec.h>
 #include "debug.h"
 
+bool debug_verbose = true;
+
 /*****************************************************************************\
 *  debug_free                                                                 *
 *                                                                             *
@@ -12,7 +14,8 @@
 \*****************************************************************************/
 void debug_free(void* block)
 {
-    printf("free(%p) -> void\n", block);
+    if (debug_verbose)
+        printf("free(%p) -> void\n", block);
     //free(block);
     nodec_free(block);
 }
@@ -25,7 +28,8 @@ void debug_free(void* block)
 void* debug_calloc(size_t num, size_t size)
 {
     void* ans = nodec_calloc(num, size);
-    printf("calloc(%zu, %zu) -> %p\n", num, size, ans);
+    if (debug_verbose)
+        printf("calloc(%zu, %zu) -> %p\n", num, size, ans);
     return ans;
 }
 
@@ -38,7 +42,8 @@ void* debug_realloc(void* block, size_t size)
 {
     // void* ans = realloc(block, size);
     void* ans = nodec_realloc(block, size);
-    printf("realloc(%p, %zu) -> %p\n", block, size, ans);
+    if (debug_verbose)
+        printf("realloc(%p, %zu) -> %p\n", block, size, ans);
     return ans;
 }
 
@@ -82,7 +87,8 @@ void hexDump(const void *addr, size_t len, const char* prefix)
 \*****************************************************************************/
 void debug_memcpy(void* dst, const void* src, size_t size)
 {
-    printf("debug_memcpy(%p, %p, %zu)\n", dst, src, size);
+    if (debug_verbose)
+        printf("debug_memcpy(%p, %p, %zu)\n", dst, src, size);
     memcpy(dst, src, size);
 }
 
@@ -105,8 +111,10 @@ void pause(const char* msg)
 \*****************************************************************************/
 void print_parser_only(const char* name, const http_parser *p)
 {
-	printf("\n%s:\n", name);
-	printf("  http_parser: %p\n", p);
+    if (debug_verbose) {
+        printf("\n%s:\n", name);
+        printf("  http_parser: %p\n", p);
+    }
 }
 
 /*****************************************************************************\
@@ -116,9 +124,11 @@ void print_parser_only(const char* name, const http_parser *p)
 \*****************************************************************************/
 void print_all(const char* name, const http_parser *p, const char *buf, size_t len)
 {
-	print_parser_only(name, p);
-	printf("  buf: %p\n", buf);
-	printf("  len: %zu\n", len);
-	if (buf != 0 && len > 0)
-		hexDump(buf, len, "Memory");
+    if (debug_verbose) {
+        print_parser_only(name, p);
+        printf("  buf: %p\n", buf);
+        printf("  len: %zu\n", len);
+        if (buf != 0 && len > 0)
+            hexDump(buf, len, "Memory");
+    }
 }

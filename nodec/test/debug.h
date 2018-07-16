@@ -1,5 +1,6 @@
 #pragma once
 #include <stdlib.h>
+#include <stdbool.h>
 #include "http_parser.h"
 
 /*****************************************************************************\
@@ -13,3 +14,4 @@ void hexDump(const void *addr, size_t len, const char* prefix);
 void pause(const char* msg);
 void print_parser_only(const char* name, const http_parser *p);
 void print_all(const char* name, const http_parser *p, const char *buf, size_t len);
+bool debug_verbose;
