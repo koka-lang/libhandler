@@ -10,6 +10,7 @@
 
 #include <libhandler.h>
 #include <uv.h>
+#include <http_parser.h>
 
 /* ----------------------------------------------------------------------------
   Notes:
@@ -206,10 +207,12 @@ uv_stream_t*    async_tcp_channel_receive(tcp_channel_t* ch);
 
 // Convenience:
 
-typedef void    (nodec_tcp_servefun)(int id, uv_stream_t* client);
+typedef void    (nodec_tcp_servefun)(int id, uv_stream_t* client, lh_value arg);
 
 void async_tcp_server_at(const struct sockaddr* addr, int backlog, int max_interleaving, 
-                          uint64_t timeout, nodec_tcp_servefun* servefun, lh_actionfun* on_exn);
+                          uint64_t timeout, 
+                          nodec_tcp_servefun* servefun, lh_actionfun* on_exn,
+                          lh_value arg);
 
 uv_stream_t* async_tcp_connect_at(const struct sockaddr* addr);
 uv_stream_t* async_tcp_connect(const char* host, const char* service /*NULL="http"*/);
@@ -218,92 +221,87 @@ uv_stream_t* async_tcp_connect(const char* host, const char* service /*NULL="htt
 /* ----------------------------------------------------------------------------
   HTTP
 -----------------------------------------------------------------------------*/
-typedef int http_status;
+typedef enum http_status http_status_t;
+typedef enum http_method http_method_t;
 
-void throw_http_err(http_status status);
-void throw_http_err_str(http_status status, const char* msg);
-void throw_http_err_strdup(http_status status, const char* msg);
-const char* nodec_http_get_reason(http_status code);
+typedef struct _http_in_t http_in_t;
+typedef struct _http_out_t http_out_t;
+
+void throw_http_err(http_status_t status);
+void throw_http_err_str(http_status_t status, const char* msg);
+void throw_http_err_strdup(http_status_t status, const char* msg);
+const char* nodec_http_status_str(http_status_t code);
+const char* nodec_http_method_str(http_method_t method);
+
+
+typedef void (nodec_http_servefun)(int strand_id, http_in_t* in, http_out_t* out, lh_value arg);
 
 void async_http_server_at(const struct sockaddr* addr, int backlog, int max_interleaving, 
-                          uint64_t timeout, nodec_tcp_servefun* servefun);
+                          uint64_t timeout, nodec_http_servefun* servefun, lh_value arg);
 
 
+typedef lh_value (http_connect_fun)(http_in_t* in, http_out_t* out, lh_value arg);
+
+lh_value async_http_connect(const char* url, http_connect_fun* connectfun, lh_value arg);
 
 
-typedef enum http_method http_method_t;
-typedef struct _http_req_t http_req_t;
+void   http_in_clear(http_in_t* in);
+void   http_in_clearv(lh_value inv);
+size_t async_http_in_init(http_in_t* in, uv_stream_t* stream, bool is_request );
 
-void http_req_free(http_req_t* req);
-void http_req_freev(lh_value reqv);
-http_req_t*   async_http_req_alloc(uv_stream_t* stream);
+const char*   http_in_url(http_in_t* in);
+http_status_t   http_in_status(http_in_t* in);
+http_method_t http_in_method(http_in_t* in);
+uint64_t      http_in_content_length(http_in_t* in);
+const char*   http_in_header(http_in_t* in, const char* name);
+const char*   http_in_header_next(http_in_t* in, const char** value, size_t* iter);
 
-#define with_http_req(stream,name)  http_req_t* name = async_http_req_alloc(stream); defer(http_req_freev,lh_value_ptr(name)) 
+// use this on connections to wait for a response
+size_t async_http_in_read_headers(http_in_t* in);
 
-uv_buf_t      async_http_req_read_body_buf(http_req_t* req);
-uv_buf_t      async_http_req_read_body(http_req_t* req, size_t initial_size);
+// Read body in parts; returned buffer is only valid until the next read
+// Returns a null buffer when the end is reached.
+uv_buf_t      async_http_in_read_body_buf(http_in_t* in);
 
-const char*   http_req_url(http_req_t* req);
-uint16_t      http_req(http_req_t* req);
-http_method_t http_req_method(http_req_t* req);
-uint64_t      http_req_content_length(http_req_t* req);
-const char*   http_req_header(http_req_t* req, const char* name);
-const char*   http_req_header_next(http_req_t* req, const char** value, size_t* iter);
+// Read the full body; the returned buf should be deallocated by the caller.
+// Pass `initial_size` 0 to automatically use the content-length or initially
+// received buffer size.
+uv_buf_t      async_http_in_read_body(http_in_t* in, size_t initial_size);
 
-
-/* ----------------------------------------------------------------------------
-Copyright (c) 2018, Microsoft Research, Daan Leijen
-This is free software; you can redistribute it and/or modify it under the
-terms of the Apache License, Version 2.0. A copy of the License can be
-found in the file "license.txt" at the root of this distribution.
------------------------------------------------------------------------------*/
-#include "nodec.h"
-#include "nodec-primitive.h"
-#include "nodec-internal.h"
-#include <assert.h>
-
-#ifdef _MSC_VER
-# include <malloc.h>
-# define alloca _alloca
-#else
-# include <alloca.h>
-#endif
 
 /*-----------------------------------------------------------------
 
 -----------------------------------------------------------------*/
 
-typedef struct _http_response_t {
-  uv_stream_t* stream;
-  uv_buf_t     head;
-  size_t       head_offset;
-} http_response_t;
 
-void http_resp_init(http_response_t* resp, uv_stream_t* stream);
-void http_resp_clear(http_response_t* resp);
-void http_resp_clearv(lh_value respv);
+void http_out_init(http_out_t* out, uv_stream_t* stream);
+void http_out_init_server(http_out_t* out, uv_stream_t* stream, const char* server_name);
+void http_out_init_client(http_out_t* out, uv_stream_t* stream, const char* host_name);
 
-#define with_http_resp(stream,resp)  http_response_t _resp; http_response_t* resp = &_resp; http_resp_init(resp,stream); defer(http_resp_clearv,lh_value_any_ptr(resp))
+void http_out_clear(http_out_t* out);
+void http_out_clearv(lh_value respv);
+
+#define with_http_out(stream,out)  http_out_t _resp; http_out_t* out = &_resp; http_out_init(out,stream); defer(http_out_clearv,lh_value_any_ptr(out))
 
 // Add headers
-void http_resp_add_header(http_response_t* resp, const char* field, const char* value);
+void http_out_add_header(http_out_t* out, const char* field, const char* value);
 
 // Send the headers
-void http_resp_send_headers(http_response_t* resp, const char* prefix, const char* postfix);
-void http_resp_send_status_headers(http_response_t* resp, http_status status, bool end);
-void http_resp_send_request_headers(http_response_t* resp, http_method_t method, const char* url, const char* host, bool end);
+void http_out_send_headers(http_out_t* out, const char* prefix, const char* postfix);
+void http_out_send_status_headers(http_out_t* out, http_status_t status, bool end);
+void http_out_send_request_headers(http_out_t* out, http_method_t method, const char* url, bool end);
 
 // Send full body at once
-void http_resp_send_body_bufs(http_response_t* resp, uv_buf_t bufs[], size_t count);
-void http_resp_send_body_buf(http_response_t* resp, uv_buf_t buf);
-void http_resp_send_body(http_response_t* resp, const char* s);
+void http_out_send_body_bufs(http_out_t* out, uv_buf_t bufs[], size_t count);
+void http_out_send_body_buf(http_out_t* out, uv_buf_t buf);
+void http_out_send_body(http_out_t* out, const char* s);
 
 // Send chunked up body
-void http_resp_send_chunked_start(http_response_t* resp);
-void http_resp_send_chunk_bufs(http_response_t* resp, uv_buf_t bufs[], size_t count);
-void http_resp_send_chunk_buf(http_response_t* resp, uv_buf_t buf);
-void http_resp_send_chunk(http_response_t* resp, const char* s);
-void http_resp_send_chunked_end(http_response_t* resp);
+void http_out_send_chunked_start(http_out_t* out);
+void http_out_send_chunk_bufs(http_out_t* out, uv_buf_t bufs[], size_t count);
+void http_out_send_chunk_buf(http_out_t* out, uv_buf_t buf);
+void http_out_send_chunk(http_out_t* out, const char* s);
+void http_out_send_chunked_end(http_out_t* out);
 
 
 

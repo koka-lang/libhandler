@@ -1,4 +1,5 @@
 #include <stdio.h>
+
 #include <nodec.h>
 #include <nodec-primitive.h>
 #include <http_parser.h>
@@ -103,25 +104,16 @@ const char* response_body =
 "</body>\n"
 "</html>\n";
 
-
-static void test_http_serve(int strand_id, uv_stream_t* client) {
-  fprintf(stderr, "strand %i entered\n", strand_id);
-  // input
-  /*
-  const char* input = async_read(client);
-  {with_free(input) {
-    printf("strand %i received:%zi bytes\n%s", strand_id, strlen(input), input);
-  }}
-  */
-  {with_http_req(client, req) {
-    printf("strand %i request, url: %s, content length: %llu\n", strand_id, http_req_url(req), http_req_content_length(req));
-    size_t iter = 0;
-    const char* value;
-    const char* name;
-    while ((name = http_req_header_next(req, &value, &iter)) != NULL) {
-      printf(" header: %s: %s\n", name, value);
-    }
-    uv_buf_t buf = async_http_req_read_body(req, 0);
+void http_in_print(http_in_t* in) {
+  printf("headers: \n");
+  size_t iter = 0;
+  const char* value;
+  const char* name;
+  while ((name = http_in_header_next(in, &value, &iter)) != NULL) {
+    printf(" %s: %s\n", name, value);
+  }
+  {with_buf(buf) {
+    buf = async_http_in_read_body(in, 0);
     if (buf.base != NULL) {
       buf.base[buf.len] = 0;
       if (buf.len <= 80) {
@@ -131,27 +123,30 @@ static void test_http_serve(int strand_id, uv_stream_t* client) {
         buf.base[30] = 0;
         printf("body: %s ... %s\n", buf.base, buf.base + buf.len - 30);
       }
-      nodec_free(buf.base);
     }
   }}
+}
+
+static void test_http_serve(int strand_id, http_in_t* in, http_out_t* out, lh_value arg) {
+  fprintf(stderr, "strand %i entered\n", strand_id);
+  // input
+  printf("strand %i request, url: %s, content length: %llu\n", strand_id, http_in_url(in), http_in_content_length(in));
+  http_in_print(in);
+
   // work
   printf("waiting %i secs...\n", 2 + strand_id); 
   async_wait(1000 + strand_id*1000);
   //check_uverr(UV_EADDRINUSE);
 
   // response
-  {with_alloc_n(128, char, content_len) {
-    snprintf(content_len, 128, "Content-Length: %zi\r\n\r\n", strlen(response_body));
-    printf("strand %i: response body is %zi bytes\n", strand_id, strlen(response_body));
-    const char* response[3] = { response_headers, content_len, response_body };
-    async_write_strs(client, response, 3);
-  }}
+  http_out_add_header(out,"Content-Type","text/html; charset=utf-8");
+  http_out_send_status_headers(out,HTTP_STATUS_OK,true);
   printf("request handled\n\n\n");
 }
 
 static void test_tcp() {
   define_ip4_addr("127.0.0.1", 8080,addr);
-  async_http_server_at( addr, 0, 3, 5000, &test_http_serve );
+  async_http_server_at( addr, 0, 3, 5000, &test_http_serve, lh_value_null );
 }
 
 
@@ -256,19 +251,17 @@ const char* http_request =
   "Connection: close\r\n"
   "\r\n";
 
+lh_value test_connection(http_in_t* in, http_out_t* out, lh_value arg) {
+  http_out_add_header(out, "Connection", "close");
+  http_out_send_request_headers(out, HTTP_GET, "/", true);
+  async_http_in_read_headers(in); // wait for response
+  printf("received, status: %i, content length: %llu\n", http_in_status(in), http_in_content_length(in));
+  http_in_print(in);
+  return lh_value_null;
+}
+
 void test_connect() {
-  uv_stream_t* conn = async_tcp_connect("bing.com","http");
-  {with_stream(conn) {
-    {with_http_resp(conn,resp) {
-      //async_write(conn, http_request);
-      http_resp_add_header(resp, "Connection", "close");
-      http_resp_send_request_headers(resp, HTTP_GET, "/", "www.bing.com", true);
-      char* body = async_read_all(conn);
-      {with_free(body) {
-        printf("received:\n%s", body);
-      }}
-    }}
-  }}
+  async_http_connect("www.bing.com", test_connection, lh_value_null);
 }
 
 /*-----------------------------------------------------------------
@@ -312,12 +305,13 @@ static void entry() {
   //test_tcp();
   //test_tty_raw();
   //test_tty();
-  //test_tcp_tty();
   //test_scandir();
   //test_dns();
-  test_connect();
   //test_http();
   //test_as_client();
+  //test_connect();
+  test_tcp_tty();
+
 }
 
 int main() {

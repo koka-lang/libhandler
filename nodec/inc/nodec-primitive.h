@@ -10,7 +10,6 @@
 #define __nodec_primitive_h
 
 #include "nodec.h"
-#include <http_parser.h>
 
 // ---------------------------------------------------------------------------------
 // NodeC primitive functions that might be used by certain clients

@@ -195,6 +195,7 @@ typedef struct _tcp_serve_args {
   uint64_t            timeout;
   nodec_tcp_servefun* serve;
   lh_actionfun*       on_exn;
+  lh_value            arg;
 } tcp_serve_args;
 
 typedef struct _tcp_client_args {
@@ -203,11 +204,12 @@ typedef struct _tcp_client_args {
   uv_stream_t*  client;
   nodec_tcp_servefun* serve;
   int           keepalive;
+  lh_value      arg;
 } tcp_client_args;
 
 static lh_value tcp_serve_client(lh_value argsv) {
   tcp_client_args* args = (tcp_client_args*)lh_ptr_value(argsv);
-  args->serve(args->id, args->client);
+  args->serve(args->id, args->client, args->arg);
   return lh_value_null;
 }
 
@@ -249,7 +251,7 @@ static lh_value tcp_servev(lh_value argsv) {
     uv_stream_t* client = async_tcp_channel_receive(args.ch);
     {with_stream(client) {
       lh_exception* exn;
-      tcp_client_args cargs = { id, args.timeout, client, args.serve, 5 };
+      tcp_client_args cargs = { id, args.timeout, client, args.serve, 5, args.arg };
       lh_try( &exn, &tcp_serve_keepalive, lh_value_any_ptr(&cargs)); 
       if (exn != NULL) {
         // send an exception response
@@ -267,13 +269,16 @@ static lh_value tcp_servev(lh_value argsv) {
 }
 
 void async_tcp_server_at(const struct sockaddr* addr, int backlog, int max_interleaving, uint64_t timeout, 
-                           nodec_tcp_servefun* servefun, lh_actionfun* on_exn) {
+                           nodec_tcp_servefun* servefun, lh_actionfun* on_exn,
+                           lh_value arg) 
+{
   tcp_channel_t* ch = nodec_tcp_listen_at(addr, backlog);
   {with_tcp_channel(ch) {
     {with_alloc(tcp_serve_args, sargs) {
       sargs->ch = ch;
       sargs->timeout = timeout;
       sargs->serve = servefun;
+      sargs->arg = arg;
       sargs->on_exn = (on_exn == NULL ? &async_log_tcp_exn : on_exn);
       {with_alloc_n(max_interleaving, lh_actionfun*, actions) {
         {with_alloc_n(max_interleaving, lh_value, args) {

@@ -34,32 +34,18 @@ const char* http_error_body =
 "</html>\n";
 
 
-typedef struct _http_err_reason {
-  http_status status;
-  const char* reason;
-} http_err_reason;
 
-static http_err_reason http_reasons[] = {
-  // Use HTTP_STATUS_MAP from <http_parser.h>
-  #define XX(num, name, string) { num, #string },
-  HTTP_STATUS_MAP(XX)
-  #undef XX
-  { -1, NULL }
-};
-
-const char* nodec_http_get_reason(http_status code) {
-  const char* reason = "Unknown";
-  for (http_err_reason* r = http_reasons; r->reason != NULL; r++) {
-    if (r->status == code) {
-      reason = r->reason;
-      break;
-    }
-  }
-  return reason;
+const char* nodec_http_status_str(http_status_t code) {
+  return http_status_str(code);
 }
 
-static void async_write_http_err(uv_stream_t* client, http_status code, const char* msg) {
-  const char* reason = nodec_http_get_reason(code);
+const char* nodec_http_method_str(http_method_t method) {
+  return http_method_str(method);
+}
+
+
+static void async_write_http_err(uv_stream_t* client, http_status_t code, const char* msg) {
+  const char* reason = nodec_http_status_str(code);
   char body[256];
   snprintf(body, 255, http_error_body, code, reason, (msg == NULL ? "" : ": "), (msg == NULL ? "" : msg));
   body[255] = 0;
@@ -71,24 +57,23 @@ static void async_write_http_err(uv_stream_t* client, http_status code, const ch
   async_write_strs(client, strs, 2);
 }
 
-void throw_http_err_str(http_status status, const char* msg) {
+void throw_http_err_str(http_status_t status, const char* msg) {
   lh_throw_str(UV_EHTTP - status, msg);
 }
 
-void throw_http_err_strdup(http_status status, const char* msg) {
+void throw_http_err_strdup(http_status_t status, const char* msg) {
   lh_throw_strdup(UV_EHTTP - status, msg);
 }
 
-void throw_http_err(http_status status) {
+void throw_http_err(http_status_t status) {
   throw_http_err_str(status, NULL);
 }
 
-
-static lh_value async_write_http_exnv(lh_value exnv) {
+lh_value async_write_http_exnv(lh_value exnv) {
   lh_exception* exn = (lh_exception*)lh_ptr_value(exnv);
   if (exn == NULL || exn->data == NULL) return lh_value_null;
   uv_stream_t* client = exn->data;
-  http_status status = 500;
+  http_status_t status = 500;
   if (exn->code < UV_EHTTP && exn->code >(UV_EHTTP - 600)) {
     status = -(exn->code - UV_EHTTP);
   }
@@ -97,6 +82,4 @@ static lh_value async_write_http_exnv(lh_value exnv) {
 }
 
 
-void async_http_server_at(const struct sockaddr* addr, int backlog, int n, uint64_t timeout, nodec_tcp_servefun* servefun) {
-  async_tcp_server_at(addr, backlog, n, timeout, servefun, &async_write_http_exnv);
-}
+

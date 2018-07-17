@@ -82,45 +82,5 @@ static void process_request_buf(uv_buf_t* buf) {
   }}
 }
 
-/*-----------------------------------------------------------------------------
-   test_httpx_serve
------------------------------------------------------------------------------*/
-static void test_httpx_serve(int strand_id, uv_stream_t* client) {
-  fprintf(stderr, "strand %i entered\n", strand_id);
-  // input
-  uv_buf_t buf = async_read_buf(client);
-  if (buf.len > 0) {
-    {with_free(buf.base) {
-      buf.base[buf.len] = 0;
-      printf(
-        "strand %i received:%u bytes\n%s\n",
-        strand_id,
-        buf.len,
-        buf.base
-      );
-      process_request_buf(&buf);
-    }}
-  }
-  // work
-  printf("waiting %i secs...\n", 2);
-  async_wait(1000 + strand_id * 1000);
-  //check_uverr(UV_EADDRINUSE);
 
-  // response
-  {with_alloc_n(128, char, content_len) {
-    snprintf(content_len, 128, "Content-Length: %zi\r\n\r\n", strlen(response_body));
-    printf("strand %i: response body is %zi bytes\n", strand_id, strlen(response_body));
-    const char* response[3] = { response_headers, content_len, response_body };
-    async_write_strs(client, response, 3);
-  }}
-  printf("request handled\n\n\n");
-}
-
-/*-----------------------------------------------------------------------------
-   process_completed_request
------------------------------------------------------------------------------*/
-void test_http() {
-  define_ip4_addr("127.0.0.1", 8080, addr);
-  async_http_server_at(addr, 0, 3, 0, &test_httpx_serve);
-}
 
