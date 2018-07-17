@@ -356,7 +356,11 @@ static read_stream_t* nodec_get_read_stream(uv_stream_t* stream) {
 void nodec_set_read_max(uv_stream_t* stream, size_t read_max) {
   read_stream_t* rs = nodec_get_read_stream(stream);
   if (rs==NULL) return;
-  rs->read_max = (read_max > 0 ? read_max : 1024 * 1024 * 1024);  // 1Gb by default
+  size_t newmax = (read_max > 0 ? read_max : 1024 * 1024 * 1024);  // 1Gb by default
+  if (rs->read_total >= rs->read_max && newmax > rs->read_max) {
+    rs->eof = false;  // todo: is this ok if the real eof was already reached?
+  }
+  rs->read_max = newmax;
 }
 
 void nodec_read_restart(uv_stream_t* stream) {

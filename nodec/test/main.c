@@ -114,7 +114,25 @@ static void test_http_serve(int strand_id, uv_stream_t* client) {
   }}
   */
   {with_http_req(client, req) {
-    printf("strand %i request, url: %s, accept: %s\n", strand_id, http_req_url(req), http_req_header(req,"accept"));
+    printf("strand %i request, url: %s, content length: %llu\n", strand_id, http_req_url(req), http_req_content_length(req));
+    size_t iter = 0;
+    const char* value;
+    const char* name;
+    while ((name = http_req_header_next(req, &value, &iter)) != NULL) {
+      printf(" header: %s: %s\n", name, value);
+    }
+    uv_buf_t buf = async_http_req_read_body(req, 0);
+    if (buf.base != NULL) {
+      buf.base[buf.len] = 0;
+      if (buf.len <= 80) {
+        printf("body: %s\n", buf.base);
+      }
+      else {
+        buf.base[30] = 0;
+        printf("body: %s ... %s\n", buf.base, buf.base + buf.len - 30);
+      }
+      nodec_free(buf.base);
+    }
   }}
   // work
   printf("waiting %i secs...\n", 2 + strand_id); 

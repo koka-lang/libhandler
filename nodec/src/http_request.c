@@ -38,8 +38,8 @@ static void http_headers_add(http_headers_t* headers, const char* name, const ch
   http_header_t* h = &headers->elems[headers->count];
   headers->count++;
   h->name = strdup ? nodec_strdup(name) : name;
-  h->value = strdup ? nodec_strdup(value) : name;
-  h->_do_free = !strdup;
+  h->value = strdup ? nodec_strdup(value) : value;
+  h->_do_free = strdup;
 }
 
 static void http_header_clear(http_header_t* header) {
@@ -139,7 +139,8 @@ typedef struct _http_req_t
   http_parser     parser; // the request parser on the stream
   http_parser_settings parser_settings;
 
-  const char*     url;     // parsed url
+  const char*     url;            // parsed url
+  size_t          content_length; // real content length from headers
   http_headers_t  headers; // parsed headers; usually pointing into `prefix`
   uv_buf_t        prefix;  // the initially read buffer that holds all initial headers
 
@@ -169,6 +170,11 @@ static int on_header_value(http_parser* parser, const char* at, size_t len) {
   http_req_t* req = (http_req_t*)parser->data;
   terminate(req, at, len);
   http_headers_add(&req->headers, req->current_field, at, req->headers_complete); // allocate if the headers are complete as the buffer might have changed
+  if (_stricmp(req->current_field, "content-length")==0) {
+    long long len = atoll(at);
+    printf("read content-length: %lli\n", len);
+    if (len >= 0 && len <= SIZE_MAX) req->content_length = (size_t)len;
+  }
   req->current_field = NULL;
   return 0;
 }
@@ -183,6 +189,7 @@ static int on_url(http_parser* parser, const char* at, size_t len) {
 
 static int on_body(http_parser* parser, const char* at, size_t len) {
   http_req_t* req = (http_req_t*)parser->data;
+  terminate(req, at, len); // TODO: I think this is always safe since stream reads always over allocate by 1...
   req->current_body = nodec_buf((char*)at, len);  // remember this body piece
   http_parser_pause(parser, 1);             // and pause the parser, returning from execute! (with parser->errno set to HPE_PAUSED)
   return 0;
@@ -239,6 +246,7 @@ http_req_t* async_http_req_alloc(uv_stream_t* stream)
   }
   // set the default stream read capacity again for futher reading (=1Gb)
   nodec_set_read_max(stream, 0);
+  // printf("\n\nraw read: %s\n\n\n", req->current.base);
 
   // only if successful initialize a request object
   http_req_t* req = nodec_zero_alloc(http_req_t);
@@ -294,8 +302,10 @@ uv_buf_t async_http_req_read_body_buf(http_req_t* req)
         req->current_offset = 0;
       }
       // and read a fresh buffer async from the stream
-      req->current = async_read_buf(req->stream);
+      req->current = async_read_buf(req->stream);     
       if (req->current.base == NULL || req->current.len == 0) throw_http_err(HTTP_STATUS_BAD_REQUEST);
+      req->current.base[req->current.len] = 0;
+      // printf("\n\nraw read: %s\n\n\n", req->current.base);
     }
 
     // we have a current buffer, parse a body piece (or read to eof)
@@ -316,6 +326,7 @@ uv_buf_t async_http_req_read_body_buf(http_req_t* req)
   assert(req->current_body.base != NULL);
   uv_buf_t body = req->current_body;
   req->current_body = nodec_buf_null();
+  printf("read body part: len: %i\n", body.len);
   return body;  // a view into our current buffer, valid until the next read
 }
 
@@ -324,29 +335,35 @@ uv_buf_t async_http_req_read_body_buf(http_req_t* req)
 // The initial_size can be 0 in which case the content_length or initially read buffer length is used.
 uv_buf_t async_http_req_read_body(http_req_t* req, size_t initial_size) {
   uv_buf_t body = nodec_buf_null();
-  {on_abort(nodec_free_bufrefv, lh_value_ptr(&body)) {
+  {on_abort(nodec_free_bufrefv, lh_value_any_ptr(&body)) {
     size_t   offset = 0;
     // keep reading bufs into the target body buffer, reallocating as needed
-    for (uv_buf_t buf = async_http_req_read_body_buf(req); buf.base != NULL; offset += buf.len) {
-      if (buf.len + offset > body.len) { // always true on the first iteration        
+    uv_buf_t buf;
+    while ((buf = async_http_req_read_body_buf(req), buf.base != NULL)) {
+      size_t needed = buf.len + offset;
+      if (needed > body.len) { // always true on the first iteration        
                                          // the initial allocation is either the content length or the initially read buffer
                                          // this can't read too much as the stream is already limited separately
         uv_buf_len_t newlen;
         if (body.len > 0) {
-          newlen = (body.len > 4*1024*1024 ? body.len + 4*1024*1024 : body.len*2);
+          newlen = (body.len > 4 * 1024 * 1024 ? body.len + 4 * 1024 * 1024 : body.len * 2);
         }
         else if (initial_size > 0) {
           newlen = (uv_buf_len_t)initial_size;
         }
         else {
-          newlen = (req->parser.content_length > 0 ? (uv_buf_len_t)req->parser.content_length : buf.len);
+          newlen = (http_req_content_length(req) > 0 ? (uv_buf_len_t)http_req_content_length(req) : buf.len);
         }
-        if (newlen < body.len) lh_throw_errno(ENOMEM); // overflow
-        body.base = nodec_realloc_n(body.base, newlen, uint8_t);
+        if (newlen < needed) newlen = (uv_buf_len_t)needed;
+        if (newlen + 1 < body.len) lh_throw_errno(ENOMEM); // overflow
+        body.base = nodec_realloc_n(body.base, newlen + 1, uint8_t); // over allocate by 1 for ending zero
         body.len = newlen;
+        printf("(re)allocate body buffer: %li bytes\n", body.len);
       }
       // we cannot avoid memcpy due to chunking which breaks up the body
       memcpy(body.base + offset, buf.base, buf.len);
+      offset += buf.len;
+      body.base[offset] = 0;
     }
   }}
   return body;
@@ -371,8 +388,8 @@ http_method_t http_req_method(http_req_t* req) {
   return (http_method_t)(req->parser.method);
 }
 
-uint64_t http_req_content_length(http_req_t* req) {
-  return req->parser.content_length;
+size_t http_req_content_length(http_req_t* req) {
+  return req->content_length;
 }
 
 const char* http_req_header(http_req_t* req, const char* name) {
