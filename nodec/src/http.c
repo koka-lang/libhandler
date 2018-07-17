@@ -12,15 +12,15 @@
 #define HTTP_MAX_HEADERS (8*1024)
 
 /*-----------------------------------------------------------------
-  HTTP Request
+  HTTP Headers
 -----------------------------------------------------------------*/
-#if 0
+#if 1
 typedef enum http_method http_method_t;
 
 typedef struct _http_header_t {
   const char* name;
   const char* value;
-  bool value_do_free;
+  bool _do_free;
 } http_header_t;
 
 
@@ -30,7 +30,7 @@ typedef struct _http_headers_t {
   const http_header_t* elems;  // realloc on demand, perhaps start with size 8 and do +8 as it comes?  
 } http_headers_t;
 
-static void http_headers_add(http_headers_t* headers, const char* name, const char* value) {
+static void http_headers_add(http_headers_t* headers, const char* name, const char* value, bool strdup) {
   if (name == NULL) return;
   if (headers->count >= headers->size) {
     size_t newsize = (headers->size == 0 ? 16 : 2 * headers->size);
@@ -38,41 +38,126 @@ static void http_headers_add(http_headers_t* headers, const char* name, const ch
   }
   http_header_t* h = &headers->elems[headers->count];
   headers->count++;
-  h->name = name;
-  h->value = value;
-  h->value_do_free = false;
+  h->name = strdup ? nodec_strdup(name) : name; 
+  h->value = strdup ? nodec_strdup(value) : name;
+  h->_do_free = !strdup;
 }
 
-/*
-static void http_headers_free(http_headers_t* headers);
+static void http_headers_clear(http_header_t* header) {
+  if (header->_do_free) {
+    if (header->name != NULL) nodec_free(header->name);
+    if (header->value != NULL) nodec_free(header->value);
+  }
+  memset(header, 0, sizeof(http_header_t));
+}
+
+static void http_headers_clear(http_headers_t* headers) {
+  for (size_t i = 0; i < headers->count; i++) {
+    http_header_clear(&headers->elems[i]);
+  }
+  if (headers->elems != NULL) nodec_free(headers->elems);
+  memset(headers, 0, sizeof(http_headers_t));
+}
 
 
-static void http_headers_add(http_headers_t* headers, const char* name, size_t len);
-static void http_headers_set(http_headers_t* headers, const char* name, const char* value, size_t len);
+// Find a header value and normalize if necessary by appending with commas
+static const char* http_headers_lookup_from(http_headers_t* headers, const char* name, size_t from) {
+  http_header_t* found = NULL;
+  uv_buf_t newvalue = nodec_buf_null();
+  for (size_t i = from; i < headers->count; i++) {
+    http_header_t* h = &headers->elems[i];
+    if (h->name == NULL || h->value == NULL) continue;
+    if (stricmp(name, h->name) == 0) {
+      if (found == NULL) {
+        // found first entry
+        found = h;
+      }
+      else {
+        // found another entry.. we string append into the first entry and NULL this one out
+        size_t n = strlen(h->value);
+        // reallocate
+        if (newvalue.base == NULL) {
+          size_t m = strlen(found->value);
+          newvalue.base = nodec_alloc_n(m + n + 2, char);
+          memcpy(newvalue.base, found->value, m);
+          newvalue.len = m;
+        }
+        else {
+          newvalue.base = nodec_realloc_n(newvalue.base, newvalue.len + n + 2, char);  // 2: , + 0
+        }
+        // append comma and the current value
+        newvalue.base[newvalue.len] = ',';
+        memcpy(newvalue.base + newvalue.len + 1, h->value, n);
+        newvalue.len += n;
+        newvalue.base[newvalue.len] = 0;
+        http_header_clear(h);  // clear the current entry
+      }
+    }
+  }
+  if (found == NULL) return NULL;
+  if (newvalue.base != NULL) {
+    // update our found entry with the new appended value
+    if (found->_do_free) {
+      nodec_free(found->value);
+    }
+    else {
+      found->_do_free = true;
+      found->name = nodec_strdup(found->name);
+    }
+    found->value = newvalue.base;
+  }
+  return found;
+}
 
-static const char* http_headers_lookup(http_headers_t* headers, const char* name);
-static size_t http_headers_count(http_headers_t* headers);
-static const http_header_t* http_headers_at(http_headers_t* headers);
-*/
+// Lookup a specific header entry (case insensitive), returning its value or NULL if not found.
+static const char* http_headers_lookup(http_headers_t* headers, const char* name) {
+  return http_headers_lookup_from(headers, name, 0);
+}
 
-typedef struct _http_request_t {
-  // special fields
-  const char*     url;
-  
-  http_parser     parser;
+// Iterate through all entries. `*iter` should start at 0. Returns NULL if done iterating.
+static const char* http_headers_next(http_headers_t* headers, const char** value, size_t* iter) {
+  if (value != NULL) *value = NULL;
+  if (iter == NULL) return NULL;
+  while (*iter < headers->count && headers->elems[*iter].name == NULL) {
+    (*iter)++;
+  }
+  if (*iter >= headers->count) return NULL;
+  // normalize the entry by lookup itself directly
+  const char* name = headers->elems[*iter].name;
+  const char* _value = http_headers_lookup_from(headers, name, *iter);
+  if (value != NULL) *value = _value;
+  (*iter)++;
+  return name;
+}
+
+/*-----------------------------------------------------------------
+   Requests
+-----------------------------------------------------------------*/
+
+typedef struct _http_request_t 
+{  
+  uv_stream_t*    stream; // the input stream
+  http_parser     parser; // the request parser on the stream
   http_parser_settings parser_settings;
-  const char*     current_field;
+  
+  const char*     url;     // parsed url
+  http_headers_t  headers; // parsed headers; usually pointing into `prefix`
+  uv_buf_t        prefix;  // the initially read buffer that holds all initial headers
 
-  http_headers_t  headers;
-  uv_buf_t        prefix;
-  uv_buf_t        body;
-  bool            headers_complete;
-  bool            complete;
+  uv_buf_t        current;        // the last read buffer; starts equal to prefix
+  size_t          current_offset; // parsed up to this point into the current buffer
+  uv_buf_t        current_body;   // the last parsed body piece; each on_body pauses the parser so only one is needed
+  const char*     current_field;  // during header parsing, holds the last seen header field
+
+  bool            headers_complete;  // true if all initial headers have been parsed
+  bool            complete;          // true if the whole message has been parsed
 } http_request_t;
 
+// Terminate header fields and values by modifying the read buffer in place. (in `prefix`)
 static void terminate(http_request_t* req, const char* at, size_t len) {
   ((char*)at)[len] = 0;
 }
+
 
 static int on_header_field(http_parser* parser, const char* at, size_t len) {
   http_request_t* req = (http_request_t*)parser->data;
@@ -84,14 +169,23 @@ static int on_header_field(http_parser* parser, const char* at, size_t len) {
 static int on_header_value(http_parser* parser, const char* at, size_t len) {
   http_request_t* req = (http_request_t*)parser->data;
   terminate(req, at, len);
-  http_headers_add(&req->headers, req->current_field, at);
+  http_headers_add(&req->headers, req->current_field, at, req->headers_complete ); // allocate if the headers are complete as the buffer might have changed
   req->current_field = NULL;
   return 0;
 }
 
+static int on_url(http_parser* parser, const char* at, size_t len) {
+  http_request_t* req = (http_request_t*)parser->data;
+  terminate(req, at, len);
+  req->url = at;
+  return 0;
+}
+
+
 static int on_body(http_parser* parser, const char* at, size_t len) {
   http_request_t* req = (http_request_t*)parser->data;
-  req->body = nodec_buf(at, len);
+  req->current_body = nodec_buf(at, len);  // remember this body piece
+  http_parser_pause(parser,1);             // and pause the parser, returning from execute! (with parser->errno set to HPE_PAUSED)
   return 0;
 }
 
@@ -107,9 +201,16 @@ static int on_message_complete(http_parser* parser) {
   return 0;
 }
 
+// Clear and free all members of a request
+static void http_request_clear(http_request_t* req) {
+  http_headers_clear(&req->headers);
+  if (req->current.base != NULL && req->current.base != req->prefix.base) nodec_free(req->current.base);
+  if (req->prefix.base != NULL) nodec_free(req->prefix.base);
+  memset(req, 0, sizeof(http_request_t));
+}
 
 static void http_request_free( http_request_t* req) {
-  // TODO: free more
+  http_request_clear(req);
   nodec_free(req);
 }
 
@@ -117,46 +218,195 @@ static void http_request_freev(lh_value reqv) {
   http_request_free((http_request_t*)lh_ptr_value(reqv));
 }
 
+static enum http_errno check_http_errno(http_parser* parser) {
+  enum http_errno err = HTTP_PARSER_ERRNO(parser);
+  if (err != HPE_OK && err != HPE_PAUSED) {  // pausing is ok!
+    throw_http_err_str(HTTP_STATUS_BAD_REQUEST, http_errno_description(err));
+  }
+  return err;
+}
+
 static http_request_t* async_http_request_alloc(uv_stream_t* stream) {
   http_request_t* req = nodec_zero_alloc(http_request_t);
-  http_parser_init(&req->parser, HTTP_REQUEST);
-  req->parser.data = req;
-  http_parser_init_settings(&req->parser_settings);
-  req->parser_settings.on_header_field = &on_header_field;
-  req->parser_settings.on_header_value = &on_header_value;
-  req->parser_settings.on_headers_complete = &on_headers_complete;
-  req->parser_settings.on_message_complete = &on_message_complete;
-  req->parser_settings.on_body = &on_body;
-  {on_abort(http_request_freev, req) {
+  {on_abort(http_request_freev,req){
+    // start the read stream and read the headers
     nodec_read_start(stream, 0, HTTP_MAX_HEADERS, 0);
-    req->prefix = async_read_buf(stream);
-    if (req->prefix.base == NULL || req->prefix.len == 0) throw_http_err(HTTP_STATUS_BAD_REQUEST);
-    http_parser_execute(&req->parser, &req->parser_settings, req->prefix.base, req->prefix.len);
-    if (req->parser.http_errno != 0) throw_http_err(req->parser.http_errno);
-    if (!req->headers_complete) throw_http_err(HTTP_STATUS_PAYLOAD_TOO_LARGE);
+    async_http_request_read_headers(req, stream);
   }}
   return req;
 }
 
-static uv_buf_t async_http_request_read_body_buf(http_request_t* req) {
 
+static void async_http_request_read_headers(http_request_t* req, uv_stream_t* stream)
+{
+  // keep going from the start until we have a buffer that holds all headers (or exceeds 8kb)
+  do {
+    // (re) initialize but save the current buffer
+    uv_buf_t _current = req->current;
+    req->current = nodec_buf_null();
+    http_request_clear(req);
+    req->stream = stream;
+    req->current = _current; // restore current
+    http_parser_init(&req->parser, HTTP_REQUEST);
+    req->parser.data = req;
+    http_parser_init_settings(&req->parser_settings);
+    req->parser_settings.on_header_field = &on_header_field;
+    req->parser_settings.on_header_value = &on_header_value;
+    req->parser_settings.on_headers_complete = &on_headers_complete;
+    req->parser_settings.on_message_complete = &on_message_complete;
+    req->parser_settings.on_body = &on_body;
+    req->parser_settings.on_url = &on_url;
+
+    // read an initial chunk that contains the headers
+    uv_buf_t buf = async_read_buf(req->stream);
+    if (buf.base == NULL) throw_http_err(HTTP_STATUS_BAD_REQUEST);
+
+    // append to the currently read buffer if needed
+    if (req->current.base == NULL) {
+      req->current = buf;
+    }
+    else {
+      size_t   newlen = req->current.len + buf.len;
+      req->current.base = nodecx_realloc(req->current.base, newlen);
+      if (req->current.base == NULL) { nodec_free(buf.base); lh_throw_errno(E_OUTOFMEMORY); }
+      memcpy(req->current.base + req->current.len, buf.base, buf.len);
+      req->current.len = newlen;
+      nodec_free(buf.base);
+    }
+
+    // try to parse it
+    size_t nread = http_parser_execute(&req->parser, &req->parser_settings, req->current.base, req->current.len);
+    check_http_errno(&req->parser);
+
+    // if we already read more than the maximum header size allowed, throw an error
+    if (nread > HTTP_MAX_HEADERS) throw_http_err(HTTP_STATUS_PAYLOAD_TOO_LARGE);    
+
+    // remember where we are at in the current buffer for further body reads 
+    req->current_offset = nread;
+  } 
+  while (!req->headers_complete);  // keep doing this until we have seen all headers
+
+  // set the prefix to the current buffer to keep it alive
+  req->prefix = req->current;
+}
+
+/*-----------------------------------------------------------------
+  Reading the body of a request
+-----------------------------------------------------------------*/
+
+
+// Read asynchronously a piece of the body; the return buffer is valid until
+// the next read. Returns a null buffer when the end of the request is reached.
+static uv_buf_t async_http_request_read_body_buf(http_request_t* req) 
+{
+  // if there is no current body ready: read another one.
+  // (there might be an initial body due to the initial parse of the headers.)
+  if (req->current_body.base == NULL) 
+  {
+    // if we are done already, just return null
+    if (req->complete) return nodec_buf_null();
+
+    // if we exhausted our current buffer, read a new one
+    if (req->current.base == NULL || req->current_offset >= req->current.len) {
+      // deallocate current buffer first
+      if (req->current.base != NULL) {
+        if (req->current.base != req->prefix.base) { // don't deallocate the prefix with the headers
+          nodec_free(req->current.base);
+        }
+        req->current = nodec_buf_null();
+        req->current_offset = 0;
+      }
+      // and read a fresh buffer async from the stream
+      req->current = async_read_buf(req->stream);
+      if (req->current.base == NULL || req->current.len == 0) throw_http_err(HTTP_STATUS_BAD_REQUEST);
+    }
+    
+    // we have a current buffer, parse a body piece (or read to eof)
+    assert(req->current.base != NULL && req->current_offset < req->current.len);
+    http_parser_pause(&req->parser, 0); // unpause
+    size_t nread = http_parser_execute(&req->parser, &req->parser_settings, req->current.base + req->current_offset, req->current.len - req->current_offset);
+    req->current_offset += nread;
+    check_http_errno(&req->parser);
+    
+    // if no body now, something went wrong or we read to the end of the request without further bodies
+    if (req->current_body.base == NULL) {
+      if (req->complete) return nodec_buf_null();  // done parsing, no more body pieces
+      throw_http_err_str(HTTP_STATUS_BAD_REQUEST, "couldn't parse request body");
+    }
+  }
+
+  // We have a body piece ready, return it
+  assert(req->current_body.base != NULL);
+  uv_buf_t body = req->current_body;
+  req->current_body = nodec_buf_null();
+  return body;  // a view into our current buffer, valid until the next read
 }
 
 
-/*
-const char*   http_request_url(http_request_t* req);
-const char*   http_request_http_version(http_request_t* req);
-http_method_t http_request_method(http_request_t* req);
-bool          http_request_keep_alive(http_request_t* req);
-size_t        http_request_content_length(http_request_t* req);
+// Read asynchronously the entire body of the request. The caller is responsible for buffer deallocation.
+// The initial_size can be 0 in which case the content_length or initially read buffer length is used.
+static uv_buf_t async_http_request_read_body_all(http_request_t* req, size_t initial_size) {  
+  uv_buf_t body = nodec_buf_null();
+  {on_abort(nodec_free_bufrefv, lh_value_ptr(&body)) {
+    size_t   offset = 0;
+    // keep reading bufs into the target body buffer, reallocating as needed
+    for (uv_buf_t buf = async_http_request_read_body_buf(req); buf.base != NULL; offset += buf.len) {
+      if (buf.len + offset > body.len) { // always true on the first iteration        
+        // the initial allocation is either the content length or the initially read buffer
+        // this can't read too much as the stream is already limited separately
+        size_t newlen;
+        if (body.len > 0) {
+          newlen = (body.len > 4*1024*1024 ? body.len + 4*1024*1024 : body.len*2);
+        }
+        else if (initial_size > 0) {
+          newlen = initial_size;
+        }
+        else {
+          newlen = (req->parser.content_length > 0 ? req->parser.content_length : buf.len);
+        }
+        if (newlen < body.len) lh_throw_errno(ENOMEM); // overflow
+        body.base = nodec_realloc_n(body.base, newlen, uint8_t);
+        body.len  = newlen;
+      }
+      // we cannot avoid memcpy due to chunking which breaks up the body
+      memcpy(body.base + offset, buf.base, buf.len);
+    }
+  }}
+  return body;
+}
 
-const char*   http_request_header(http_request_t* req, const char* name);
-// .. etc
 
-static void http_request_add_header(http_request_t* req, const char* name, const char* value);
-*/
+/*-----------------------------------------------------------------
+  Helpers
+-----------------------------------------------------------------*/
+
+// Return the read only request URL
+const char* http_request_url(http_request_t* req) {
+  return req->url;
+}
+
+uint16_t http_request_http_version(http_request_t* req) {
+  return (req->parser.http_major << 8 | req->parser.http_minor);
+}
+
+http_method_t http_request_method(http_request_t* req) {
+  return (http_method_t)(req->parser.method);
+}
+
+uint64_t http_request_content_length(http_request_t* req) {
+  return req->parser.content_length;
+}
+
+const char* http_request_header(http_request_t* req, const char* name) {
+  return http_headers_lookup(&req->headers, name);
+}
+
+const char* http_request_header_next(http_request_t* req, const char** value, size_t** iter) {
+  return http_headers_liter(&req->headers, value, iter);
+}
 
 #endif
+
 
 /*-----------------------------------------------------------------
   HTTP errors|

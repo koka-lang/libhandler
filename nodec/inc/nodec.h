@@ -292,6 +292,7 @@ void* _nodec_realloc(void* p, size_t newsize);
 void  _nodec_free(const void* p);
 
 void  nodec_freev(lh_value p);
+void  nodec_free_bufrefv(lh_value bufref);
 char* nodec_strdup(const char* s);
 char* nodec_strndup(const char* s, size_t max);
 

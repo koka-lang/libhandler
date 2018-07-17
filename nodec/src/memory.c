@@ -24,6 +24,13 @@ void  nodec_freev(lh_value p) {
   nodec_free(lh_ptr_value(p));
 }
 
+void  nodec_free_bufrefv(lh_value p) {
+  uv_buf_t* buf = (uv_buf_t*)lh_ptr_value(p);
+  nodec_free(buf->base);
+  buf->base = NULL;
+  buf->len = 0;
+}
+
 void* _nodecx_malloc(size_t size) {
   return (custom_malloc==NULL ? malloc(size) : custom_malloc(size));
 }
