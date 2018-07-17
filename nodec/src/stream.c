@@ -17,11 +17,7 @@
 # include <alloca.h>
 #endif
 
-#if (defined(_WIN32) || defined(_WIN64))
-typedef ULONG  uv_buf_len_t;
-#else
-typedef size_t uv_buf_len_t;
-#endif
+
 
 
 uv_buf_t nodec_buf(const void* data, size_t len) {
@@ -174,15 +170,14 @@ static size_t chunks_read_into(chunks_t* chunks, uv_buf_t buf) {
 
 // Return the position of the first end-of-line character.
 // Used for line buffered reading.
-static size_t chunks_find_eol(chunks_t* chunks) {
+static size_t chunks_find(chunks_t* chunks, const void* pat, size_t pat_len) {
   size_t toread = 0;
-  for (chunk_t* chunk = chunks->first; chunk != NULL; chunk = chunk->next) {    
-    size_t idx;
-    for (idx = 0; idx < chunk->buf.len; idx++) {
-      if (chunk->buf.base[idx] == '\n') {
-        toread += idx + 1;
-        return toread;
-      }
+  for (chunk_t* chunk = chunks->first; chunk != NULL; chunk = chunk->next) {   
+    const uint8_t* p = nodec_memmem(chunk->buf.base, chunk->buf.len, pat, pat_len);
+    if (p != NULL) {
+      size_t idx = (p - chunk->buf.base);
+      toread += idx + 1;
+      return toread;
     }
     toread += chunk->buf.len;
   }
@@ -357,6 +352,17 @@ static read_stream_t* nodec_get_read_stream(uv_stream_t* stream) {
   return (read_stream_t*)stream->data;
 }
 
+// Set the max bytes to read in total. Use `0` for the default (1Gb)
+void nodec_set_read_max(uv_stream_t* stream, size_t read_max) {
+  read_stream_t* rs = nodec_get_read_stream(stream);
+  if (rs==NULL) return;
+  size_t newmax = (read_max > 0 ? read_max : 1024 * 1024 * 1024);  // 1Gb by default
+  if (rs->read_total >= rs->read_max && newmax > rs->read_max) {
+    rs->eof = false;  // todo: is this ok if the real eof was already reached?
+  }
+  rs->read_max = newmax;
+}
+
 void nodec_read_restart(uv_stream_t* stream) {
   read_stream_t* rs = nodec_get_read_stream(stream);
   uverr_t err = uv_read_start(stream, &_read_stream_alloc_cb, &_read_stream_cb);
@@ -426,9 +432,9 @@ static uv_buf_t read_stream_read_available(read_stream_t* rs) {
 }
 
 
-// Find the first `\n` occurrence (or return 0 if not found)
-static size_t read_stream_find_eol(read_stream_t* rs) {
-  return chunks_find_eol(&rs->chunks);
+// Find the first occurrence of a pattern (or return 0 if not found)
+static size_t read_stream_find(read_stream_t* rs, const void* pat, size_t pat_len) {
+  return chunks_find(&rs->chunks,pat,pat_len);
 }
 
 // ---------------------------------------------------------
@@ -493,22 +499,46 @@ uv_buf_t async_read_buf_available(uv_stream_t* stream) {
   return read_stream_read_available(rs);
 }
 
-// Read a line
-uv_buf_t async_read_buf_line(uv_stream_t* stream) {
+// Keep reading until a specific pattern comes by (or until eof)
+// returns the end position of the pattern ("to read") or 0 for eof.
+size_t async_read_await_until(uv_stream_t* stream, const void* pat, size_t pat_len) {
   read_stream_t* rs = nodec_get_read_stream(stream);
   size_t toread = 0;
   bool eof = false;
   do {
     eof = async_read_stream_await(rs,true);
-    toread = read_stream_find_eol(rs);
+    toread = read_stream_find(rs,pat,pat_len);
   } while (toread == 0 && !eof);
+  return toread;
+}
+
+// Read from a stream until a specific pattern is seen.
+// Return a buffer with all available data including the pattern.
+// The pattern might not be found if eof is encountered 
+// The `idx` will be set to just after the pattern (or 0 if not found on eof)
+uv_buf_t async_read_buf_including(uv_stream_t* stream, size_t* idx, const void* pat, size_t pat_len) {
+  read_stream_t* rs = nodec_get_read_stream(stream);
+  size_t toread = async_read_await_until(stream, pat, pat_len);
+  if (idx!=NULL) *idx = toread;
+  return read_stream_read_available(rs);
+}
+
+// Read from a stream until a specific pattern is seen and return
+// a buffer upto and just including that pattern (or upto eof).
+uv_buf_t async_read_buf_upto(uv_stream_t* stream, const void* pat, size_t pat_len) {
+  read_stream_t* rs = nodec_get_read_stream(stream);
+  size_t toread = async_read_await_until(stream, pat, pat_len);
   if (toread > 0) {
-    return read_stream_read_n(rs,toread);
+    return read_stream_read_n(rs, toread);
   }
   else {
     // eof
     return read_stream_read_available(rs);
   }
+}
+
+uv_buf_t async_read_buf_line(uv_stream_t* stream) {
+  return async_read_buf_upto(stream, "\n", 1);
 }
 
 // Return a single buffer that contains the entire stream contents
