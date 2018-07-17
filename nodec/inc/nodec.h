@@ -108,14 +108,24 @@ lh_value    async_with_fopen(const char* path, int flags, int mode, nodec_file_f
 -----------------------------------------------------------------------------*/
 
 // Initialize a libuv buffer which is a record with a data pointer and its length.
-uv_buf_t nodec_buf(void* data, size_t len);
+uv_buf_t nodec_buf(const void* data, size_t len);
 
 // Create a NULL buffer, i.e. `nodec_buf(NULL,0)`.
 uv_buf_t nodec_buf_null();
 
 // Create and allocate a buffer
 uv_buf_t nodec_buf_alloc(size_t len);
+uv_buf_t nodec_buf_realloc(uv_buf_t buf, size_t len);
 
+void nodec_buf_ensure(uv_buf_t* buf, size_t needed);
+void nodec_buf_ensure_ex(uv_buf_t* buf, size_t needed, size_t initial_size, size_t max_increase);
+bool nodec_buf_is_null(uv_buf_t buf);
+void nodec_buf_free(uv_buf_t buf);
+void nodec_bufref_free(uv_buf_t* buf);
+void nodec_bufref_freev(lh_value bufref);
+
+#define with_buf(buf)                 uv_buf_t buf = nodec_buf_null(); defer(nodec_bufref_freev,lh_value_any_ptr(&buf))
+#define with_on_abort_free_buf(buf)   uv_buf_t buf = nodec_buf_null(); on_abort(nodec_bufref_freev,lh_value_any_ptr(&buf))
 
 /* ----------------------------------------------------------------------------
   Streams
@@ -211,6 +221,7 @@ typedef int http_status;
 void throw_http_err(http_status status);
 void throw_http_err_str(http_status status, const char* msg);
 void throw_http_err_strdup(http_status status, const char* msg);
+const char* nodec_http_get_reason(http_status code);
 
 void async_http_server_at(const struct sockaddr* addr, int backlog, int max_interleaving, 
                           uint64_t timeout, nodec_tcp_servefun* servefun);
@@ -314,7 +325,6 @@ void* _nodec_realloc(void* p, size_t newsize);
 void  _nodec_free(const void* p);
 
 void  nodec_freev(lh_value p);
-void  nodec_free_bufrefv(lh_value bufref);
 char* nodec_strdup(const char* s);
 char* nodec_strndup(const char* s, size_t max);
 const void* nodec_memmem(const void* src, size_t src_len, const void* pat, size_t pat_len);

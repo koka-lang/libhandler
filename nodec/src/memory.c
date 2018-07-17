@@ -21,6 +21,66 @@ const void* nodec_memmem(const void* src, size_t src_len, const void* pat, size_
   return NULL;
 }
 
+
+uv_buf_t nodec_buf(const void* data, size_t len) {
+  return uv_buf_init((char*)data, (uv_buf_len_t)(len));
+}
+
+uv_buf_t nodec_buf_null() {
+  return nodec_buf(NULL, 0);
+}
+
+uv_buf_t nodec_buf_alloc(size_t len) {
+  uv_buf_t buf = nodec_buf(nodec_malloc(len + 1), len);  // always allow one more for zero termination
+  buf.base[len] = 0;
+  return buf;
+}
+
+uv_buf_t nodec_buf_realloc(uv_buf_t buf, size_t len) {
+  // if (buf.len >= len) return buf;
+  if (len == SIZE_MAX) lh_throw_errno(EOVERFLOW);
+  uv_buf_t newbuf = nodec_buf(nodec_realloc(buf.base,len + 1), len);  // always allow one more for zero termination
+  newbuf.base[len] = 0;
+  return buf;
+}
+
+void nodec_buf_free(uv_buf_t buf) {
+  if (buf.base != NULL) nodec_free(buf.base);
+}
+
+void nodec_bufref_free(uv_buf_t* buf) {
+  nodec_buf_free(*buf);
+  *buf = nodec_buf_null();
+}
+
+void nodec_bufref_freev(lh_value bufref) {
+  nodec_bufref_free((uv_buf_t*)lh_ptr_value(bufref));  
+}
+
+bool nodec_buf_is_null(uv_buf_t buf) {
+  return (buf.base == NULL || buf.len == 0);
+}
+
+void nodec_buf_ensure_ex(uv_buf_t* buf, size_t needed, size_t initial_size, size_t max_increase) {
+  if (buf->len >= needed) return;  // already big enough
+  size_t newlen = 0;
+  if (nodec_buf_is_null(*buf)) {
+    newlen = (initial_size == 0 ? 8*1024 : initial_size);    // 8KB default
+  }
+  else {
+    if (max_increase == 0) max_increase = 4 * 1024 * 1024; // 4MB max increase default
+    newlen = buf->len + (buf->len > max_increase ? max_increase : buf->len);  // double up to max increase
+  }
+  if (newlen < needed)  newlen = needed;   // ensure at least `needed` space
+  *buf = nodec_buf_realloc(*buf, newlen);  // and reallocate
+}
+
+void nodec_buf_ensure(uv_buf_t* buf, size_t needed) {
+  nodec_buf_ensure_ex(buf, needed, 0, 0);
+}
+
+
+
 /*-----------------------------------------------------------------
   Wrappers for malloc
 -----------------------------------------------------------------*/

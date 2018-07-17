@@ -47,7 +47,7 @@ static http_err_reason http_reasons[] = {
   { -1, NULL }
 };
 
-static void async_write_http_err(uv_stream_t* client, http_status code, const char* msg) {
+const char* nodec_http_get_reason(http_status code) {
   const char* reason = "Unknown";
   for (http_err_reason* r = http_reasons; r->reason != NULL; r++) {
     if (r->status == code) {
@@ -55,6 +55,11 @@ static void async_write_http_err(uv_stream_t* client, http_status code, const ch
       break;
     }
   }
+  return reason;
+}
+
+static void async_write_http_err(uv_stream_t* client, http_status code, const char* msg) {
+  const char* reason = nodec_http_get_reason(code);
   char body[256];
   snprintf(body, 255, http_error_body, code, reason, (msg == NULL ? "" : ": "), (msg == NULL ? "" : msg));
   body[255] = 0;

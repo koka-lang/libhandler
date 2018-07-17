@@ -19,22 +19,6 @@
 
 
 
-
-uv_buf_t nodec_buf(const void* data, size_t len) {
-  return uv_buf_init((char*)data, (uv_buf_len_t)(len));
-}
-
-uv_buf_t nodec_buf_null() {
-  return nodec_buf(NULL, 0);
-}
-
-uv_buf_t nodec_buf_alloc(size_t len) {
-  return nodec_buf(nodec_malloc(len + 1), len);  // always allow one more for zero termination
-}
-
-
-
-
 /* ----------------------------------------------------------------------------
 Await shutdown
 -----------------------------------------------------------------------------*/
@@ -633,13 +617,13 @@ void async_shutdown(uv_stream_t* stream) {
 
 void async_write(uv_stream_t* stream, const char* s) {
   if (s==NULL) return;
-  uv_buf_t buf = nodec_buf(s, strlen(s));
+  uv_buf_t buf = nodec_buf((void*)s, strlen(s));
   async_write_buf(stream, buf);
 }
 
 void async_write_strs(uv_stream_t* stream, const char* strings[], size_t string_count) {
   if (strings==NULL||string_count <= 0) return;
-  uv_buf_t* bufs = alloca(string_count*sizeof(uv_buf_t));
+  uv_buf_t* bufs = alloca(string_count*sizeof(uv_buf_t)); // Todo: stack allocate is ok?
   for (unsigned int i = 0; i < string_count; i++) {
     bufs[i] = nodec_buf(strings[i], (strings[i]!=NULL ? strlen(strings[i]) : 0));
   }
