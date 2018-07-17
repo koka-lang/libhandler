@@ -107,9 +107,14 @@ const char* response_body =
 static void test_http_serve(int strand_id, uv_stream_t* client) {
   fprintf(stderr, "strand %i entered\n", strand_id);
   // input
+  /*
   const char* input = async_read(client);
   {with_free(input) {
     printf("strand %i received:%zi bytes\n%s", strand_id, strlen(input), input);
+  }}
+  */
+  {with_http_req(client, req) {
+    printf("strand %i request, url: %s, accept: %s\n", strand_id, http_req_url(req), http_req_header(req,"accept"));
   }}
   // work
   printf("waiting %i secs...\n", 2 + strand_id); 
@@ -257,11 +262,11 @@ static void entry() {
   //test_tcp();
   //test_tty_raw();
   //test_tty();
-  //test_tcp_tty();
+  test_tcp_tty();
   //test_scandir();
   //test_dns();
   //test_connect();
-  test_http();
+  //test_http();
 }
 
 int main() {

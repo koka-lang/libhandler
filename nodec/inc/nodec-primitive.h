@@ -23,6 +23,11 @@ typedef int uverr_t;
 void nodec_check(uverr_t err);
 void nodec_check_msg(uverr_t err, const char* msg);
 
+#if (defined(_WIN32) || defined(_WIN64))
+typedef ULONG  uv_buf_len_t;
+#else
+typedef size_t uv_buf_len_t;
+#endif
 
 
 /* ----------------------------------------------------------------------------

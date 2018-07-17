@@ -132,12 +132,14 @@ void        async_shutdown(uv_stream_t* stream);
 void        nodec_read_start(uv_stream_t* stream, size_t read_max, size_t alloc_init, size_t alloc_max);
 void        nodec_read_stop(uv_stream_t* stream);
 void        nodec_read_restart(uv_stream_t* stream);
+void        nodec_set_read_max(uv_stream_t* stream, size_t read_max);
 
 uv_buf_t    async_read_buf(uv_stream_t* stream);
 uv_buf_t    async_read_buf_available(uv_stream_t* stream);
 uv_buf_t    async_read_buf_line(uv_stream_t* stream);
 uv_buf_t    async_read_buf_all(uv_stream_t* stream);
 size_t      async_read_into_all(uv_stream_t* stream, uv_buf_t buf, bool* at_eof);
+uv_buf_t    async_read_buf_including(uv_stream_t* stream, size_t* idx, const void* pat, size_t pat_len);
 
 char*       async_read(uv_stream_t* stream);
 char*       async_read_all(uv_stream_t* stream);
@@ -214,6 +216,26 @@ void async_http_server_at(const struct sockaddr* addr, int backlog, int max_inte
                           uint64_t timeout, nodec_tcp_servefun* servefun);
 
 
+
+
+typedef enum http_method http_method_t;
+typedef struct _http_req_t http_req_t;
+
+void http_req_free(http_req_t* req);
+void http_req_freev(lh_value reqv);
+http_req_t*   async_http_req_alloc(uv_stream_t* stream);
+
+#define with_http_req(stream,name)  http_req_t* name = async_http_req_alloc(stream); defer(http_req_freev,lh_value_ptr(name)) 
+
+uv_buf_t      async_http_req_read_body_buf(http_req_t* req);
+uv_buf_t      async_http_req_read_body(http_req_t* req, size_t initial_size);
+
+const char*   http_req_url(http_req_t* req);
+uint16_t      http_req(http_req_t* req);
+http_method_t http_req_method(http_req_t* req);
+uint64_t      http_req_content_length(http_req_t* req);
+const char*   http_req_header(http_req_t* req, const char* name);
+const char*   http_req_header_next(http_req_t* req, const char** value, size_t* iter);
 
 /* ----------------------------------------------------------------------------
   TTY
@@ -295,6 +317,7 @@ void  nodec_freev(lh_value p);
 void  nodec_free_bufrefv(lh_value bufref);
 char* nodec_strdup(const char* s);
 char* nodec_strndup(const char* s, size_t max);
+const void* nodec_memmem(const void* src, size_t src_len, const void* pat, size_t pat_len);
 
 #define nodecx_alloc(tp)          ((tp*)(nodecx_malloc(sizeof(tp))))
 #define nodecx_zero_alloc(tp)     ((tp*)(nodecx_calloc(1,sizeof(tp))))

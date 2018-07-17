@@ -3,6 +3,24 @@
 #include "nodec-internal.h"
 #include <assert.h> 
 
+// Search for byte pattern in byte source array.
+const void* nodec_memmem(const void* src, size_t src_len, const void* pat, size_t pat_len)
+{
+  const char* csrc = (const char*)src;
+  const char* cpat = (const char*)pat;
+  
+  if (src_len==0 || pat_len==0) return NULL;
+  if (src_len < pat_len) return NULL;
+  if (pat_len==1) return memchr(src, (int)cpat[0], src_len);
+
+  for (size_t i = 0; i < src_len - pat_len + 1; i++) {
+    if (csrc[i] == cpat[0] && memcmp(csrc+i, cpat, pat_len) == 0) {
+      return csrc+i;
+    }
+  }
+  return NULL;
+}
+
 /*-----------------------------------------------------------------
   Wrappers for malloc
 -----------------------------------------------------------------*/
