@@ -259,10 +259,14 @@ const char* http_request =
 void test_connect() {
   uv_stream_t* conn = async_tcp_connect("bing.com","http");
   {with_stream(conn) {
-    async_write(conn, http_request);
-    char* body = async_read_all(conn);
-    {with_free(body) {
-      printf("received:\n%s", body);
+    {with_http_resp(conn,resp) {
+      //async_write(conn, http_request);
+      http_resp_add_header(resp, "Connection", "close");
+      http_resp_send_request_headers(resp, HTTP_GET, "/", "www.bing.com", true);
+      char* body = async_read_all(conn);
+      {with_free(body) {
+        printf("received:\n%s", body);
+      }}
     }}
   }}
 }
@@ -308,10 +312,10 @@ static void entry() {
   //test_tcp();
   //test_tty_raw();
   //test_tty();
-  test_tcp_tty();
+  //test_tcp_tty();
   //test_scandir();
   //test_dns();
-  //test_connect();
+  test_connect();
   //test_http();
   //test_as_client();
 }

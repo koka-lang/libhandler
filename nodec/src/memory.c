@@ -26,6 +26,10 @@ uv_buf_t nodec_buf(const void* data, size_t len) {
   return uv_buf_init((char*)data, (uv_buf_len_t)(len));
 }
 
+uv_buf_t nodec_buf_str(const char* s) {
+  return nodec_buf(s, (s==NULL ? 0 : strlen(s)) );
+}
+
 uv_buf_t nodec_buf_null() {
   return nodec_buf(NULL, 0);
 }
@@ -41,7 +45,7 @@ uv_buf_t nodec_buf_realloc(uv_buf_t buf, size_t len) {
   if (len == SIZE_MAX) lh_throw_errno(EOVERFLOW);
   uv_buf_t newbuf = nodec_buf(nodec_realloc(buf.base,len + 1), len);  // always allow one more for zero termination
   newbuf.base[len] = 0;
-  return buf;
+  return newbuf;
 }
 
 void nodec_buf_free(uv_buf_t buf) {
@@ -78,6 +82,7 @@ void nodec_buf_ensure_ex(uv_buf_t* buf, size_t needed, size_t initial_size, size
 void nodec_buf_ensure(uv_buf_t* buf, size_t needed) {
   nodec_buf_ensure_ex(buf, needed, 0, 0);
 }
+
 
 
 

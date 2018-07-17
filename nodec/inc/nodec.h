@@ -109,6 +109,7 @@ lh_value    async_with_fopen(const char* path, int flags, int mode, nodec_file_f
 
 // Initialize a libuv buffer which is a record with a data pointer and its length.
 uv_buf_t nodec_buf(const void* data, size_t len);
+uv_buf_t nodec_buf_str(const char* s);
 
 // Create a NULL buffer, i.e. `nodec_buf(NULL,0)`.
 uv_buf_t nodec_buf_null();
@@ -119,6 +120,7 @@ uv_buf_t nodec_buf_realloc(uv_buf_t buf, size_t len);
 
 void nodec_buf_ensure(uv_buf_t* buf, size_t needed);
 void nodec_buf_ensure_ex(uv_buf_t* buf, size_t needed, size_t initial_size, size_t max_increase);
+
 bool nodec_buf_is_null(uv_buf_t buf);
 void nodec_buf_free(uv_buf_t buf);
 void nodec_bufref_free(uv_buf_t* buf);
@@ -247,6 +249,65 @@ http_method_t http_req_method(http_req_t* req);
 uint64_t      http_req_content_length(http_req_t* req);
 const char*   http_req_header(http_req_t* req, const char* name);
 const char*   http_req_header_next(http_req_t* req, const char** value, size_t* iter);
+
+
+/* ----------------------------------------------------------------------------
+Copyright (c) 2018, Microsoft Research, Daan Leijen
+This is free software; you can redistribute it and/or modify it under the
+terms of the Apache License, Version 2.0. A copy of the License can be
+found in the file "license.txt" at the root of this distribution.
+-----------------------------------------------------------------------------*/
+#include "nodec.h"
+#include "nodec-primitive.h"
+#include "nodec-internal.h"
+#include <assert.h>
+
+#ifdef _MSC_VER
+# include <malloc.h>
+# define alloca _alloca
+#else
+# include <alloca.h>
+#endif
+
+/*-----------------------------------------------------------------
+
+-----------------------------------------------------------------*/
+
+typedef struct _http_response_t {
+  uv_stream_t* stream;
+  uv_buf_t     head;
+  size_t       head_offset;
+} http_response_t;
+
+void http_resp_init(http_response_t* resp, uv_stream_t* stream);
+void http_resp_clear(http_response_t* resp);
+void http_resp_clearv(lh_value respv);
+
+#define with_http_resp(stream,resp)  http_response_t _resp; http_response_t* resp = &_resp; http_resp_init(resp,stream); defer(http_resp_clearv,lh_value_any_ptr(resp))
+
+// Add headers
+void http_resp_add_header(http_response_t* resp, const char* field, const char* value);
+
+// Send the headers
+void http_resp_send_headers(http_response_t* resp, const char* prefix, const char* postfix);
+void http_resp_send_status_headers(http_response_t* resp, http_status status, bool end);
+void http_resp_send_request_headers(http_response_t* resp, http_method_t method, const char* url, const char* host, bool end);
+
+// Send full body at once
+void http_resp_send_body_bufs(http_response_t* resp, uv_buf_t bufs[], size_t count);
+void http_resp_send_body_buf(http_response_t* resp, uv_buf_t buf);
+void http_resp_send_body(http_response_t* resp, const char* s);
+
+// Send chunked up body
+void http_resp_send_chunked_start(http_response_t* resp);
+void http_resp_send_chunk_bufs(http_response_t* resp, uv_buf_t bufs[], size_t count);
+void http_resp_send_chunk_buf(http_response_t* resp, uv_buf_t buf);
+void http_resp_send_chunk(http_response_t* resp, const char* s);
+void http_resp_send_chunked_end(http_response_t* resp);
+
+
+
+
 
 /* ----------------------------------------------------------------------------
   TTY
