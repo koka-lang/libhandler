@@ -65,7 +65,7 @@
     <ClCompile Include="..\..\nodec\src\http_request.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\nodec\src\http_response.c">
+    <ClCompile Include="..\..\nodec\src\http_url.c">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

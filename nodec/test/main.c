@@ -104,6 +104,7 @@ const char* response_body =
 "</body>\n"
 "</html>\n";
 
+
 void http_in_print(http_in_t* in) {
   printf("headers: \n");
   size_t iter = 0;
@@ -126,6 +127,7 @@ void http_in_print(http_in_t* in) {
     }
   }}
 }
+
 
 static void test_http_serve(int strand_id, http_in_t* in, http_out_t* out, lh_value arg) {
   fprintf(stderr, "strand %i entered\n", strand_id);
@@ -293,6 +295,38 @@ void test_as_client() {
 }
 
 /*-----------------------------------------------------------------
+ test url parsing
+-----------------------------------------------------------------*/
+
+static void url_print(const char* urlstr) {
+  {with_url(urlstr, url) {
+    printf("url: %s\n schema: %s\n userinfo: %s\n host: %s\n port: %u\n path: %s\n query: %s\n fragment: %s\n\n",
+      urlstr,
+      nodec_url_schema(url), nodec_url_userinfo(url), nodec_url_host(url), 
+      nodec_url_port(url),
+      nodec_url_path(url), nodec_url_query(url), nodec_url_fragment(url)
+    );
+  }}
+}
+
+static void host_url_print(const char* urlstr) {
+  {with_host_url(urlstr, url) {
+    printf("url: %s\n host: %s\n port: %u\n\n",
+      urlstr, nodec_url_host(url), nodec_url_port(url)
+    );
+  }}
+}
+
+static void test_url() {
+  url_print("http://daan@www.bing.com:72/foo?x=10;y=3#locallink");
+  url_print("https://bing.com:8080");
+  url_print("http://127.0.0.1");
+  host_url_print("localhost:8080");
+  host_url_print("my.server.com:80");
+  host_url_print("127.0.0.1:80");
+}
+
+/*-----------------------------------------------------------------
   Main
 -----------------------------------------------------------------*/
 
@@ -310,8 +344,8 @@ static void entry() {
   //test_http();
   //test_as_client();
   //test_connect();
-  test_tcp_tty();
-
+  //test_tcp_tty();
+  test_url();
 }
 
 int main() {

@@ -303,7 +303,30 @@ void http_out_send_chunk_buf(http_out_t* out, uv_buf_t buf);
 void http_out_send_chunk(http_out_t* out, const char* s);
 void http_out_send_chunked_end(http_out_t* out);
 
+/* ----------------------------------------------------------------------------
+   URL's
+-----------------------------------------------------------------------------*/
+typedef struct _nodec_url_t nodec_url_t;
 
+void nodec_url_free(nodec_url_t* url);
+void nodec_url_freev(lh_value urlv);
+
+nodec_url_t*  nodecx_parse_url(const char* url);
+nodec_url_t*  nodec_parse_url(const char* url);
+
+#define with_url(urlstr,url)  nodec_url_t* url = nodec_parse_url(urlstr,false); defer(nodec_url_freev,lh_value_ptr(url))
+#define withx_url(urlstr,url)  nodec_url_t* url = nodec_parsex_url(urlstr,false); defer(nodec_url_freev,lh_value_ptr(url))
+
+#define with_host_url(urlstr,url)  nodec_url_t* url = nodec_parse_url(urlstr,true); defer(nodec_url_freev,lh_value_ptr(url))
+#define withx_host_url(urlstr,url)  nodec_url_t* url = nodec_parsex_url(urlstr,true); defer(nodec_url_freev,lh_value_ptr(url))
+
+const char* nodec_url_schema(const nodec_url_t* url);
+const char* nodec_url_host(const nodec_url_t* url);
+const char* nodec_url_path(const nodec_url_t* url);
+const char* nodec_url_query(const nodec_url_t* url);
+const char* nodec_url_fragment(const nodec_url_t* url);
+const char* nodec_url_userinfo(const nodec_url_t* url);
+uint16_t nodec_url_port(const nodec_url_t* url);
 
 
 
