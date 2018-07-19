@@ -344,8 +344,8 @@ static void entry() {
   //test_http();
   //test_as_client();
   //test_connect();
-  //test_tcp_tty();
-  test_url();
+  test_tcp_tty();
+  //test_url();
 }
 
 int main() {
