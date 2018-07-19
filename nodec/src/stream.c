@@ -129,7 +129,7 @@ static uv_buf_t chunks_read_buf(chunks_t* chunks) {
 static size_t chunks_read_into(chunks_t* chunks, uv_buf_t buf) {
   size_t nread = 0;
   chunk_t* chunk = chunks->first;
-  if (buf.base==NULL || buf.len==0 || chunk==NULL) return 0;  
+  if (buf.base == NULL || buf.len == 0 || chunk == NULL) return 0;
   if (buf.len < chunk->buf.len) {
     // pre-allocated buffer that is too small for the first chunk
     nread = buf.len;
@@ -147,73 +147,76 @@ static size_t chunks_read_into(chunks_t* chunks, uv_buf_t buf) {
     nodec_free(chunk);
     // pre-allocated with enough space
     memcpy(buf.base, src.base, nread);
-    nodec_free(src.base);    
+    nodec_free(src.base);
   }
   return nread;
 }
 
 
-// check for a string match across chunk boundaries
-static const void* chunks_memcmp_across(const chunk_t* chunk, size_t offset, const void* pat, size_t pat_len) {
-  const char* p = pat;
-  const char* start = chunk->buf.base + offset;
-  assert(offset < chunk->buf.len);
-  for (size_t i = 0; i < pat_len && chunk != NULL && p[i] == chunk->buf.base[offset]; ) {
-    offset++;
-    i++;
-    if (i == pat_len) {
-      // found it
-      return start;
-    }
-    else if (offset >= chunk->buf.len) {
-      chunk = chunk->next;
-      offset = 0;
-    }
+// We can look out for a pattern of at most 8 characters.
+// This is used for efficient readline and http header reading.
+// Doing it with the 8 last characters remembered makes it much easier 
+// to cross chunk boundaries when searching.
+typedef struct _find_t {
+  const chunk_t* chunk;         // current chunk
+  size_t         offset;        // current offset in chunk
+  size_t         seen;          // total number of bytes scanned
+  uint64_t       last8;         // last 8 characters seen
+  uint64_t       pattern;       // the pattern as an 8 character block
+  uint64_t       pattern_mask;  // the relevant parts if a pattern is less than 8 characters
+} find_t;
+
+
+static void chunks_find_init(const  chunks_t* chunks, find_t* f, const void* pat, size_t pattern_len) {
+  assert(pattern_len <= 8);
+  const char* pattern = pat;
+  if (pattern_len > 8) lh_throw_str(EINVAL, "pattern too long");
+  f->chunk = chunks->first;
+  f->offset = 0;
+  f->seen = 0;
+  f->pattern = 0;
+  f->pattern_mask = 0;
+  f->last8 = 0;
+
+  // initialize pattern and the mask
+  for (size_t i = 0; i < pattern_len; i++) {
+    f->pattern = (f->pattern << 8) | pattern[i];
+    f->pattern_mask = (f->pattern_mask << 8) | 0xFF;
   }
-  return NULL;
+  // initialize last8 to something different than (any initial part of) pattern
+  char c = 0;
+  while (memchr(pattern, c, pattern_len) != NULL) c++;  
+  for (size_t i = 0; i < sizeof(f->last8); i++) {
+    f->last8 = (f->last8 << 8) | c;
+  }
 }
 
-// Return the position of a pattern in the chunks
-// Used for line buffered reading, and for reading the http header block
-// `seen` is for efficiency to re-start a search; initially it should be zero.
-static size_t chunks_find(const chunks_t* chunks, size_t* seen, const void* pat, size_t pat_len) {
-  // find the starting chunk & offset
-  const chunk_t* chunk = chunks->first;
-  size_t offset = 0;  
-  for (size_t skipped = 0; chunk != NULL && skipped < *seen; chunk = chunk->next) {
-    if (chunk->buf.len + skipped <= *seen) {
-      skipped += chunk->buf.len;
-    }
-    else {
-      offset  = *seen - skipped;
-      skipped = *seen;  // stop the loop
-    }
+static size_t chunks_find(const chunks_t* chunks, find_t* f) {
+  // initialize the initial chunk if needed
+  if (f->chunk == NULL) {
+    f->chunk = chunks->first;
+    if (f->chunk == NULL) return 0;
   }
-  // we are at `chunk->buf.base + offset`
-  // start looking for the pattern
-  for (; chunk != NULL; chunk = chunk->next, offset = 0) {
-    const char* p = nodec_memmem(chunk->buf.base + offset, chunk->buf.len - offset, pat, pat_len);
-    if (p == NULL && chunk->next != NULL) {
-      // maybe the pattern crosses over into the next chunk(s); check it
-      for (size_t i = pat_len - 1; p == NULL && i > 0; i--) {
-        p = chunks_memcmp_across(chunk, chunk->buf.len - i, pat, pat_len);
+  // go through all chunks
+  do {
+    // go through one chunk
+    while (f->offset < f->chunk->buf.len) {
+      // shift in the new character
+      uint8_t b = f->chunk->buf.base[f->offset];
+      f->last8 = (f->last8 << 8) | b;
+      f->seen++;
+      f->offset++;
+      // compare against the pattern
+      if ((f->last8 & f->pattern_mask) == f->pattern) {
+        return f->seen; // found
       }
     }
-    if (p != NULL) {
-      // found it!
-      *seen += ((p - chunk->buf.base) - offset);
-      return *seen;
+    // move on to the next chunk if it is there yet
+    if (f->chunk->next != NULL) {
+      f->chunk = f->chunk->next;
+      f->offset = 0;
     }
-    else if (chunk->next == NULL) {
-      // not found, and at end, start search again at the end of this buffer (in case the pattern crosses the boundary)
-      *seen += (chunk->buf.len - offset - (pat_len - 1));
-    }
-    else {
-      // not found, and more chunks are following
-      *seen += (chunk->buf.len - offset);
-    }
-  }
-  // not found yet
+  } while (f->offset < f->chunk->buf.len);  // done for now
   return 0;
 }
 
@@ -466,8 +469,11 @@ static uv_buf_t read_stream_read_available(read_stream_t* rs) {
 
 
 // Find the first occurrence of a pattern (or return 0 if not found)
-static size_t read_stream_find(read_stream_t* rs, size_t* seen, const void* pat, size_t pat_len) {
-  return chunks_find(&rs->chunks,seen,pat,pat_len);
+static void read_stream_find_init(read_stream_t* rs, find_t* find, const void* pat, size_t pat_len) {
+  chunks_find_init(&rs->chunks, find, pat, pat_len);
+}
+static size_t read_stream_find(read_stream_t* rs, find_t* find) {
+  return chunks_find(&rs->chunks, find);
 }
 
 // ---------------------------------------------------------
@@ -536,12 +542,13 @@ uv_buf_t async_read_buf_available(uv_stream_t* stream) {
 // returns the end position of the pattern ("to read") or 0 for eof.
 size_t async_read_await_until(uv_stream_t* stream, const void* pat, size_t pat_len) {
   read_stream_t* rs = nodec_get_read_stream(stream);
-  size_t toread = 0;
-  size_t seen = 0;
+  size_t toread = 0;  
   bool eof = false;
+  find_t find;
+  read_stream_find_init(rs, &find, pat, pat_len);
   do {
     eof = async_read_stream_await(rs,true);
-    toread = read_stream_find(rs,&seen,pat,pat_len);
+    toread = read_stream_find(rs,&find);
   } while (toread == 0 && !eof);
   return toread;
 }
