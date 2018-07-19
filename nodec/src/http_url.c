@@ -47,7 +47,7 @@ nodec_url_t*  nodecx_parse_url(const char* url, bool onlyhost) {
       }
     }
   }}
-  if (err != NULL) {
+  if (err != 0) {
     nodec_url_free(nurl);
     return NULL;
   }
@@ -80,22 +80,22 @@ static const char* nodec_url_field(const nodec_url_t* url, enum http_parser_url_
 }
 
 const char* nodec_url_schema(const nodec_url_t* url) {
-  nodec_url_field(url, UF_SCHEMA);
+  return nodec_url_field(url, UF_SCHEMA);
 }
 const char* nodec_url_host(const nodec_url_t* url) {
-  nodec_url_field(url, UF_HOST);
+  return nodec_url_field(url, UF_HOST);
 }
 const char* nodec_url_path(const nodec_url_t* url) {
-  nodec_url_field(url, UF_PATH);
+  return nodec_url_field(url, UF_PATH);
 }
 const char* nodec_url_query(const nodec_url_t* url) {
-  nodec_url_field(url, UF_QUERY);
+  return nodec_url_field(url, UF_QUERY);
 }
 const char* nodec_url_fragment(const nodec_url_t* url) {
-  nodec_url_field(url, UF_FRAGMENT);
+  return nodec_url_field(url, UF_FRAGMENT);
 }
 const char* nodec_url_userinfo(const nodec_url_t* url) {
-  nodec_url_field(url, UF_USERINFO);
+  return nodec_url_field(url, UF_USERINFO);
 }
 uint16_t nodec_url_port(const nodec_url_t* url) {
   return url->parts.port;

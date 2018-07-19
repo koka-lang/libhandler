@@ -311,8 +311,8 @@ typedef struct _nodec_url_t nodec_url_t;
 void nodec_url_free(nodec_url_t* url);
 void nodec_url_freev(lh_value urlv);
 
-nodec_url_t*  nodecx_parse_url(const char* url);
-nodec_url_t*  nodec_parse_url(const char* url);
+nodec_url_t*  nodecx_parse_url(const char* url, bool hostonly);
+nodec_url_t*  nodec_parse_url(const char* url, bool hostonly);
 
 #define with_url(urlstr,url)  nodec_url_t* url = nodec_parse_url(urlstr,false); defer(nodec_url_freev,lh_value_ptr(url))
 #define withx_url(urlstr,url)  nodec_url_t* url = nodec_parsex_url(urlstr,false); defer(nodec_url_freev,lh_value_ptr(url))

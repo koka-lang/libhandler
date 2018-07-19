@@ -148,7 +148,7 @@ static void test_http_serve(int strand_id, http_in_t* in, http_out_t* out, lh_va
 
 static void test_tcp() {
   define_ip4_addr("127.0.0.1", 8080,addr);
-  async_http_server_at( addr, 0, 3, 5000, &test_http_serve, lh_value_null );
+  async_http_server_at( addr, 0, 3, 0, &test_http_serve, lh_value_null );
 }
 
 
@@ -344,8 +344,8 @@ static void entry() {
   //test_http();
   //test_as_client();
   //test_connect();
-  //test_tcp_tty();
-  test_url();
+  test_tcp_tty();
+  //test_url();
 }
 
 int main() {
