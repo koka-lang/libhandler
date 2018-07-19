@@ -21,7 +21,7 @@ void test_as_client() {
     for (size_t i = 0; (s = http_request_parts[i]) != NULL; i++) {
       printf("write: %s\n", s);
       async_write(conn, s);
-      async_wait(250);
+      async_wait(100);
     }
     printf("await response...\n");
     char* body = async_read_all(conn);
@@ -36,7 +36,6 @@ void test_as_client() {
 -----------------------------------------------------------------*/
 
 static void entry() {
-  void test_http();
   printf("in the main loop\n");
   test_as_client();
 }
