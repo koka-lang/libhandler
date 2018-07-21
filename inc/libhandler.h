@@ -105,7 +105,7 @@ typedef void lh_fatalfun(int err, const char* msg);
 typedef void* lh_mallocfun(size_t size);
 typedef void* lh_callocfun(size_t n, size_t size);
 typedef void* lh_reallocfun(void* p, size_t size);
-typedef void* lh_freefun(void* p);
+typedef void  lh_freefun(void* p);
 
 // Operation functions are called when that operation is `yield`ed to. 
 typedef lh_value (lh_opfun)(lh_resume r, lh_value local, lh_value arg);
