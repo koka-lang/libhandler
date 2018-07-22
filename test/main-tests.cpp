@@ -19,7 +19,7 @@ int main(void) {
 
 
   // regular c tests compiled as c++  
-    test_exn();
+    test_excn();
     test_state();
     test_amb();
 
@@ -33,6 +33,8 @@ int main(void) {
 
     // c++ specific tests with destructors, finalizers etc.  test_destructor();
     test_destructor();
+
+    test_exn(); // builtin exceptions
 
     // Show stats
     tests_done();

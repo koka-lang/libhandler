@@ -139,6 +139,7 @@
     <ClCompile Include="..\..\test\test-amb.c" />
     <ClCompile Include="..\..\test\test-destructor.cpp" />
     <ClCompile Include="..\..\test\test-dynamic.c" />
+    <ClCompile Include="..\..\test\test-excn.c" />
     <ClCompile Include="..\..\test\test-exn.c" />
     <ClCompile Include="..\..\test\test-general.c" />
     <ClCompile Include="..\..\test\test-raise.c" />

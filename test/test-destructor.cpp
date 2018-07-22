@@ -12,7 +12,7 @@ static bool realexn = false;
 
 static void raise(const char* s) {
   if (realexn) throw s;
-  exn_raise(s);
+  excn_raise(s);
 }
 
 
@@ -24,9 +24,9 @@ static lh_value test1(lh_value arg) {
   return arg;
 }
 
-static lh_value handle_exn_test1() {
+static lh_value handle_excn_test1() {
   try {
-    return exn_handle(test1, lh_value_long(42));
+    return excn_handle(test1, lh_value_long(42));
   }
   catch (const char* msg) {
     test_printf("real exn: %s\n", msg);
@@ -60,9 +60,9 @@ static lh_value handle_state_amb_raising(lh_value arg) {
   return state_handle(handle_amb_raising, 0, arg);
 }
 
-static blist handle_exn_state_amb_raising() {
+static blist handle_excn_state_amb_raising() {
   try {
-    return lh_blist_value(exn_handle(handle_state_amb_raising, lh_value_null));
+    return lh_blist_value(excn_handle(handle_state_amb_raising, lh_value_null));
   }
   catch (const char* msg) {
     test_printf("test2 real exn: %s\n", msg);
@@ -73,15 +73,15 @@ static blist handle_exn_state_amb_raising() {
 
 static void run() {
   realexn = false;
-  lh_value res1 = handle_exn_test1();
+  lh_value res1 = handle_excn_test1();
   test_printf("test destructor1: %li\n", lh_long_value(res1));
-  blist res2 = handle_exn_state_amb_raising();
+  blist res2 = handle_excn_state_amb_raising();
   blist_print("test destructor2: exn/state/amb raising", res2); printf("\n");
 
   realexn = true;
-  lh_value res1a = handle_exn_test1();
+  lh_value res1a = handle_excn_test1();
   test_printf("xtest destructor1: %li\n", lh_long_value(res1a));
-  blist res2a = handle_exn_state_amb_raising();
+  blist res2a = handle_excn_state_amb_raising();
   blist_print("xtest destructor2: exn/state/amb raising", res2a); printf("\n");
 }
 

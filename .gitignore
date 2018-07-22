@@ -1,5 +1,6 @@
 ide/msvc/*.db
 ide/msvc/*.opendb
+ide/msvc/*.user
 ide/msvc/.vs
 ide/msvc/Debug
 ide/msvc/x64

@@ -1,27 +1,27 @@
 <!--madoko
 Title         : Libhandler
 Author        : Daan Leijen
-Logo          : True 
+Logo          : True
 code {
   background-color: #EEE;
 }
 [TITLE]
 -->
 
-# Overview 
+# Overview
 
-Warning: this library is still under active development and the 
+Warning: this library is still under active development and the
 API may change.
 
 `libhandler` implements algebraic effect handlers in C. It works by
-capturing stacks in safe and portable manner. Algebraic effects 
-handlers can for example be used to program asynchronous code in 
+capturing stacks in safe and portable manner. Algebraic effects
+handlers can for example be used to program asynchronous code in
 straightline manner and we hope to use it to make programming with
 `libuv` more convenient.
 
 This library is described in detail in the accompanying [technical
-report][tr]. For a primer on algebraic effects, see the 
-relevant section in the [koka book]. 
+report][tr]. For a primer on algebraic effects, see the
+relevant section in the [koka book].
 
 Enjoy!\
 -- Daan.
@@ -33,7 +33,7 @@ Enjoy!\
 # Building
 
 Building `libhandler` consists of generating a static C library that
-can be linked in your own projects. `libhandler` is written to be 
+can be linked in your own projects. `libhandler` is written to be
 as portable as possible but it depends on some platform specific
 assumptions regarding stacks and `setjmp` implementations. On new
 platforms please test carefully. Currently tested platforms include:
@@ -127,17 +127,17 @@ There are three ways to build on Windows:
    - `sudo apt-get update`
    - `sudo apt install build-essential`
    - `sudo apt install clang`
-   
+
    After this you can run `configure` and `make` as described above.
 
-3. On older Windows versions, you can use `msys2`, 
+3. On older Windows versions, you can use `msys2`,
    available at <http://msys2.github.io>. Please follow the
-   installation instruction carefully. After install, you can install 
+   installation instruction carefully. After install, you can install
    further tools using the `msys2` package manager:
    - `pacman -S mingw-w64-x86_64-gcc` (c compiler)
    - `pacman -S mingw-w64-x86_64-gdb` (debugger)
    - `pacman -S make` (make)
-   
+
    After this you can run `configure` and `make` as described above.
 
 Successful configurations `bash` on Windows have been:
@@ -168,3 +168,10 @@ Using the Visual Studio IDE:
 [msvc]:     https://www.microsoft.com/en-us/download/details.aspx?id=48146
 [winlinux]: https://msdn.microsoft.com/en-us/commandline/wsl/install_guide
 [valgrind]: http://valgrind.org
+
+
+### LibUV on Windows
+
+Enabled in Visual Studio for x64 builds. You need to put the `libuv` headers
+and binaries in a `libuv` folder under the main `libhandler` folder. Binaries
+for Windows can be found on [`libuv.org`](https://dist.libuv.org/dist/v1.18.0).

@@ -14,7 +14,7 @@
 int main(void) {
   printf("testing C: " LH_CCNAME ", " LH_TARGET "\n");
 
-  test_exn();
+  test_excn();
   test_state();
   test_amb();
   test_dynamic();
@@ -24,6 +24,8 @@ int main(void) {
   test_tailops();
   test_state_alloc();
   test_yieldn();
+
+  test_exn(); // builtin exceptions
 
   tests_done();
   return 0;

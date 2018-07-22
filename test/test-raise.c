@@ -17,7 +17,7 @@ static bool raising() {
   int i = state_get();
   state_put(i + 1);
   if (i >= 0) {
-    exn_raise("raise inside state/amb from 'raising'");
+    excn_raise("raise inside state/amb from 'raising'");
   }
   return p;
 }
@@ -42,7 +42,7 @@ static lh_value handle_state_amb_raising(lh_value arg) {
 }
 
 static blist handle_exn_state_amb_raising() {
-  return lh_blist_value(exn_handle(handle_state_amb_raising, lh_value_null));
+  return lh_blist_value(excn_handle(handle_state_amb_raising, lh_value_null));
 }
 
 /*-----------------------------------------------------------------
