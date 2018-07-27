@@ -11,6 +11,7 @@ found in the file "license.txt" at the root of this distribution.
 /*-----------------------------------------------------------------
 testing
 -----------------------------------------------------------------*/
+
 static void free_resource(lh_value arg) {
   test_printf("free resource: %i\n", lh_int_value(arg));  
 }
@@ -49,7 +50,7 @@ static void run() {
 
 
 void test_exn()
-{
+{ 
   test("builtin exceptions", run,
     "free ptr: is null: false\n"
     "free resource: 42\n"

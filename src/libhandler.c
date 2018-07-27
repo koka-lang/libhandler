@@ -298,7 +298,7 @@ __thread hstack __hstack = { NULL, 0, 0, NULL };
 static lh_fatalfun* onfatal = NULL;
 
 void lh_debug_wait_for_enter() {
-#ifdef _DEBUG
+//#ifdef _DEBUG
 	char buf[128];
 	buf[127] = 0;
 	fprintf(stderr,"(press enter to continue)\n");
@@ -307,7 +307,7 @@ void lh_debug_wait_for_enter() {
 #else
 	gets(buf);
 #endif
-#endif
+//#endif
 }
 
 static void fatal(int err, const char* msg, ...) {
@@ -1717,7 +1717,7 @@ static __noinline lh_value handle_upto(hstack* hs, void* base, const lh_handlerd
 
 
 // `handle` installs a new handler on the stack and calls the given `action` with argument `arg`.
-lh_value lh_handle( const lh_handlerdef* def, lh_value local, lh_actionfun* action, lh_value arg)
+__noinline lh_value lh_handle( const lh_handlerdef* def, lh_value local, lh_actionfun* action, lh_value arg)
 {
   void* base = NULL; // get_stack_top(); 
   hstack* hs = &__hstack;
@@ -1786,7 +1786,7 @@ lh_value _lh_implicit_get(lh_resume r, lh_value local, lh_value arg) {
 
 // `yieldop` yields to the first enclosing handler that can handle
 //   operation `optag` and passes it the argument `arg`.
-static lh_value __noinline yieldop(lh_optag optag, lh_value arg)
+static lh_value yieldop(lh_optag optag, lh_value arg)
 {
   // find the operation handler along the handler stack
   hstack*   hs = &__hstack;
@@ -1923,7 +1923,7 @@ static resume* to_resume(lh_resume r) {
   return (resume*)r;
 }
 
-static lh_value lh_release_resume_(resume* r, lh_value local, lh_value resarg) {
+static __noinline lh_value lh_release_resume_(resume* r, lh_value local, lh_value resarg) {
   hstack* hs = &__hstack;
   lh_value res;
   LH_INIT(hs)
@@ -1933,7 +1933,7 @@ static lh_value lh_release_resume_(resume* r, lh_value local, lh_value resarg) {
 }
 
 
-lh_value lh_call_resume(lh_resume r, lh_value local, lh_value res) {
+lh_value __noinline lh_call_resume(lh_resume r, lh_value local, lh_value res) {
   return lh_release_resume_(resume_acquire(to_resume(r)), local, res);
 }
 
@@ -1941,7 +1941,7 @@ lh_value lh_scoped_resume(lh_resume r, lh_value local, lh_value res) {
   return lh_call_resume(r, local, res);
 }
 
-lh_value lh_release_resume(lh_resume r, lh_value local, lh_value res) {
+__noinline lh_value lh_release_resume(lh_resume r, lh_value local, lh_value res) {
   if (r->rkind == ScopedResume) {
     return lh_scoped_resume(r, local, res);
   }
@@ -1983,7 +1983,7 @@ static void _lh_release(resume* r) {
   resume_release(r);
 }
 
-void lh_release(lh_resume r) {
+void __noinline lh_release(lh_resume r) {
   if (r->rkind != TailResume) _lh_release(to_resume(r));
 }
 

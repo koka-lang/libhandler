@@ -11,6 +11,9 @@ found in the file "license.txt" at the root of this distribution.
 #include <string.h>
 #include <errno.h>
 
+#if defined(_MSC_VER) && !defined(__clang__) && !defined(__GNUC__)
+# define __noinline     __declspec(noinline)
+#endif
 
 lh_exception lh_exn_nomem = {
   ENOMEM, "Out of memory", NULL, 0
@@ -45,9 +48,9 @@ lh_exception* lh_exception_alloc(int code, const char* msg) {
   return lh_exception_alloc_ex(code, msg, NULL, 0);
 }
 
-/*-----------------------------------------------------------------
-Define operations
------------------------------------------------------------------*/
+//-----------------------------------------------------------------
+//Define operations
+//-----------------------------------------------------------------
 LH_DEFINE_EFFECT1(exn, _throw)
 
 void lh_throw(const lh_exception* e) { 
@@ -97,7 +100,7 @@ static lh_value exn_try(lh_exception** exn, lh_value(*action)(lh_value), lh_valu
 
 
 // Convert an exceptional computation to an exceptional value
-static lh_value _lh_try(lh_exception** exn, lh_actionfun* action, lh_value arg, bool catchall) {
+__noinline static lh_value _lh_try(lh_exception** exn, lh_actionfun* action, lh_value arg, bool catchall) {
   #ifdef __cplusplus
   try {
   #endif
