@@ -433,7 +433,7 @@ LH_DECLARE_EFFECT0(defer)
 
 /*-----------------------------------------------------------------
   Implicit Parameters:
-  {with_implicit(name,value){ ... }}
+  {using_implicit(name,value){ ... }}
 -----------------------------------------------------------------*/
 lh_value _lh_implicit_get(lh_resume r, lh_value local, lh_value arg);
 
@@ -445,14 +445,14 @@ lh_value _lh_implicit_get(lh_resume r, lh_value local, lh_value arg);
 #define LH_IMPLICIT(release_fun,local,name) \
     LH_IMPLICIT_EXIT(lh_nothing(),release_fun,local,name)
 
-#define with_implicit_defer_exit(after,release_fun,local,name) \
+#define using_implicit_defer_exit(after,release_fun,local,name) \
     LH_IMPLICIT_EXIT(after,release_fun,local,name)
 
-#define with_implicit_defer(release_fun,local,name) \
+#define using_implicit_defer(release_fun,local,name) \
     LH_IMPLICIT(release_fun,local,name)
 
-#define with_implicit(local,name) \
-    with_implicit_defer(NULL,local,name)
+#define using_implicit(local,name) \
+    using_implicit_defer(NULL,local,name)
 
 #define implicit_define(name) \
     LH_DEFINE_EFFECT1(name,get) 
