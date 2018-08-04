@@ -492,6 +492,7 @@ void lh_throw_errno(int eno);
 void lh_throw_str(int code, const char* msg);
 void lh_throw_strdup(int code, const char* msg);
 void lh_throw_cancel();
+lh_exception* lh_exception_alloc_cancel();
 bool lh_exception_is_cancel(const lh_exception* exn);
 
 // Convert an exceptional computation to an exceptional value

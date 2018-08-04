@@ -72,8 +72,11 @@ void lh_throw_errno(int eno) {
 }
 
 static const char* cancel_msg = "cancel";
+lh_exception* lh_exception_alloc_cancel() {
+  return lh_exception_alloc(0, cancel_msg);
+}
 void lh_throw_cancel() {
-  lh_throw_str(0, cancel_msg);
+  lh_throw(lh_exception_alloc_cancel());
 }
 bool lh_exception_is_cancel(const lh_exception* exn) {
   return (exn != NULL && exn->msg == cancel_msg);
