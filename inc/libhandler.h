@@ -14,6 +14,9 @@
 #include <stdio.h>    // FILE*
 
 /// \defgroup effect Effect Handlers
+/// Library for algebraic effect handlers in C.
+/// This is the <a href="https://github.com/koka-lang/libhandler">libhandler</a>
+/// project, see that for further information.
 /// \{
   
 
@@ -25,8 +28,8 @@
 -----------------------------------------------------------------*/
 
 /// \defgroup effect_value Generic Values 
-/// Generic values are represented by an #lh_value.
-/// These are used to define generic functions in C where we can convert
+/// Generic value representations.
+/// The #lh_value is used to define generic functions in C where we can convert
 /// basic values to and from an #lh_value, using the
 /// `lh_<to>_<from>` defines.
 /// \{
@@ -71,6 +74,12 @@ lh_value lh_check_value_ptr(const void* p); // checks if no pointers to the stac
 
 /// Convert a `long` to an #lh_value.
 #define lh_value_long(i)      ((lh_value)(i))
+
+/// Convert an #lh_value back to a `uint64_t`.
+#define lh_uint64_t_value(v)      ((uint64_t)(v))
+
+/// Convert a `uint64_t` to an #lh_value.
+#define lh_value_uint64_t(i)      ((lh_value)(i))
 
 /// Convert an #lh_value back to a `bool`.
 #define lh_bool_value(v)      (lh_int_value(v) != 0 ? (1==1) : (1==0))
@@ -343,7 +352,7 @@ void lh_debug_wait_for_enter();
 -----------------------------------------------------------------*/
 
 /// \defgroup effect_def Effect Definition helpers
-/// Convenience macros to define effect handlers.
+/// Macros to define effect handlers.
 /// \{
 
 #define LH_EFFECT(effect)         lh_names_effect_##effect
@@ -564,7 +573,7 @@ lh_value _lh_implicit_get(lh_resume r, lh_value local, lh_value arg);
     LH_IMPLICIT_EXIT(lh_nothing(),release_fun,local,name)
 
 /// \defgroup effect_implicit Implicit Parameters    
-/// Convenience functions to easily define and use implicit parameters.
+/// Functions to easily define and use implicit parameters.
 ///
 /// \b Example
 /// ```
@@ -634,7 +643,7 @@ lh_value _lh_implicit_get(lh_resume r, lh_value local, lh_value arg);
 LH_DECLARE_EFFECT1(exn, _throw)
 
 /// \addtogroup effect_exn
-/// Convenience functions for standard exceptions and finally handlers.
+/// Functions for standard exceptions and finally handlers.
 /// \{
 
 /// Standard exception type.
