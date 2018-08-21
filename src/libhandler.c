@@ -1069,9 +1069,8 @@ static handler* hstack_append_copyfrom(ref hstack* hs, ref hstack* tocopy, handl
   return bot;
 }
 
-
 // Find an operation that handles `optag` in the handler stack.
-static effecthandler* hstack_find(ref hstack* hs, lh_optag optag, out const lh_operation** op, out lh_value* local, out count* skipped) {
+static effecthandler* hstack_find(ref hstack* hs, lh_optag optag, out const lh_operation** op, out count* skipped) {
   if (!hstack_empty(hs)) {
     handler* h = hstack_top(hs);
     do {
@@ -1081,10 +1080,9 @@ static effecthandler* hstack_find(ref hstack* hs, lh_optag optag, out const lh_o
         assert(eh->hdef != NULL);
         const lh_operation* oper = &eh->hdef->operations[optag->opidx];
         assert(oper->optag == optag); // can fail if operations are defined in a different order than declared
-        if (oper->opfun != NULL) {
+        if (oper->opfun != NULL) {    // NULL functions are assume tail-resumptive identity functions, skip it
           *skipped = hstack_indexof(hs, h); assert(*skipped > 0);
           *op = oper;
-          *local = eh->local;
           return eh;
         }
       }
@@ -1097,7 +1095,6 @@ static effecthandler* hstack_find(ref hstack* hs, lh_optag optag, out const lh_o
   fatal(ENOSYS, "no handler for operation found: '%s'", lh_optag_name(optag));
   *skipped = 0;
   *op = NULL;
-  *local = lh_value_null;
   return NULL;
 }
 
@@ -1776,6 +1773,7 @@ void _lh_linear_handler_done(ptrdiff_t id, bool init, bool do_release) {
 LH_DEFINE_EFFECT0(defer);
 
 // Default operation declaration for implicit parameters (define in libhandler.h)
+// Just a default definition, as the actual implementation uses `lh_yield_local`.
 lh_value _lh_implicit_get(lh_resume r, lh_value local, lh_value arg) {  
   return lh_tail_resume(r, local, local);
 }
@@ -1791,9 +1789,8 @@ static lh_value yieldop(lh_optag optag, lh_value arg)
   // find the operation handler along the handler stack
   hstack*   hs = &__hstack;
   count     skipped;
-  lh_value  local;
   const lh_operation* op;
-  effecthandler* h = hstack_find(hs, optag, &op, &local, &skipped);
+  effecthandler* h = hstack_find(hs, optag, &op, &skipped);
 
   // No resume (i.e. like `throw`)
   if (op->opkind <= LH_OP_NORESUME) {
@@ -1810,7 +1807,7 @@ static lh_value yieldop(lh_optag optag, lh_value arg)
     // setup up a stack allocated tail resumption
     tailresume r;
     r.lhresume.rkind = TailResume;
-    r.local = local;
+    r.local = h->local;
     r.resumed = false;
     assert((void*)(&r.lhresume) == (void*)&r);
     lh_value res;
@@ -1822,7 +1819,7 @@ static lh_value yieldop(lh_optag optag, lh_value arg)
       raii_hstack_pop do_pop(hs, false /* skip frames need no release */, LH_EFFECT(__skip));
       #endif
       // call the operation handler directly for a tail resumption
-      res = op->opfun(&r.lhresume, local, arg);
+      res = op->opfun(&r.lhresume, h->local, arg);
       h = (effecthandler*)hstack_at(hs, hidx);
       assert(is_effecthandler(to_handler(h)));
       #ifndef __cplusplus
@@ -1834,7 +1831,7 @@ static lh_value yieldop(lh_optag optag, lh_value arg)
     // OP_TAIL_NOOP: will not call operations so no need for a skip frame
     // call the operation function and return directly (as it promised to tail resume)
     else {
-      res = op->opfun(&r.lhresume, local, arg);
+      res = op->opfun(&r.lhresume, h->local, arg);
     }
     
     // if we returned from a `lh_tail_resume` we just return its result
@@ -1871,6 +1868,25 @@ lh_value lh_yield(lh_optag optag, lh_value arg) {
 }
 
 
+/*-----------------------------------------------------------------
+  Get the local state of a handler
+-----------------------------------------------------------------*/
+
+// `lh_yield_local` yields to the first enclosing handler for
+// operation `optag` and returns its local state. This should be used
+// with care as it violates the encapsulation principle but works
+// well for implicit parameters and to reduce the number of explicit
+// operations for many effects.
+static lh_value lh_yield_local(lh_optag optag)
+{
+  // find the operation handler along the handler stack
+  hstack*   hs = &__hstack;
+  count     skipped;
+  const lh_operation* op;
+  effecthandler* h = hstack_find(hs, optag, &op, &skipped);
+  // and return the local state
+  return h->local;
+}
 
 /*-----------------------------------------------------------------
   Passing multiple arguments

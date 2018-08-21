@@ -179,7 +179,7 @@ typedef enum _lh_opkind {
 typedef struct _lh_operation {
   lh_opkind  opkind;  ///< Kind of the operation
   lh_optag   optag;   ///< The identifying tag
-  lh_opfun*  opfun;   ///< The operation function
+  lh_opfun*  opfun;   ///< The operation function; use `NULL` to have the operation forwarded to the next enclosing effect (i.e. a direct tail-resume with the same arguments).
 } lh_operation;
 
 /// Handler definition.
@@ -188,7 +188,7 @@ typedef struct _lh_handlerdef {
   lh_acquirefun*      local_acquire;  ///< Called when the local state needs to be acquired. Can be NULL.
   lh_releasefun*      local_release;  ///< Called when the local state is released. Can be NULL.
   lh_resultfun*       resultfun;      ///< Invoked when the handled action is done; can be NULL in which case the action result is passed unchanged.
-  const lh_operation* operations;     ///< Definitions of all handled operations ending with an operation with `lh_opfun` `NULL`. Can be NULL to handle no operations;
+  const lh_operation* operations;     ///< Definitions of all handled operations ending with an operation with `lh_opkind` `LH_OP_NULL`. Can be NULL to handle no operations;
 } lh_handlerdef;
 
 
@@ -204,6 +204,14 @@ lh_value lh_handle(const lh_handlerdef* def, lh_value local, lh_actionfun* body,
 /// Yield an operation to the nearest enclosing handler. 
 lh_value lh_yield(lh_optag optag, lh_value arg);
 
+/// `lh_yield_local` yields to the first enclosing handler for operation `optag` and returns its local state. 
+/// This should be used
+/// with care as it violates the encapsulation principle but works
+/// well for implicit parameters and to reduce the number of explicit
+/// operations for many effects.
+/// Note, still forwards through effect handlers that use an `lh_opfun` of `NULL`, and, more precisely,
+/// returns the state for the innermost enclosing handler that does not have a `NULL` operation.
+lh_value lh_yield_local(lh_optag optag);
 
 /*-----------------------------------------------------------------
   Scoped resume
@@ -631,7 +639,7 @@ lh_value _lh_implicit_get(lh_resume r, lh_value local, lh_value arg);
 /// Get the value of an implicit parameter.
 /// \param name The name of a previously defined implicit parameter.
 #define implicit_get(name) \
-    lh_yield(LH_OPTAG(name,get),lh_value_null) 
+    lh_yield_local(LH_OPTAG(name,get)) 
 
 /// \} implicits
 
