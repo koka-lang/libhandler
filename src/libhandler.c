@@ -1877,7 +1877,7 @@ lh_value lh_yield(lh_optag optag, lh_value arg) {
 // with care as it violates the encapsulation principle but works
 // well for implicit parameters and to reduce the number of explicit
 // operations for many effects.
-static lh_value lh_yield_local(lh_optag optag)
+lh_value lh_yield_local(lh_optag optag)
 {
   // find the operation handler along the handler stack
   hstack*   hs = &__hstack;
