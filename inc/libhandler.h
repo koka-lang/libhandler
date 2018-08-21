@@ -166,6 +166,7 @@ typedef lh_value (lh_opfun)(lh_resume r, lh_value local, lh_value arg);
 /// At this point #LH_OP_TAIL and #LH_OP_NORESUME are most efficient since they do not need to set up a jump point.
 typedef enum _lh_opkind {
   LH_OP_NULL,      ///< Invalid operation (used in static declarations to signal end of the operation array)
+  LH_OP_FORWARD,   ///< forwarding operation, the `opfun` should be `NULL` in this case. Never calls this operations but always forwards to the next innermost handler (i.e. a tail-resumptive identity operation).
   LH_OP_NORESUMEX, ///< promise to never resume -- and in C++/SEH, instruct to unwind without even running destructors
   LH_OP_NORESUME,  ///< promise to never resume.
   LH_OP_TAIL_NOOP, ///< promise to not call `yield` and resume at most once, and if resumed, it is the last action performed by the operation function.
@@ -179,7 +180,7 @@ typedef enum _lh_opkind {
 typedef struct _lh_operation {
   lh_opkind  opkind;  ///< Kind of the operation
   lh_optag   optag;   ///< The identifying tag
-  lh_opfun*  opfun;   ///< The operation function; use `NULL` to have the operation forwarded to the next enclosing effect (i.e. a direct tail-resume with the same arguments).
+  lh_opfun*  opfun;   ///< The operation function; use `NULL` (with #LH_OP_FORWARD) to have the operation forwarded to the next enclosing effect (i.e. a direct tail-resume with the same arguments).
 } lh_operation;
 
 /// Handler definition.
@@ -593,8 +594,8 @@ LH_DECLARE_EFFECT0(defer)
 lh_value _lh_implicit_get(lh_resume r, lh_value local, lh_value arg);
 
 #define LH_IMPLICIT_EXIT(after,release_fun,local,name) \
-    const lh_operation _lh_imp_ops[2] = { { LH_OP_TAIL_NOOP, LH_OPTAG(name,get), &_lh_implicit_get }, { LH_OP_NULL, lh_op_null, NULL } }; \
-    const lh_handlerdef _lh_imp_hdef  = { LH_EFFECT(name), NULL, release_fun, NULL, _lh_imp_ops }; \
+    static const lh_operation _lh_imp_ops[2] = { { LH_OP_TAIL_NOOP, LH_OPTAG(name,get), &_lh_implicit_get }, { LH_OP_NULL, lh_op_null, NULL } }; \
+    static const lh_handlerdef _lh_imp_hdef  = { LH_EFFECT(name), NULL, release_fun, NULL, _lh_imp_ops }; \
     LH_LINEAR_EXIT(&_lh_imp_hdef,local,(release_fun!=NULL),after)
 
 #define LH_IMPLICIT(release_fun,local,name) \
