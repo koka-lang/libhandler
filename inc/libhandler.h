@@ -189,6 +189,7 @@ typedef struct _lh_handlerdef {
   lh_releasefun*      local_release;  ///< Called when the local state is released. Can be NULL.
   lh_resultfun*       resultfun;      ///< Invoked when the handled action is done; can be NULL in which case the action result is passed unchanged.
   const lh_operation* operations;     ///< Definitions of all handled operations ending with an operation with `lh_opkind` `LH_OP_NULL`. Can be NULL to handle no operations;
+                                      ///< Note: all operations must be in the same order here as in the effect definition! (since each operation has a fixed index).
 } lh_handlerdef;
 
 
@@ -428,6 +429,25 @@ void lh_debug_wait_for_enter();
   const struct lh_optag_ LH_OPTAG_DEF(effect,op3) = { LH_EFFECT(effect), 2 }; \
   const struct lh_optag_ LH_OPTAG_DEF(effect,op4) = { LH_EFFECT(effect), 3 }; \
   const struct lh_optag_ LH_OPTAG_DEF(effect,op5) = { LH_EFFECT(effect), 4 }; 
+
+#define LH_DEFINE_EFFECT6(effect,op1,op2,op3,op4,op5,op6) \
+  const char* LH_EFFECT(effect)[8] = {  #effect, #effect "/" #op1, #effect "/" #op2, #effect "/" #op3, #effect "/" #op4, #effect "/" #op5, #effect "/" #op6, NULL }; \
+  const struct lh_optag_ LH_OPTAG_DEF(effect,op1) = { LH_EFFECT(effect), 0 }; \
+  const struct lh_optag_ LH_OPTAG_DEF(effect,op2) = { LH_EFFECT(effect), 1 }; \
+  const struct lh_optag_ LH_OPTAG_DEF(effect,op3) = { LH_EFFECT(effect), 2 }; \
+  const struct lh_optag_ LH_OPTAG_DEF(effect,op4) = { LH_EFFECT(effect), 3 }; \
+  const struct lh_optag_ LH_OPTAG_DEF(effect,op5) = { LH_EFFECT(effect), 4 }; \
+  const struct lh_optag_ LH_OPTAG_DEF(effect,op6) = { LH_EFFECT(effect), 5 }; 
+
+#define LH_DEFINE_EFFECT7(effect,op1,op2,op3,op4,op5,op6,op7) \
+  const char* LH_EFFECT(effect)[9] = {  #effect, #effect "/" #op1, #effect "/" #op2, #effect "/" #op3, #effect "/" #op4, #effect "/" #op5, #effect "/" #op6, #effect "/" #op7, NULL }; \
+  const struct lh_optag_ LH_OPTAG_DEF(effect,op1) = { LH_EFFECT(effect), 0 }; \
+  const struct lh_optag_ LH_OPTAG_DEF(effect,op2) = { LH_EFFECT(effect), 1 }; \
+  const struct lh_optag_ LH_OPTAG_DEF(effect,op3) = { LH_EFFECT(effect), 2 }; \
+  const struct lh_optag_ LH_OPTAG_DEF(effect,op4) = { LH_EFFECT(effect), 3 }; \
+  const struct lh_optag_ LH_OPTAG_DEF(effect,op5) = { LH_EFFECT(effect), 4 }; \
+  const struct lh_optag_ LH_OPTAG_DEF(effect,op6) = { LH_EFFECT(effect), 5 }; \
+  const struct lh_optag_ LH_OPTAG_DEF(effect,op7) = { LH_EFFECT(effect), 6 }; 
 
 
 #define LH_DEFINE_OP0(effect,op,restype) \
