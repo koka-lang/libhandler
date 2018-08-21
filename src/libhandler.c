@@ -1080,6 +1080,7 @@ static effecthandler* hstack_find(ref hstack* hs, lh_optag optag, out const lh_o
         assert(eh->hdef != NULL);
         const lh_operation* oper = &eh->hdef->operations[optag->opidx];
         assert(oper->optag == optag); // can fail if operations are defined in a different order than declared
+        assert(oper->opfun != NULL || oper->opkind == LH_OP_FORWARD);
         if (oper->opfun != NULL) {    // NULL functions are assume tail-resumptive identity functions, skip it
           *skipped = hstack_indexof(hs, h); assert(*skipped > 0);
           *op = oper;
@@ -1614,7 +1615,7 @@ static __noinline lh_value handle_with(
     resume*   resume = h->arg_resume;
     const lh_operation* op = h->arg_op;
     assert(op == NULL || op->optag->effect == h->handler.effect);
-    hstack_pop(hs, ((op==NULL) || !op_is_release(op)) ); // no release if moved into resumption
+    hstack_pop(hs, (op==NULL) /*|| !op_is_release(op)*/ ); // no release if moved into resumption
     if (op != NULL && op->opfun != NULL) {
       // push a scoped frame if necessary
       if (op->opkind >= LH_OP_SCOPED) {
