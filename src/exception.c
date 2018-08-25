@@ -7,12 +7,15 @@ found in the file "license.txt" at the root of this distribution.
 
 #include "libhandler.h"
 #include "libhandler-internal.h"
+#include "cenv.h"     // configure generated
 #include <malloc.h>
 #include <string.h>
 #include <errno.h>
 
 #if defined(_MSC_VER) && !defined(__clang__) && !defined(__GNUC__)
 # define __noinline     __declspec(noinline)
+#else
+# define __noinline     __attribute__((noinline))
 #endif
 
 lh_exception lh_exn_nomem = {
@@ -65,10 +68,14 @@ void lh_throw_strdup(int code, const char* msg) {
   lh_throw(lh_exception_alloc_strdup(code, msg));
 }
 
-void lh_throw_errno(int eno) {
+void lh_throw_errno(int eno) {  
+#ifdef HAS_STRERROR_S  
   char msg[256];
   strerror_s(msg, 255, eno); msg[255] = 0;
   lh_throw_strdup(eno, msg);
+#else
+  lh_throw_strdup(eno, strerror(eno));
+#endif
 }
 
 static const char* cancel_msg = "cancel";
@@ -122,10 +129,10 @@ __noinline static lh_value _lh_try(lh_exception** exn, lh_actionfun* action, lh_
   }
   catch (std::exception e) {
     if (!catchall && e.what() == cancel_msg) throw e;     
-    *exn = lh_exception_alloc_strdup(EOTHER, e.what());  // TODO: how to store a first class exception?
+    *exn = lh_exception_alloc_strdup(EINVAL, e.what());  // TODO: how to store a first class exception?
   }
   catch (...) {
-    *exn = lh_exception_alloc(EOTHER, "Unknow error");
+    *exn = lh_exception_alloc(EINVAL, "Unknow error");
   }
   return lh_value_null;
   #endif

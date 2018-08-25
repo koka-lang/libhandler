@@ -26,7 +26,7 @@ static lh_value action1(lh_value arg) {
   {defer(&free_resource, lh_value_int(resource)) {
     void* p = malloc(42);
     {defer(&free_ptr, lh_value_ptr(p)) {
-      lh_throw_errno(EDOM);
+      lh_throw_errno(EINVAL);
     }}
   }}
   return 42;
@@ -54,6 +54,6 @@ void test_exn()
   test("builtin exceptions", run,
     "free ptr: is null: false\n"
     "free resource: 42\n"
-    "exception: Domain error\n"
+    "exception: Invalid argument\n"
   );
 }

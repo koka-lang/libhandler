@@ -47,11 +47,11 @@ endif
 # Sources
 # -------------------------------------
 
-SRCFILES = libhandler.c
+SRCFILES = libhandler.c exception.c
 
 CTESTS   = tests.c \
 	   test-exn.c test-state.c test-amb.c test-dynamic.c test-raise.c test-general.c \
-	    test-tailops.c test-state-alloc.c test-yieldn.c
+	    test-tailops.c test-state-alloc.c test-yieldn.c test-excn.c
 
 TESTFILES= main-tests.c	$(CTESTS)				 
 

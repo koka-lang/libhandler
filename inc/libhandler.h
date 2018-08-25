@@ -11,6 +11,7 @@
   
 #include <stdbool.h>  // bool
 #include <stdint.h>   // intptr_t
+#include <stddef.h>   // ptrdiff_t
 #include <stdio.h>    // FILE*
 
 /// \defgroup effect Effect Handlers

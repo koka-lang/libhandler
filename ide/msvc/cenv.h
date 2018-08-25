@@ -20,6 +20,7 @@
 #endif
 #define HAS_ASMSETJMP
 #define HAS_STRNCAT_S
+#define HAS_STRERROR_S
 #define HAS_MEMCPY_S
 #define HAS_MEMMOVE_S
 #define HAS_STDBOOL_H

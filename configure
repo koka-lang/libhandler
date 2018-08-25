@@ -396,6 +396,7 @@ function has_function {
 };
 
 has_function HAS_STRNCAT_S strncat_s -i string.h
+has_function HAS_STRERROR_S strerror_s -i string.h
 
 if sh ./hasgot -i alloca.h "alloca(10)"; then
   echo "Function alloca: found"
@@ -437,8 +438,8 @@ echo >> makefile.inc
 
 echo "CC=$cc" >> makefile.inc
 echo "CCNAME=$ccname" >> makefile.inc
-echo "CCFLAGSOPT=$ccflags $ccflagopt" >> makefile.inc
-echo "CCFLAGSDEBUG=$ccflags $ccflagdebug" >> makefile.inc
+echo "CCFLAGSOPT=$ccflags $ccflag99 $ccflagopt" >> makefile.inc
+echo "CCFLAGSDEBUG=$ccflags $ccflag99 $ccflagdebug" >> makefile.inc
 echo "CCFLAGOUT=$ccflagout" >> makefile.inc
 echo "CCFLAG99=$ccflag99"   >> makefile.inc
 echo "CCDEPEND=$ccdepend" >> makefile.inc
