@@ -610,7 +610,10 @@ LH_DECLARE_EFFECT0(defer)
 
 lh_value _lh_implicit_get(lh_resume r, lh_value local, lh_value arg);
 
+#ifdef __GNUC__
+// turn off warnings that (release_fun!=NULL) is always true; TODO: is there a better way to do this?
 #pragma GCC diagnostic ignored "-Waddress"
+#endif
 
 #define LH_IMPLICIT_EXIT(after,release_fun,local,name) \
     static const lh_operation _lh_imp_ops[2] = { { LH_OP_TAIL_NOOP, LH_OPTAG(name,get), &_lh_implicit_get }, { LH_OP_NULL, lh_op_null, NULL } }; \
