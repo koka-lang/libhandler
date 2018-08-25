@@ -2005,3 +2005,17 @@ void __noinline lh_release(lh_resume r) {
 }
 
 void lh_nothing() { }
+
+// Convert function pointers to lh_values's; 
+// ISO C doesn't allow casting from pointers to function pointers 
+// but we assume it is ok to do this for our target platforms.
+lh_value lh_value_from_fun_ptr(lh_voidfun* fun) {
+  void** pfun = (void**)&fun;
+  return lh_value_ptr(*pfun);
+}
+
+lh_voidfun* lh_fun_ptr_value(lh_value v) {
+  void* p = lh_ptr_value(v);
+  lh_voidfun** pfun = (lh_voidfun**)&p;
+  return *pfun; 
+}

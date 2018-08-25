@@ -211,7 +211,7 @@ ccflagdebug="-g"
 ccflag99=""
 ccdepend="$cc -MM "
 
-if test "$target_os"="windows"; then
+if test "$target_os" = "windows"; then
   exe=".exe"
   lib=".lib"
 fi

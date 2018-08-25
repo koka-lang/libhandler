@@ -49,6 +49,7 @@ typedef long long lh_value;
 /// Convert any pointer into a #lh_value.
 #define lh_value_any_ptr(p)   ((lh_value)((intptr_t)(p)))
 
+
 #ifdef NDEBUG
 /// Convert a pointer to an #lh_value.
 /// The pointer should not point into the stack.
@@ -109,6 +110,21 @@ typedef void* lh_voidptr;
 
 /// Convert a `void*` to an #lh_value.
 #define lh_value_lh_voidptr(p) lh_value_ptr(p)
+
+
+/// Generic function pointer.
+typedef void(lh_voidfun)();
+
+/// \cond
+lh_value lh_value_from_fun_ptr(lh_voidfun* fun);
+/// \endcond
+
+/// Convert a function pointer into a #lh_value.
+#define lh_value_fun_ptr(f)   (lh_value_from_fun_ptr((lh_voidfun*)(f)))
+
+/// Convert an #lh_value back to a function pointer.
+lh_voidfun* lh_fun_ptr_value(lh_value v);
+
 
 /// A generic action working on generic #lh_value s.
 typedef lh_value(lh_actionfun)(lh_value);
@@ -318,7 +334,7 @@ typedef void* lh_callocfun(size_t n, size_t size);
 /// Type of `realloc` functions.
 typedef void* lh_reallocfun(void* p, size_t size);
 /// Type of `free` functions.
-typedef void  lh_freefun(void* p);
+typedef void  lh_freefun(const void* p);
 
 /// Print out statistics.
 void lh_print_stats(FILE* out);
@@ -594,10 +610,13 @@ LH_DECLARE_EFFECT0(defer)
 
 lh_value _lh_implicit_get(lh_resume r, lh_value local, lh_value arg);
 
+#pragma GCC diagnostic ignored "-Waddress"
+
 #define LH_IMPLICIT_EXIT(after,release_fun,local,name) \
     static const lh_operation _lh_imp_ops[2] = { { LH_OP_TAIL_NOOP, LH_OPTAG(name,get), &_lh_implicit_get }, { LH_OP_NULL, lh_op_null, NULL } }; \
     static const lh_handlerdef _lh_imp_hdef  = { LH_EFFECT(name), NULL, release_fun, NULL, _lh_imp_ops }; \
     LH_LINEAR_EXIT(&_lh_imp_hdef,local,(release_fun!=NULL),after)
+
 
 #define LH_IMPLICIT(release_fun,local,name) \
     LH_IMPLICIT_EXIT(lh_nothing(),release_fun,local,name)
@@ -705,6 +724,9 @@ void lh_throw_strdup(int code, const char* msg);
 void lh_throw_cancel();
 lh_exception* lh_exception_alloc_cancel();
 bool lh_exception_is_cancel(const lh_exception* exn);
+
+/// Portable way to get a string error message
+void lh_strerror( char* buf, size_t len, int eno );
 
 /// Convert an exceptional computation to an exceptional value.
 /// If an exception is thrown, `exn` will be set to a non-null value

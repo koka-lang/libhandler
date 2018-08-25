@@ -68,6 +68,15 @@ void lh_throw_strdup(int code, const char* msg) {
   lh_throw(lh_exception_alloc_strdup(code, msg));
 }
 
+void lh_strerror( char* buf, size_t len, int eno ) {
+#ifdef HAS_STRERROR_S  
+  strerror_s(buf, len, eno); 
+#else
+  strncpy(buf,strerror(eno),len-1);
+#endif
+  buf[len-1] = 0;
+}
+
 void lh_throw_errno(int eno) {  
 #ifdef HAS_STRERROR_S  
   char msg[256];
