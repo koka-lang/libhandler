@@ -315,14 +315,16 @@ static void fatal(int err, const char* msg, ...) {
     onfatal(err,buf);
   }
   else {
-#ifndef LH_IN_ENCLAVE
+#ifdef LH_IN_ENCLAVE
+    *((int*)(NULL)) = 0; // abort by crash?!?
+#else
     fflush(stdout);
     fputs("libhandler: fatal error: ", stderr);
     fputs(buf, stderr);
     fputs("\n", stderr);
     lh_debug_wait_for_enter();
-#endif
     exit(1);
+#endif
   }
 }
 
