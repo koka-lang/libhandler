@@ -8,6 +8,7 @@
 #ifndef __libhandler_h 
 #define __libhandler_h
 
+#define LH_IN_ENCLAVE
   
 #include <stdbool.h>  // bool
 #include <stdint.h>   // intptr_t
@@ -336,12 +337,6 @@ typedef void* lh_reallocfun(void* p, size_t size);
 /// Type of `free` functions.
 typedef void  lh_freefun(const void* p);
 
-/// Print out statistics.
-void lh_print_stats(FILE* out);
-
-/// Check at the end of the program if all continuations were released
-void lh_check_memory(FILE* out);
-
 /// Register a function that is called on fatal errors. 
 /// Use NULL for the default handler (outputs the error to stderr and exits)
 /// - ENOMEM : cannot allocate more memory.
@@ -367,6 +362,17 @@ void  lh_free(void* p);
 char* lh_strdup(const char* s);
 /// Default `strndup`.
 char* lh_strndup(const char* s, size_t max);
+
+#ifdef LH_IN_ENCLAVE
+void lh_print_stats(void* out);
+void lh_check_memory(void* out);
+#else
+/// Print out statistics.
+void lh_print_stats(FILE* out);
+
+/// Check at the end of the program if all continuations were released
+void lh_check_memory(FILE* out);
+#endif
 
 /// Wait for an enter key in debug mode.
 void lh_debug_wait_for_enter();

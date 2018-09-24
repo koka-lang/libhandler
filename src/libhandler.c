@@ -294,11 +294,10 @@ __thread hstack __hstack = { NULL, 0, 0, NULL };
 /*-----------------------------------------------------------------
   Fatal errors
 -----------------------------------------------------------------*/
-
 static lh_fatalfun* onfatal = NULL;
 
 void lh_debug_wait_for_enter() {
-#ifndef NDEBUG
+#if !defined(NDEBUG) && !defined(LH_IN_ENCLAVE)
 	char buf[128];
 	buf[127] = 0;
 	fprintf(stderr,"(press enter to continue)\n");
@@ -316,11 +315,13 @@ static void fatal(int err, const char* msg, ...) {
     onfatal(err,buf);
   }
   else {
+#ifndef LH_IN_ENCLAVE
     fflush(stdout);
     fputs("libhandler: fatal error: ", stderr);
     fputs(buf, stderr);
     fputs("\n", stderr);
     lh_debug_wait_for_enter();
+#endif
     exit(1);
   }
 }
@@ -535,6 +536,11 @@ static struct {
     0, 0, 
 };
 
+#ifdef LH_IN_ENCLAVE
+void lh_print_stats(void* h) {
+  /* void */
+}
+#else
 void lh_print_stats(FILE* h) {
   static const char* line = "--------------------------------------------------------------\n";
   #ifdef _STATS
@@ -577,7 +583,13 @@ void lh_print_stats(FILE* h) {
   fputs(line, h);
   #endif
 }
+#endif
 
+#ifdef LH_IN_ENCLAVE
+void lh_check_memory(void* h) {
+  /* void */
+}
+#else
 // Check if all continuations were released. If not, print out statistics.
 void lh_check_memory(FILE* h) {
   #ifdef _STATS
@@ -587,6 +599,7 @@ void lh_check_memory(FILE* h) {
   }
   #endif
 }
+#endif
 
 /*-----------------------------------------------------------------
   Cstack
