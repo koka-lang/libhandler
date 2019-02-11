@@ -8,7 +8,7 @@ found in the file "license.txt" at the root of this distribution.
 #include "libhandler.h"
 #include "libhandler-internal.h"
 #include "cenv.h"     // configure generated
-#include <malloc.h>
+#include <stdlib.h>   // malloc
 #include <string.h>
 #include <errno.h>
 
