@@ -335,7 +335,7 @@ typedef void* lh_callocfun(size_t n, size_t size);
 /// Type of `realloc` functions.
 typedef void* lh_reallocfun(void* p, size_t size);
 /// Type of `free` functions.
-typedef void  lh_freefun(const void* p);
+typedef void  lh_freefun(void* p);
 
 /// Register a function that is called on fatal errors. 
 /// Use NULL for the default handler (outputs the error to stderr and exits)
