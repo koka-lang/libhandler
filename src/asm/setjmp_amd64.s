@@ -9,7 +9,7 @@
 Code for amd64 calling convention on x86_64: Solaris, Linux, FreeBSD, OS X
 - <https://en.wikipedia.org/wiki/X86_calling_conventions>
 - <http://chamilo2.grenet.fr/inp/courses/ENSIMAG3MM1LDB/document/doc_abi_ia64.pdf>, page 21
-- <http://www.agner.org/optimize/calling_conventions.pdf>, page 10 
+- <http://www.agner.org/optimize/calling_conventions.pdf>, page 10
 
 jump_buf layout (compatible with FreeBSD):
    0: rip
@@ -29,19 +29,25 @@ jump_buf layout (compatible with FreeBSD):
 .global _lh_setjmp
 .global _lh_longjmp
 
+/* under MacOSX the c-compiler adds underscores to cdecl functions
+   add these labels too so the linker can resolve it. */
+.global __lh_setjmp
+.global __lh_longjmp
+
+__lh_setjmp:
 _lh_setjmp:                 /* rdi: jmp_buf */
   movq    (%rsp), %rax      /* rip: return address is on the stack */
-  movq    %rax, 0 (%rdi)    
+  movq    %rax, 0 (%rdi)
 
   leaq    8 (%rsp), %rax    /* rsp - return address */
-  movq    %rax, 16 (%rdi)   
+  movq    %rax, 16 (%rdi)
 
   movq    %rbx,  8 (%rdi)   /* save registers */
-  movq    %rbp, 24 (%rdi) 
-  movq    %r12, 32 (%rdi) 
-  movq    %r13, 40 (%rdi) 
-  movq    %r14, 48 (%rdi) 
-  movq    %r15, 56 (%rdi) 
+  movq    %rbp, 24 (%rdi)
+  movq    %r12, 32 (%rdi)
+  movq    %r13, 40 (%rdi)
+  movq    %r14, 48 (%rdi)
+  movq    %r15, 56 (%rdi)
 
   fnstcw  64 (%rdi)          /* save fpu control word */
   stmxcsr 68 (%rdi)          /* save sse control word */
@@ -49,9 +55,10 @@ _lh_setjmp:                 /* rdi: jmp_buf */
   xor     %rax, %rax         /* return 0 */
   ret
 
+__lh_longjmp:
 _lh_longjmp:                  /* rdi: jmp_buf, rsi: arg */
   movq  %rsi, %rax            /* return arg to rax */
-  
+
   movq   8 (%rdi), %rbx       /* restore registers */
   movq  24 (%rdi), %rbp
   movq  32 (%rdi), %r12
@@ -63,9 +70,9 @@ _lh_longjmp:                  /* rdi: jmp_buf, rsi: arg */
   fnclex                      /* clear fpu exception flags */
   fldcw   64 (%rdi)           /* restore fpu control word */
 
-  testl %eax, %eax            /* longjmp should never return 0 */ 
+  testl %eax, %eax            /* longjmp should never return 0 */
   jnz   ok
   incl  %eax
 ok:
-  movq  16 (%rdi), %rsp       /* restore the stack pointer */     
+  movq  16 (%rdi), %rsp       /* restore the stack pointer */
   jmpq *(%rdi)                /* and jump to rip */

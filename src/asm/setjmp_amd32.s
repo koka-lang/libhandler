@@ -7,8 +7,8 @@
 
 // -------------------------------------------------------
 // Code for x86 (ia32) cdecl calling convention on Unix's.
-// Differs from the win32 x86 calling convention since it 
-// does not use fs:0 for exception handling. See: 
+// Differs from the win32 x86 calling convention since it
+// does not use fs:0 for exception handling. See:
 // - <https://en.wikipedia.org/wiki/X86_calling_conventions>
 // - <https://www.uclibc.org/docs/psABI-i386.pdf> System V Application Binary Interface i386
 //
@@ -28,7 +28,7 @@
 .global _lh_setjmp
 .global _lh_longjmp
 
-/* under win32 gcc silently adds underscores to cdecl functions; 
+/* under MacOSX gcc silently adds underscores to cdecl functions;
    add these labels too so the linker can resolve it. */
 .global __lh_setjmp
 .global __lh_longjmp
@@ -38,10 +38,10 @@ __lh_setjmp:
 _lh_setjmp:
   movl    4 (%esp), %ecx   /* jmp_buf to ecx  */
   movl    0 (%esp), %eax   /* eip: save the return address */
-  movl    %eax, 20 (%ecx)  
+  movl    %eax, 20 (%ecx)
 
   leal    4 (%esp), %eax   /* save esp (minus return address) */
-  movl    %eax, 16 (%ecx)  
+  movl    %eax, 16 (%ecx)
 
   movl    %ebp,  0 (%ecx)  /* save registers */
   movl    %ebx,  4 (%ecx)
@@ -60,7 +60,7 @@ __lh_longjmp:
 _lh_longjmp:
   movl    8 (%esp), %eax      /* set eax to the return value (arg) */
   movl    4 (%esp), %ecx      /* set ecx to jmp_buf */
- 
+
   movl    0 (%ecx), %ebp      /* restore registers */
   movl    4 (%ecx), %ebx
   movl    8 (%ecx), %edi
@@ -69,7 +69,7 @@ _lh_longjmp:
   ldmxcsr 24 (%ecx)           /* restore sse control word */
   fnclex                      /* clear fpu exception flags */
   fldcw   28 (%ecx)           /* restore fpu control word */
-   
+
   testl   %eax, %eax          /* longjmp should never return 0 */
   jnz     ok
   incl    %eax

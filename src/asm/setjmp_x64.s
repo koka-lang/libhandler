@@ -27,50 +27,58 @@ jump_buf layout (compatible with msvc):
   94: unused
   96: xmm6
   ... (128-bit registers)
- 240: xmm15 
+ 240: xmm15
  256: sizeof jmp_buf
 */
 
 .global _lh_setjmp
 .global _lh_longjmp
 
+/* Sometimes the c-compiler adds underscores to cdecl functions
+   add these labels too so the linker can resolve it. */
+.global __lh_setjmp
+.global __lh_longjmp
+
+/* called with jmp_buf at sp+4 */
+__lh_setjmp:
 _lh_setjmp:                 /* input: rcx: jmp_buf, rdx: frame pointer */
   movq    (%rsp), %rax      /* return address is on the stack */
   movq    %rax, 80 (%rcx)   /* rip */
 
-  leaq    8 (%rsp), %rax  
+  leaq    8 (%rsp), %rax
   movq    %rax, 16 (%rcx)   /* rsp: just from before the return address */
 
   movq    %rdx,  0 (%rcx)   /* save registers */
   movq    %rbx,  8 (%rcx)
-  movq    %rbp, 24 (%rcx) 
-  movq    %rsi, 32 (%rcx) 
-  movq    %rdi, 40 (%rcx) 
-  movq    %r12, 48 (%rcx) 
-  movq    %r13, 56 (%rcx) 
-  movq    %r14, 64 (%rcx) 
+  movq    %rbp, 24 (%rcx)
+  movq    %rsi, 32 (%rcx)
+  movq    %rdi, 40 (%rcx)
+  movq    %r12, 48 (%rcx)
+  movq    %r13, 56 (%rcx)
+  movq    %r14, 64 (%rcx)
   movq    %r15, 72 (%rcx)
 
   stmxcsr 88 (%rcx)          /* save sse control word */
   fnstcw  92 (%rcx)          /* save fpu control word */
 
   movdqu  %xmm6,   96 (%rcx) /* save sse registers */
-  movdqu  %xmm7,  112 (%rcx) 
-  movdqu  %xmm8,  128 (%rcx) 
-  movdqu  %xmm9,  144 (%rcx) 
-  movdqu  %xmm10, 160 (%rcx) 
-  movdqu  %xmm11, 176 (%rcx) 
-  movdqu  %xmm12, 192 (%rcx) 
-  movdqu  %xmm13, 208 (%rcx) 
-  movdqu  %xmm14, 224 (%rcx) 
-  movdqu  %xmm15, 240 (%rcx) 
+  movdqu  %xmm7,  112 (%rcx)
+  movdqu  %xmm8,  128 (%rcx)
+  movdqu  %xmm9,  144 (%rcx)
+  movdqu  %xmm10, 160 (%rcx)
+  movdqu  %xmm11, 176 (%rcx)
+  movdqu  %xmm12, 192 (%rcx)
+  movdqu  %xmm13, 208 (%rcx)
+  movdqu  %xmm14, 224 (%rcx)
+  movdqu  %xmm15, 240 (%rcx)
 
   xor     %rax, %rax          /* return 0 */
   ret
 
+__lh_longjmp:
 _lh_longjmp:                  /* rcx: jmp_buf, edx: arg */
   movq  %rdx, %rax            /* return arg to rax */
-  
+
   movq   0 (%rcx), %rdx       /* restore registers */
   movq   8 (%rcx), %rbx
   movq  24 (%rcx), %rbp
@@ -84,21 +92,21 @@ _lh_longjmp:                  /* rcx: jmp_buf, edx: arg */
   ldmxcsr 88 (%rcx)           /* restore sse control word */
   fnclex                      /* clear fpu exception flags */
   fldcw   92 (%rcx)           /* restore fpu control word */
-  
+
   movdqu   96 (%rcx), %xmm6   /* restore sse registers */
   movdqu  112 (%rcx), %xmm7
-  movdqu  128 (%rcx), %xmm8 
-  movdqu  144 (%rcx), %xmm9 
-  movdqu  160 (%rcx), %xmm10 
-  movdqu  176 (%rcx), %xmm11 
-  movdqu  192 (%rcx), %xmm12 
-  movdqu  208 (%rcx), %xmm13 
+  movdqu  128 (%rcx), %xmm8
+  movdqu  144 (%rcx), %xmm9
+  movdqu  160 (%rcx), %xmm10
+  movdqu  176 (%rcx), %xmm11
+  movdqu  192 (%rcx), %xmm12
+  movdqu  208 (%rcx), %xmm13
   movdqu  224 (%rcx), %xmm14
   movdqu  240 (%rcx), %xmm15
 
-  testl %eax, %eax            /* longjmp should never return 0 */ 
+  testl %eax, %eax            /* longjmp should never return 0 */
   jnz   ok
   incl  %eax
 ok:
-  movq  16 (%rcx), %rsp        /* set the stack frame */     
+  movq  16 (%rcx), %rsp        /* set the stack frame */
   jmpq *80 (%rcx)              /* and jump to rip */
