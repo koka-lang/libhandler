@@ -14,6 +14,7 @@ asmflags=''
 verbose=no
 cxx=''
 cxxflags=''
+prefix='/usr/local'
 
 # Parse command-line arguments
 while : ; do
@@ -45,6 +46,8 @@ while : ; do
         target_abi=$flag_arg;;
     -os*|--os*)
         target_os=$flag_arg;;
+    --prefix*)
+        prefix=$flag_arg;;
     -h|--help|-\?|help|\?)
         echo "./configure [options]"
         echo "  --cc=<ccomp>                   set the c-compiler (for example 'clang')"
@@ -55,6 +58,7 @@ while : ; do
         echo "  --asm-opts=<options>           set extra assembler options (for example '-m32')"
         echo "  --abi=<abi>                    set target ABI (for example: 'x86' or 'amd64')"
         echo "  --os=<os>                      set target OS (for example: 'windows' or 'linux')"
+        echo "  --prefix=<path>                set install target prefix (default: /usr/local)"
         echo "  --verbose                      be verbose"
         exit 0;;
     *) echo "warning: unknown option \"$1\"." 1>&2
@@ -469,6 +473,8 @@ echo "CP=cp" >> makefile.inc
 echo "CD=cd" >> makefile.inc
 echo "RM=rm -f" >> makefile.inc
 echo "MKDIR=mkdir -p" >> makefile.inc
+
+echo "PREFIX=$prefix" >> makefile.inc
 
 # clean up and go to root dir again
 

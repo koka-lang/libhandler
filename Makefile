@@ -175,6 +175,11 @@ $(OUTDIRXX)/%$(OBJ): src/%$(ASM)
 # other targets
 # -------------------------------------
 
+install: $(HLIB)
+	mkdir -p $(PREFIX)/lib $(PREFIX)/include
+	cp $(HLIB) $(PREFIX)/lib/
+	cp inc/*.h $(PREFIX)/include/
+
 docs: 
 
 clean:
